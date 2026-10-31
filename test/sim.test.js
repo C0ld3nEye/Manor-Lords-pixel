@@ -2,7 +2,7 @@
 /* Tests de la simulation (Phase 0 du plan docs/PLAN.md).
    Lancer avec : node test/sim.test.js */
 const assert = require("assert");
-const { GameState, BUILD_DEFS, W, H, T_GRASS, T_FOREST, T_STONE, MONTHS, seasonOf } = require("../js/sim.js");
+const { GameState, BUILD_DEFS, EXT_DEFS, EXT_ORDER, W, H, T_GRASS, T_FOREST, T_STONE, MONTHS, seasonOf } = require("../js/sim.js");
 
 let passed = 0;
 function test(name, fn){
@@ -142,6 +142,72 @@ test("victoire : les 4 objectifs remplis déclenchent victory", () => {
   g.objectives.pop = true; g.objectives.manor = true;
   for(let i=0;i<200 && !g.victory;i++) g.step();
   assert.strictEqual(g.victory, true);
+});
+
+test("extensions : 6 disponibles, coût débité, doublon refusé", () => {
+  const g = fresh();
+  assert.strictEqual(EXT_ORDER.length, 6);
+  const b = g.buildings.find(x => x.def === "burgage");
+  b.done = true;
+  g.stock.timber = 10;
+  g.buyExtension(b.id, "garden");
+  assert.deepStrictEqual(b.exts, ["garden"]);
+  assert.strictEqual(g.stock.timber, 9);
+  g.buyExtension(b.id, "garden");
+  assert.strictEqual(b.exts.length, 1, "pas de doublon");
+});
+
+test("extensions : tailleur et brasserie exigent le niveau 2", () => {
+  const g = fresh();
+  const b = g.buildings.find(x => x.def === "burgage");
+  b.done = true; b.lvl = 1;
+  g.stock.timber = 10; g.stock.stone = 10;
+  g.buyExtension(b.id, "tailor");
+  assert.strictEqual(b.exts.length, 0, "refusé au niveau 1");
+  b.lvl = 2;
+  g.buyExtension(b.id, "tailor");
+  g.buyExtension(b.id, "brewer");
+  assert.ok(b.exts.includes("tailor") && b.exts.includes("brewer"));
+  assert.strictEqual(g.stock.stone, 9, "pierre débitée pour la brasserie");
+});
+
+test("production : potager et basse-cour produisent chaque mois", () => {
+  const g = fresh();
+  const b = g.buildings.find(x => x.def === "burgage");
+  b.done = true; b.exts = ["garden", "chicken"];
+  const veg0 = g.stock.veg, egg0 = g.stock.eggs;
+  for(let i=0;i<160;i++) g.step(); // ~1 mois
+  assert.ok(g.stock.veg > veg0, "légumes produits");
+  assert.ok(g.stock.eggs > egg0, "oeufs produits");
+});
+
+test("verger ne produit qu'en août-octobre", () => {
+  const g = fresh();
+  const b = g.buildings.find(x => x.def === "burgage");
+  b.done = true; b.exts = ["orchard"];
+  g.time.month = 5; // juin : pas de pommes
+  const a0 = g.stock.apples;
+  for(let i=0;i<160;i++) g.step();
+  assert.strictEqual(g.stock.apples, a0, "pas de récolte en juin");
+  g.time.month = 8; // septembre
+  for(let i=0;i<160;i++) g.step();
+  assert.ok(g.stock.apples > a0, "récolte en septembre");
+});
+
+test("vêtements : consommation et impact sur l'approbation", () => {
+  const g = fresh();
+  g.stock.clothes = 0;
+  let minAp = 100;
+  for(let i=0;i<1600;i++){ g.step(); minAp = Math.min(minAp, g.approval); }
+  assert.ok(minAp < 60, "approbation pénalisée sans vêtements");
+});
+
+test("sauvegarde ancienne : ext simple migré en exts", () => {
+  const g = fresh();
+  const data = JSON.parse(JSON.stringify(g.serialize()));
+  data.buildings[0].ext = "garden";
+  const g2 = GameState.load(data);
+  assert.deepStrictEqual(g2.buildings[0].exts, ["garden"]);
 });
 
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));

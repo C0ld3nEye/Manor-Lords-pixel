@@ -57,8 +57,18 @@ const BUILD_DEFS                              = {
 };
 const BUILD_ORDER = ["burgage","woodcutter","forager","hunter","quarry","farm","field","windmill","granary","storehouse","market","church","manor"];
 
-const FOOD_TYPES = ["berries","meat","bread","eggs","veg"];
-const RES_ICONS                        = { timber:"🪵", firewood:"🔥", stone:"🪨", grain:"🌾", bread:"🍞", berries:"🍒", meat:"🍗", eggs:"🥚", veg:"🥕" };
+const FOOD_TYPES = ["berries","meat","bread","eggs","veg","apples","honey"];
+
+const EXT_DEFS = {
+  garden:  { id:"garden",  name:"Potager",            cost:{timber:1},           lvl:1, desc:"+0,5 legume par mois." },
+  chicken: { id:"chicken", name:"Basse-cour",         cost:{timber:1},           lvl:1, desc:"+0,5 oeuf par mois." },
+  orchard: { id:"orchard", name:"Verger",             cost:{timber:2},           lvl:1, desc:"+1 pomme par mois (aout->octobre). Nourrit aussi la famille." },
+  beehive: { id:"beehive", name:"Rucher",             cost:{timber:2},           lvl:1, desc:"+0,5 miel par mois (avril->septembre)." },
+  tailor:  { id:"tailor",  name:"Atelier du tailleur",cost:{timber:2},           lvl:2, desc:"Produit 1 vetement par mois. Requiert niveau 2." },
+  brewer:  { id:"brewer",  name:"Brasserie",          cost:{timber:2,stone:1},   lvl:2, desc:"Produit 1 chope d'ale par mois. Requiert niveau 2." },
+};
+const EXT_ORDER = ["garden","chicken","orchard","beehive","tailor","brewer"];
+const RES_ICONS                        = { timber:"🪵", firewood:"🔥", stone:"🪨", grain:"🌾", bread:"🍞", berries:"🍒", meat:"🍗", eggs:"🥚", veg:"🥕", apples:"🍎", honey:"🍯", clothes:"👕", ale:"🍺" };
 
 const SURNAMES = ["Aldéric","Baptiste","Colin","Eudes","Garlin","Hersende","Mahaut","Odon","Perrot","Raoulin","Sanceline","Thomasse","Ysoré","Gaultier","Béatrice","Manessier","Ferrant","Alips","Jourdaine","Nicaise"];
 
@@ -118,7 +128,7 @@ class GameState {
     this.buildings = []; this.nextB = 1;
     this.families = []; this.nextF = 1;
     this.deer = []; this.nextD = 1; this.deerTimer = 0;
-    this.stock = { timber:15, firewood:8, stone:0, grain:0, bread:0, berries:25, meat:15, eggs:0, veg:0 };
+    this.stock = { timber:15, firewood:8, stone:0, grain:0, bread:0, berries:25, meat:15, eggs:0, veg:0, apples:0, honey:0, clothes:0, ale:0 };
     this.capBase = 300; this.capPer = 150;
     this.time = { tick:0, day:0, month:2, year:1176 }; // mars 1176
     this.approval = 62; this.treasury = 0; this.taxRate = 0.15;
@@ -232,7 +242,7 @@ class GameState {
   /* ---------- fabriques ---------- */
   makeBuilding(def       , x       , y       )         {
     const d = BUILD_DEFS[def];
-    const b          = { id:this.nextB++, def, x, y, w:d.w, h:d.h, done:false, progress:0, families:[], lvl:1, ext:null, monthsGood:0, f:null };
+    const b          = { id:this.nextB++, def, x, y, w:d.w, h:d.h, done:false, progress:0, families:[], lvl:1, exts:[], monthsGood:0, f:null };
     if(def==="field"){
       let s=0; for(let yy=0;yy<d.h;yy++) for(let xx=0;xx<d.w;xx++) s += this.soil[(y+yy)*W+(x+xx)];
       b.f = { fert: Math.min(1, s/(d.w*d.h)), plow:0, sown:false, growth:0, harvestP:0, usedThisYear:false, usedLastYear:false };
@@ -341,10 +351,15 @@ class GameState {
 
   buyExtension(bid       , ext       ){
     const b = this.buildings.find(x=>x.id===bid); if(!b || b.def!=="burgage" || !b.done) return;
-    if(b.ext) return;
-    if(this.stock.timber<1){ this.toast("Il faut 1 🪵 pour cet agrandissement","bad"); return; }
-    this.stock.timber -= 1; b.ext = ext;
-    this.toast("Agrandissement ajouté au bourgage");
+    const d = EXT_DEFS[ext]; if(!d) return;
+    if(b.exts.includes(ext)){ this.toast("Cet agrandissement existe d\u00e9j\u00e0.","bad"); return; }
+    if(b.lvl < d.lvl){ this.toast("Il faut un bourgage de niveau "+d.lvl+" pour ceci.","bad"); return; }
+    for(const k of Object.keys(d.cost)){
+      if((this.stock[k]||0) < d.cost[k]){ this.toast("Il manque des ressources pour "+d.name+".","bad"); return; }
+    }
+    for(const k of Object.keys(d.cost)) this.stock[k] -= d.cost[k];
+    b.exts.push(ext);
+    this.toast("Agrandissement ajout\u00e9 : "+d.name);
     this.uiVersion++;
   }
 
@@ -794,10 +809,19 @@ class GameState {
   onMonth(){
     const m=this.time.month;
     const winter=(seasonOf(m)===0);
-    // production des agrandissements
+    // production des extensions de cour
+    const summer = m>=7 && m<=9;
+    const beeSeason = m>=3 && m<=8;
     for(const b of this.buildings){
-      if(b.done && b.def==="burgage" && b.ext==="garden") this.stock.veg=Math.min(this.capFor("veg"), this.stock.veg+0.5);
-      if(b.done && b.def==="burgage" && b.ext==="chicken") this.stock.eggs=Math.min(this.capFor("eggs"), this.stock.eggs+0.5);
+      if(!b.done || b.def!=="burgage") continue;
+      for(const e of b.exts){
+        if(e==="garden")  this.stock.veg=Math.min(this.capFor("veg"), this.stock.veg+0.5);
+        if(e==="chicken") this.stock.eggs=Math.min(this.capFor("eggs"), this.stock.eggs+0.5);
+        if(e==="orchard" && summer) this.stock.apples=Math.min(this.capFor("apples"), this.stock.apples+1);
+        if(e==="beehive" && beeSeason) this.stock.honey=Math.min(this.capFor("honey"), this.stock.honey+0.5);
+        if(e==="tailor")  this.stock.clothes=Math.min(this.capFor("clothes"), this.stock.clothes+1);
+        if(e==="brewer")  this.stock.ale=Math.min(this.capFor("ale"), this.stock.ale+1);
+      }
     }
     // repousse des baies et croissance lente des arbres non abattus
     if(this.berrySeason()){
@@ -849,6 +873,22 @@ class GameState {
     const fuelGot=Math.min(this.stock.firewood, fuelNeed);
     this.stock.firewood-=fuelGot;
     const fuelRatio=fuelNeed>0?fuelGot/fuelNeed:1;
+    // v\u00eatements (1 tous les 2 mois par famille)
+    let clothed=0;
+    for(const f of this.families){
+      f.clothCool=(f.clothCool||0)+1;
+      if(f.clothCool>=2 && this.stock.clothes>0){ this.stock.clothes-=1; f.clothCool=0; clothed++; }
+      else if(f.clothCool>=2){ f.clothCool=0; }
+    }
+    const clothRatio=this.families.length>0?clothed/this.families.length:1;
+    // ale (1 par mois par famille adulte, hivernal)
+    let drunk=0;
+    if(winter){
+      for(const f of this.families){
+        if(this.stock.ale>0){ this.stock.ale-=1; drunk++; }
+      }
+    }
+    const aleRatio=this.families.length>0?drunk/this.families.length:1;
     // pourrissement
     const spoil=this.buildings.some(b=>b.done&&b.def==="granary")?0.03:0.10;
     for(const k of FOOD_TYPES) this.stock[k]=Math.max(0,this.stock[k]*(1-spoil));
@@ -856,6 +896,8 @@ class GameState {
     let a=50;
     if(varietyVillage>=3) a+=10; else if(varietyVillage===2) a+=4; else if(varietyVillage===1) a-=8; else a-=20;
     if(fuelRatio>=1) a+=4; else if(fuelRatio>=0.5) a-=5; else a-=15;
+    if(clothRatio>=1) a+=4; else if(clothRatio>=0.5) a-=3; else a-=8;
+    if(winter){ if(aleRatio>=1) a+=3; else if(aleRatio<0.5) a-=6; }
     if(this.hasChurch()) a+=6;
     if(this.buildings.some(b=>b.done&&b.def==="market")) a+=2; else a-=4;
     const homeless=this.families.filter(f=>f.home<0).length;
@@ -876,7 +918,7 @@ class GameState {
       if(b.def!=="burgage"||!b.done) continue;
       const res=this.families.find(f=>f.home===b.id);
       if(!res) continue;
-      const ok=res.lastAte>=1 && fuelRatio>=1 && market && varietyVillage>=2;
+      const ok=res.lastAte>=1 && fuelRatio>=1 && market && varietyVillage>=2 && clothRatio>=1;
       if(ok) b.monthsGood++; else b.monthsGood=0;
       if(b.lvl===1 && b.monthsGood>=3 && this.stock.timber>=2){ this.stock.timber-=2; b.lvl=2; this.toast("Un bourgage évolue : niveau 2 !","good"); }
       else if(b.lvl===2 && b.monthsGood>=3 && this.approval>=65 && this.hasChurch() && this.stock.timber>=2 && this.stock.stone>=2){
@@ -1014,7 +1056,14 @@ class GameState {
     g.treeWood = Float32Array.from(data.treeWood);
     g.berryY = Float32Array.from(data.berryY);
     g.stoneAmt = Float32Array.from(data.stoneAmt);
-    g.buildings = data.buildings || [];
+    g.buildings = (data.buildings || []).map(b=>{
+      if(b.ext !== undefined && b.ext !== null){
+        if(!Array.isArray(b.exts) || b.exts.length===0) b.exts=[b.ext];
+        delete b.ext;
+      }
+      if(!Array.isArray(b.exts)) b.exts=[];
+      return b;
+    });
     g.families = data.families || [];
     g.deer = data.deer || [];
     if(data.stock) g.stock = data.stock;
@@ -1040,6 +1089,6 @@ class GameState {
 }
 
 if(typeof module!=="undefined" && module.exports){
-  module.exports = { GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, W, H,
+  module.exports = { GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, RES_ICONS, W, H,
     T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf };
 }

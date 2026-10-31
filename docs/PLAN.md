@@ -74,7 +74,7 @@ Chaque étape est livrable et testable seule. Ordre conseillé = du plus fondame
 4. **Amélioration de la carte** : biomes variés (vallée, plateau, rivière), 3 tailles de carte + graines partageables, écran de sélection de scénario/difficulté.
 5. **Tutoriel guidé** : objectifs contextuels en chaîne (poser X → nourrir → hiver → impôt).
 
-### 🏘️ Phase 1 — Le cœur manoir : parcelles et extensions (semaines 3-6)
+### 🏘️ Phase 1 — Le cœur manoir : parcelles et extensions (semaines 3-6) ✅ extensions de cour livrées
 
 6. **Système de burgage plots** : la parcelle devient l'unité résidentielle ; la maison se construit seule (chantier réaliste avec dépôt de matériaux).
 7. **Extensions de cour** : poulailler (œufs), potager (légumes), verger (pommes), rucher (miel) — production passive selon la saison, améliorables.

@@ -257,7 +257,9 @@ function renderUI(){
   h += "<div class='res'>";
   var resList = [["timber",g.stock.timber],["firewood",g.stock.firewood],["stone",g.stock.stone],
                  ["berries",g.stock.berries],["meat",g.stock.meat],["grain",g.stock.grain],
-                 ["bread",g.stock.bread],["eggs",g.stock.eggs],["veg",g.stock.veg]];
+                 ["bread",g.stock.bread],["eggs",g.stock.eggs],["veg",g.stock.veg],
+                 ["apples",g.stock.apples],["honey",g.stock.honey],
+                 ["clothes",g.stock.clothes],["ale",g.stock.ale]];
   for(var ri=0;ri<resList.length;ri++) h += "<span class='chip small'>"+RES_ICONS[resList[ri][0]]+" "+Math.floor(resList[ri][1])+"</span>";
   h += "</div>";
   h += "<div class='spacer'></div>";
@@ -303,13 +305,17 @@ function renderUI(){
       var fam = g.families.find(function(f){ return f.home===sel.id; });
       o += "<div>"+(fam ? "Résidente : "+fam.name : "Vacante")+"</div>";
       if(sel.monthsGood>0) o += "<div class='good'>Bilan positif : "+sel.monthsGood+" mois</div>";
-      if(!sel.ext && sel.done){
-        o += "<div class='row'>";
-        o += "<button class='btn' data-act='ext' data-arg='garden'>🥕 Potager (1 🪵)</button> ";
-        o += "<button class='btn' data-act='ext' data-arg='chicken'>🐔 Basse-cour (1 🪵)</button>";
-        o += "</div>";
+      if(sel.done){
+        var exts = sel.exts || [];
+        if(exts.length) o += "<div class='good'>Agrandissements : "+exts.map(function(e){ return EXT_DEFS[e].name; }).join(", ")+"</div>";
+        var avail = EXT_ORDER.filter(function(e){ return exts.indexOf(e)<0 && sel.lvl>=EXT_DEFS[e].lvl; });
+        for(var ei=0; ei<avail.length; ei++){
+          var ed = EXT_DEFS[avail[ei]];
+          var costTxt = Object.keys(ed.cost).map(function(k){ return ed.cost[k]+" "+(RES_ICONS[k]||k); }).join(" + ");
+          o += "<div class='row'><button class='btn' data-act='ext' data-arg='"+ed.id+"'>"+ed.name+" ("+costTxt+")</button></div>";
+        }
+        if(!avail.length && !exts.length) o += "<div class='dim'>Aucun agrandissement disponible (niveau "+sel.lvl+").</div>";
       }
-      if(sel.ext) o += "<div class='good'>Agrandissement : "+(sel.ext==="garden"?"🥕 Potager":"🐔 Basse-cour")+"</div>";
     }
     if(sel.def==="field" && sel.f){
       o += "<div>Fertilité : "+Math.round(sel.f.fert*100)+" %</div>";

@@ -86,8 +86,13 @@ function drawBuilding(ctx                         , g          , b         ){
       px(ctx, x+(1-hw)/2+0.02, y+0.06, hw-0.04, 0.06, "#00000022");
       px(ctx, x+0.5-0.05, y+0.38, 0.1, 0.24, "#5a4328"); // porte
       if(b.lvl>=3) px(ctx, x+0.78, y+0.06, 0.06, 0.22, "#b03030"); // bannière
-      if(b.ext==="garden"){ for(let k=0;k<3;k++) px(ctx, x+0.1+k*0.14, y+0.78, 0.08, 0.14, "#4f8f3a"); }
-      if(b.ext==="chicken"){ px(ctx, x+0.72, y+0.76, 0.09, 0.09, "#f0ead8"); px(ctx, x+0.84, y+0.8, 0.07, 0.07, "#f0ead8"); }
+      const exts = b.exts || [];
+      if(exts.includes("garden")){ for(let k=0;k<3;k++) px(ctx, x+0.08+k*0.13, y+0.80, 0.08, 0.14, "#4f8f3a"); }
+      if(exts.includes("chicken")){ px(ctx, x+0.70, y+0.78, 0.09, 0.09, "#f0ead8"); px(ctx, x+0.82, y+0.82, 0.07, 0.07, "#f0ead8"); }
+      if(exts.includes("orchard")){ px(ctx, x+0.78, y+0.62, 0.14, 0.16, "#3a6b2a"); px(ctx, x+0.80, y+0.64, 0.05, 0.05, "#c43a3a"); }
+      if(exts.includes("beehive")){ px(ctx, x+0.12, y+0.66, 0.14, 0.12, "#d4a83a"); px(ctx, x+0.14, y+0.64, 0.1, 0.04, "#8a6a2a"); }
+      if(exts.includes("tailor")){ px(ctx, x+0.62, y+0.80, 0.12, 0.12, "#7a5a8a"); }
+      if(exts.includes("brewer")){ px(ctx, x+0.30, y+0.80, 0.12, 0.14, "#8a6a2a"); }
       break;
     }
     case "woodcutter":{
