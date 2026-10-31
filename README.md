@@ -38,6 +38,7 @@ Vous arrivez en mars 1176 avec trois familles. Bûcherons, cueilleuses, chasseur
 - `js/sim.js` — la simulation (économie, familles, événements, sauvegarde).
 - `js/render.js` — le rendu pixel-art sur canvas (carte, bâtiments, minimap).
 - `js/app.js` — l'application mobile (entrées tactiles, interface, boucle de jeu).
+- `test/sim.test.js` — tests automatisés de la simulation : `node test/sim.test.js`.
 
 Le tout est du JavaScript lisible sans aucune bibliothèque. Développé avec l'agent Vibe ; la même simulation existe aussi en version React monofichier.
 

@@ -100,7 +100,7 @@ class GameState {
   time                                                       ;
   approval       ; treasury       ; taxRate       ;
   pendingEvent                  ;
-  speed       ; toasts        ; toastId       ;
+  speed       ; toasts        ; toastId       ; log            ;
   uiVersion       ;
   objectives                                                                                ;
   victory        ;
@@ -123,7 +123,7 @@ class GameState {
     this.time = { tick:0, day:0, month:2, year:1176 }; // mars 1176
     this.approval = 62; this.treasury = 0; this.taxRate = 0.15;
     this.pendingEvent = null;
-    this.speed = 1; this.toasts = []; this.toastId = 1;
+    this.speed = 1; this.toasts = []; this.toastId = 1; this.log = [];
     this.uiVersion = 0;
     this.objectives = { wood:false, happy:false, pop:false, manor:false, happyStreak:0 };
     this.victory = false; this.winterWarned = false;
@@ -253,6 +253,9 @@ class GameState {
   toast(text       , kind="info"){
     this.toasts.push({ id:this.toastId++, text, t:Date.now(), kind });
     if(this.toasts.length>6) this.toasts.shift();
+    const t = this.time;
+    this.log.push({ id:this.toastId, text, kind, month:t.month, year:t.year });
+    if(this.log.length>120) this.log.splice(0, this.log.length-120);
     this.uiVersion++;
   }
 
@@ -998,6 +1001,7 @@ class GameState {
       treasury:this.treasury,
       taxRate:this.taxRate,
       objectives:this.objectives,
+      log:this.log,
       victory:this.victory,
       pendingEvent:this.pendingEvent,
       winterWarned:this.winterWarned,
@@ -1019,6 +1023,7 @@ class GameState {
     if(typeof data.treasury==="number") g.treasury = data.treasury;
     if(typeof data.taxRate==="number") g.taxRate = data.taxRate;
     if(data.objectives) g.objectives = data.objectives;
+    g.log = Array.isArray(data.log) ? data.log : [];
     g.victory = !!data.victory;
     g.pendingEvent = data.pendingEvent || null;
     g.winterWarned = !!data.winterWarned;
@@ -1032,4 +1037,9 @@ class GameState {
         g.occupied[(b.y+yy)*W+(b.x+xx)] = b.id;
     return g;
   }
+}
+
+if(typeof module!=="undefined" && module.exports){
+  module.exports = { GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, W, H,
+    T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf };
 }

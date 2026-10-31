@@ -247,7 +247,7 @@ function drawDeer(ctx                         , g          , d     ){
 function drawGame(
   ctx                         , g          , cam                                ,
   canvas                  , hover                                     ,
-  buildSel            , selId            
+  buildSel            , selId            , layers          
 ){
   const dpr = canvas.width/(canvas.clientWidth||1);
   const cw = canvas.width, ch = canvas.height;
@@ -266,6 +266,23 @@ function drawGame(
 
   // sol
   for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++) drawTile(ctx, g, x, y, pal);
+
+  // surtintes de filtres de carte (overlays)
+  if(layers){
+    ctx.globalAlpha=0.30;
+    for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){
+      const i=y*W+x, t=g.tiles[i];
+      if(layers.forest && t===T_FOREST){ ctx.fillStyle="#1d5a2a"; ctx.fillRect(x,y,1.02,1.02); }
+      else if(layers.stone && t===T_STONE){ ctx.fillStyle="#9aa0a8"; ctx.fillRect(x,y,1.02,1.02); }
+      else if(layers.berry && t===T_BERRY){ ctx.fillStyle="#8f3a7a"; ctx.fillRect(x,y,1.02,1.02); }
+      else if(layers.soil && t===T_GRASS){
+        const f=g.soil[i];
+        ctx.fillStyle = f>0.66?"#3ad44a":f>0.4?"#c8d43a":"#d47a3a";
+        ctx.fillRect(x,y,1.02,1.02);
+      }
+    }
+    ctx.globalAlpha=1;
+  }
 
   // surtinte fertilité en mode champ
   if(buildSel==="field"){

@@ -20,7 +20,8 @@ function centerCam(){
 }
 centerCam();
 
-var ui = { buildSel:null, selId:null, helpOpen:false, flash:null, taxDrag:false };
+var ui = { buildSel:null, selId:null, helpOpen:false, flash:null, taxDrag:false, logOpen:false,
+  layers:{ forest:false, stone:false, berry:false, soil:false } };
 function flash(msg){
   ui.flash = msg;
   if(ui._ft) clearTimeout(ui._ft);
@@ -200,6 +201,9 @@ document.addEventListener("click", function(e){
   else if(act==="resolve"){ game.resolveEvent(Number(arg)); }
   else if(act==="help"){ ui.helpOpen = true; }
   else if(act==="helpclose"){ ui.helpOpen = false; }
+  else if(act==="layer"){ ui.layers[arg] = !ui.layers[arg]; }
+  else if(act==="log"){ ui.logOpen = true; }
+  else if(act==="logclose"){ ui.logOpen = false; }
   else if(act==="noop"){ return; } /* clic à l'intérieur d'une modale : ne rien faire */
   else if(act==="new"){
     if(window.confirm && window.confirm("Recommencer une nouvelle partie ? La sauvegarde actuelle sera effacée.")){
@@ -260,6 +264,11 @@ function renderUI(){
   var speeds = [[0,"⏸"],[1,"▶"],[2,"⏩2"],[4,"⏩4"]];
   for(var si=0;si<speeds.length;si++)
     h += "<button class='btn"+(g.speed===speeds[si][0]?" on":"")+"' data-act='speed' data-arg='"+speeds[si][0]+"'>"+speeds[si][1]+"</button>";
+  h += "<button class='btn"+(ui.layers.forest?" on":"")+"' data-act='layer' data-arg='forest' title='For\u00eats'>\ud83c\udf32</button>";
+  h += "<button class='btn"+(ui.layers.stone?" on":"")+"' data-act='layer' data-arg='stone' title='Gisements de pierre'>\ud83e\dea8</button>";
+  h += "<button class='btn"+(ui.layers.berry?" on":"")+"' data-act='layer' data-arg='berry' title='Baies'>\ud83e\udfd0</button>";
+  h += "<button class='btn"+(ui.layers.soil?" on":"")+"' data-act='layer' data-arg='soil' title='Fertilit\u00e9 du sol'>\ud83c\udf3e</button>";
+  h += "<button class='btn' data-act='log' title='Journal des \u00e9v\u00e9nements'>\ud83d\udcdc</button>";
   h += "<button class='btn' data-act='saveCode' title='Code de sauvegarde'>💾</button>";
   h += "<button class='btn' data-act='loadCode' title='Charger un code'>📥</button>";
   h += "<button class='btn' data-act='help'>?</button>";
@@ -325,6 +334,20 @@ function renderUI(){
       var c = g.pendingEvent.choices[ci];
       o += "<button class='btn wide"+(c.disabled?" dis":"")+"' data-act='resolve' data-arg='"+ci+"'"+(c.disabled?" disabled":"")+">"+c.label+"</button>";
     }
+    o += "</div></div>";
+  }
+
+  if(ui.logOpen){
+    o += "<div class='modalwrap' data-act='logclose'><div class='modal big' data-act='noop'>";
+    o += "<b>\ud83d\udcdc Journal de la seigneurie</b>";
+    if(g.log.length===0) o += "<p class='dim'>Aucun \u00e9v\u00e9nement pour le moment.</p>";
+    else {
+      for(var li=g.log.length-1; li>=0; li--){
+        var le = g.log[li];
+        o += "<div class='"+(le.kind==="bad"?"bad":le.kind==="good"?"good":"dim")+"'>["+MONTHS[le.month]+" "+le.year+"] "+le.text+"</div>";
+      }
+    }
+    o += "<button class='btn wide' data-act='logclose'>Fermer</button>";
     o += "</div></div>";
   }
 
@@ -395,7 +418,7 @@ function loop(now){
   if(_saveAcc>5000){ _saveAcc = 0; persist(game); }
   _uiAcc += dt;
   if(_uiAcc>300){ _uiAcc = 0; renderUI(); }
-  drawGame(ctx, game, cam, canvas, hover, ui.buildSel, ui.selId);
+  drawGame(ctx, game, cam, canvas, hover, ui.buildSel, ui.selId, ui.layers);
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
