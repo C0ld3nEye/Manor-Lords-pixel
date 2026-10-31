@@ -1,0 +1,1473 @@
+
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="theme-color" content="#1b2434"/>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏰</text></svg>"/>
+<title>Seigneurie</title>
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+body {
+  font-family: ui-monospace, 'Courier New', monospace;
+  background: #141a26; color: #e8e4d8;
+  -webkit-user-select: none; user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+#app { display: flex; flex-direction: column; height: 100dvh; }
+#hud {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px;
+  background: #1b2434; border-bottom: 1px solid #2c3a52;
+  padding: 6px 8px; font-size: 12px; flex: 0 0 auto;
+}
+.ttl { font-weight: bold; letter-spacing: 1px; }
+.chip { background: #2c3a52; border-radius: 4px; padding: 2px 6px; white-space: nowrap; }
+.chip.small { background: #232f44; font-size: 11px; }
+.res { display: flex; flex-wrap: wrap; gap: 3px; }
+.spacer { flex: 1; }
+.btn {
+  background: #2c3a52; color: #e8e4d8; border: none; border-radius: 4px;
+  padding: 4px 8px; font-size: 12px; font-family: inherit; cursor: pointer;
+  min-height: 30px; min-width: 34px;
+}
+.btn.on { background: #4a6b3a; }
+.btn.danger { background: #5a3a3a; }
+.btn.wide { width: 100%; margin-top: 6px; }
+.btn.dis { color: #666; }
+#mapwrap { position: relative; flex: 1 1 auto; overflow: hidden; min-height: 0; }
+#cv {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  image-rendering: pixelated; touch-action: none; display: block;
+  cursor: crosshair;
+}
+#overlay { position: absolute; inset: 0; pointer-events: none; }
+#overlay .panel, #overlay .modalwrap { pointer-events: auto; }
+.panel {
+  position: absolute; background: #1b2434dd; border: 1px solid #2c3a52;
+  border-radius: 4px; padding: 8px; font-size: 11px; line-height: 1.5;
+  max-width: calc(100vw - 1rem);
+}
+#objpanel { left: 8px; top: 8px; }
+#selpanel { right: 8px; top: 8px; width: 232px; }
+.panel .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
+.desc { color: #a8b0c0; font-style: italic; margin-bottom: 6px; }
+.dim { color: #a8b0c0; }
+.good { color: #7bd88f; }
+.gold { color: #e8c35a; margin-top: 4px; }
+#taxSlider { width: 100%; }
+.toasts {
+  position: absolute; left: 50%; top: 8px; transform: translateX(-50%);
+  display: flex; flex-direction: column; gap: 4px; width: 300px; max-width: 92vw;
+}
+.toast { border-radius: 4px; padding: 4px 10px; text-align: center; font-size: 11px; background: #2c3a52dd; }
+.toast.good { background: #2f5a2fdd; }
+.toast.bad { background: #5a2f2fdd; }
+.flash {
+  position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+  background: #5a3a3a; color: #ffb0a0; border-radius: 4px; padding: 4px 10px; font-size: 11px;
+}
+.hint {
+  position: absolute; bottom: 34px; left: 50%; transform: translateX(-50%);
+  background: #2c3a52; border-radius: 4px; padding: 4px 10px; font-size: 11px; white-space: nowrap;
+}
+#tileinfo {
+  position: absolute; bottom: 8px; left: 8px; background: #1b2434dd;
+  border: 1px solid #2c3a52; border-radius: 4px; padding: 3px 8px;
+  font-size: 11px; pointer-events: none; max-width: 60%;
+}
+.modalwrap {
+  position: absolute; inset: 0; background: rgba(0,0,0,.6);
+  display: flex; align-items: center; justify-content: center; padding: 10px;
+}
+.modal {
+  background: #1b2434; border: 2px solid #4a5a3a; border-radius: 6px;
+  padding: 14px; width: 340px; max-width: 95vw; max-height: 85%;
+  overflow: auto; font-size: 12px; line-height: 1.6;
+}
+.modal p { margin: 6px 0; }
+.modal.big { width: 430px; }
+#buildbar {
+  display: flex; align-items: stretch; gap: 4px; overflow-x: auto;
+  background: #1b2434; border-top: 1px solid #2c3a52;
+  padding: 6px 8px; flex: 0 0 auto;
+}
+.bbtn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  flex: 0 0 auto; width: 88px; background: #232f44; color: #e8e4d8;
+  border: 1px solid #2c3a52; border-radius: 4px; padding: 4px 2px;
+  font-size: 10px; font-family: inherit; cursor: pointer;
+}
+.bbtn.on { border-color: #e8c35a; background: #3a4c6b; }
+.bbtn.off { background: #1a2130; color: #666; }
+.bicon { font-size: 16px; }
+.bcost { color: #a8b0c0; font-size: 9px; }
+.self { align-self: center; font-size: 10px; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hud"></div>
+  <div id="mapwrap">
+    <canvas id="cv"></canvas>
+    <div id="overlay"></div>
+    <div id="tileinfo"></div>
+  </div>
+  <div id="buildbar"></div>
+</div>
+<script>
+/* ================= SIMULATION (générée depuis le canvas Seigneurie) ================= */
+
+/* ============================================================
+   SEIGNEURIE — simulation médiévale (cœur pur, sans React)
+   1 tick = 0,1 jour. 10 ticks = 1 jour. 16 jours = 1 mois.
+   ============================================================ */
+
+const TICKS_PER_DAY = 10;
+const DAYS_PER_MONTH = 16;
+
+const W = 46;
+const H = 34;
+
+const T_GRASS = 0, T_FOREST = 1, T_BERRY = 2, T_STONE = 3, T_WATER = 4;
+
+const MONTHS = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
+const SEASONS = ["Hiver","Printemps","Été","Automne"];
+function seasonOf(m        ){ return Math.floor(((m + 1) % 12) / 3); }
+
+function mulberry32(a        ){
+  return function(){
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function hash2(x        , y        ){ return ((x * 73856093) ^ (y * 19349663)) >>> 0; }
+
+                                      
+
+                       
+                                         
+                       
+                                            
+              
+                  
+                                                                  
+                                                         
+               
+ 
+
+const BUILD_DEFS                              = {
+  burgage:   { id:"burgage",   name:"Bourgage",       icon:"🏠", w:1,h:1, cost:{timber:1}, fam:0, instant:true,  desc:"Loge une famille. Évolue si ses besoins sont satisfaits." },
+  woodcutter:{ id:"woodcutter",name:"Camp de bûcherons",icon:"🪓", w:1,h:1, cost:{timber:2}, fam:2, radius:6, instant:false, desc:"Abat les arbres à proximité : bois d'œuvre + bois de chauffe." },
+  forager:   { id:"forager",   name:"Cabane de cueilleuses", icon:"🍒", w:1,h:1, cost:{timber:2}, fam:2, radius:6, instant:false, desc:"Cueille des baies (mars → novembre)." },
+  hunter:    { id:"hunter",    name:"Camp de chasse",  icon:"🏹", w:1,h:1, cost:{timber:2}, fam:2, radius:10, instant:false, desc:"Chasse le gibier des forêts : viande, toute l'année." },
+  quarry:    { id:"quarry",    name:"Carrière",        icon:"🪨", w:1,h:1, cost:{timber:2}, fam:1, onStone:true, instant:false, desc:"À poser SUR un gisement de pierre. S'épuise avec le temps." },
+  farm:      { id:"farm",      name:"Ferme",           icon:"🚜", w:2,h:2, cost:{timber:3}, fam:2, instant:false, desc:"Travaille les champs : labour/semailles au printemps, moisson en septembre." },
+  field:     { id:"field",     name:"Champ",           icon:"🌾", w:4,h:4, cost:{}, fam:0, instant:true,  desc:"Gratuit. Rendement selon la fertilité du sol (visible en mode pose). Jachère conseillée." },
+  windmill:  { id:"windmill",  name:"Moulin",          icon:"💨", w:2,h:2, cost:{timber:2,stone:2}, fam:1, instant:false, desc:"Transforme le grain en pain (meilleur variété alimentaire)." },
+  granary:   { id:"granary",   name:"Grange",          icon:"🏚️", w:1,h:1, cost:{timber:2}, fam:0, instant:false, desc:"Réduit fortement le pourrissement des denrées." },
+  storehouse:{ id:"storehouse",name:"Entrepôt",        icon:"📦", w:1,h:1, cost:{timber:2}, fam:0, instant:false, desc:"+150 de capacité de stockage pour chaque ressource." },
+  market:    { id:"market",    name:"Marché",          icon:"⛺", w:2,h:2, cost:{timber:2}, fam:3, instant:false, desc:"Sans marché actif, vos familles n'ont accès qu'à un seul type de nourriture." },
+  church:    { id:"church",    name:"Église",          icon:"⛪", w:2,h:2, cost:{timber:2,stone:2}, fam:0, instant:false, desc:"+6 d'approbation. Requise pour les bourgages de niveau 3." },
+  manor:     { id:"manor",     name:"Manoir",          icon:"🏰", w:2,h:2, cost:{timber:4,stone:3}, fam:0, instant:false, desc:"Permet de lever l'impôt (curseur dans le panneau du manoir)." },
+};
+const BUILD_ORDER = ["burgage","woodcutter","forager","hunter","quarry","farm","field","windmill","granary","storehouse","market","church","manor"];
+
+const FOOD_TYPES = ["berries","meat","bread","eggs","veg"];
+const RES_ICONS                        = { timber:"🪵", firewood:"🔥", stone:"🪨", grain:"🌾", bread:"🍞", berries:"🍒", meat:"🍗", eggs:"🥚", veg:"🥕" };
+
+const SURNAMES = ["Aldéric","Baptiste","Colin","Eudes","Garlin","Hersende","Mahaut","Odon","Perrot","Raoulin","Sanceline","Thomasse","Ysoré","Gaultier","Béatrice","Manessier","Ferrant","Alips","Jourdaine","Nicaise"];
+
+                                                                                                                                       
+
+                    
+                                                                
+                                                   
+                                                 
+               
+ 
+
+                  
+                                                   
+                                      
+                                                        
+               
+                                                                               
+                                   
+                                                                   
+ 
+
+                                                                                  
+
+                                                                 
+                                                                                                                               
+
+const WORK_TIME                        = { chop:14, gather:14, hunt:12, mine:20 };
+
+class GameState {
+  seed       ; rnd           ;
+  tiles           ; treeWood             ; berryY             ; stoneAmt             ; soil             ;
+  occupied           ;
+  buildings           ; nextB       ;
+  families         ; nextF       ;
+  deer       ; nextD       ; deerTimer       ;
+  stock                      ;
+  capBase       ; capPer       ;
+  time                                                       ;
+  approval       ; treasury       ; taxRate       ;
+  pendingEvent                  ;
+  speed       ; toasts        ; toastId       ;
+  uiVersion       ;
+  objectives                                                                                ;
+  victory        ;
+  winterWarned        ;
+  mmRect                                                            ;
+
+  constructor(seed       ){
+    this.seed = seed; this.rnd = mulberry32(seed);
+    this.tiles = new Uint8Array(W*H);
+    this.treeWood = new Float32Array(W*H);
+    this.berryY = new Float32Array(W*H);
+    this.stoneAmt = new Float32Array(W*H);
+    this.soil = new Float32Array(W*H);
+    this.occupied = new Int32Array(W*H).fill(-1);
+    this.buildings = []; this.nextB = 1;
+    this.families = []; this.nextF = 1;
+    this.deer = []; this.nextD = 1; this.deerTimer = 0;
+    this.stock = { timber:15, firewood:8, stone:0, grain:0, bread:0, berries:25, meat:15, eggs:0, veg:0 };
+    this.capBase = 300; this.capPer = 150;
+    this.time = { tick:0, day:0, month:2, year:1176 }; // mars 1176
+    this.approval = 62; this.treasury = 0; this.taxRate = 0.15;
+    this.pendingEvent = null;
+    this.speed = 1; this.toasts = []; this.toastId = 1;
+    this.uiVersion = 0;
+    this.objectives = { wood:false, happy:false, pop:false, manor:false, happyStreak:0 };
+    this.victory = false; this.winterWarned = false;
+    this.mmRect = null;
+    this.genMap();
+    this.placeStart();
+  }
+
+  /* ---------- génération de la carte ---------- */
+  genMap(){
+    const r = this.rnd;
+    // fertilité du sol par bruit bilinéaire
+    const gw = 9, gh = 7;
+    const g             = [];
+    for(let y=0;y<gh;y++){ g.push([]); for(let x=0;x<gw;x++) g[y].push(0.25 + r()*0.75); }
+    for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+      const fx = x/W*(gw-1), fy = y/H*(gh-1);
+      const x0=Math.floor(fx), y0=Math.floor(fy), x1=Math.min(gw-1,x0+1), y1=Math.min(gh-1,y0+1);
+      const tx=fx-x0, ty=fy-y0;
+      const v = g[y0][x0]*(1-tx)*(1-ty) + g[y0][x1]*tx*(1-ty) + g[y1][x0]*(1-tx)*ty + g[y1][x1]*tx*ty;
+      this.soil[y*W+x] = v;
+    }
+    // clairière centrale (départ)
+    const cx = Math.floor(W/2), cy = Math.floor(H/2);
+    // forêts
+    const centers       = [];
+    for(let i=0;i<3;i++){
+      let fx=0, fy=0, tries=0;
+      do { fx = 3 + Math.floor(r()*(W-6)); fy = 3 + Math.floor(r()*(H-6)); tries++; }
+      while(tries<40 && Math.abs(fx-cx)<9 && Math.abs(fy-cy)<7);
+      centers.push({x:fx,y:fy});
+    }
+    for(const c of centers){
+      const rad = 3.5 + r()*2;
+      for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+        const d = Math.hypot(x-c.x, y-c.y);
+        if(d < rad && r() < 1 - d/(rad+1)){
+          const i = y*W+x;
+          this.tiles[i] = T_FOREST; this.treeWood[i] = 8;
+        }
+      }
+    }
+    // baies près des forêts
+    for(let k=0;k<2;k++){
+      const c = centers[k % centers.length];
+      const bx = Math.max(1,Math.min(W-2, c.x + (r()<0.5?-1:1)*(5+Math.floor(r()*3))));
+      const by = Math.max(1,Math.min(H-2, c.y + Math.floor(r()*5)-2));
+      for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+        if(Math.hypot(x-bx,y-by) < 2.6 && r()<0.8){
+          const i=y*W+x;
+          if(this.tiles[i]===T_GRASS){ this.tiles[i]=T_BERRY; this.berryY[i]=8; }
+        }
+      }
+    }
+    // gisements de pierre
+    for(let k=0;k<2;k++){
+      let sx=0, sy=0, tries=0;
+      do { sx=2+Math.floor(r()*(W-4)); sy=2+Math.floor(r()*(H-4)); tries++; }
+      while(tries<50 && (Math.abs(sx-cx)<10 && Math.abs(sy-cy)<8));
+      for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+        if(Math.hypot(x-sx,y-sy)<1.9 && r()<0.9){
+          const i=y*W+x;
+          if(this.tiles[i]===T_GRASS){ this.tiles[i]=T_STONE; this.stoneAmt[i]=260; }
+        }
+      }
+    }
+    // étang dans un coin
+    const px = r()<0.5 ? 3 : W-4, py = r()<0.5 ? 3 : H-4;
+    for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+      if(Math.hypot(x-px,y-py) < 2.4){ const i=y*W+x; this.tiles[i]=T_WATER; this.treeWood[i]=0; this.berryY[i]=0; }
+    }
+    // clairière de départ
+    for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+      if(Math.hypot(x-cx,y-cy) < 5){
+        const i=y*W+x;
+        if(this.tiles[i]!==T_WATER){ this.tiles[i]=T_GRASS; this.treeWood[i]=0; this.berryY[i]=0; }
+      }
+    }
+    // cerfs en lisière
+    for(let i=0;i<7;i++){
+      const c = centers[i % centers.length];
+      const dx = c.x + (r()<0.5?-1:1)*(4+Math.floor(r()*2));
+      const dy = Math.max(1,Math.min(H-2, c.y + Math.floor(r()*4)-2));
+      const tx = Math.max(1,Math.min(W-2,dx));
+      if(this.tiles[dy*W+tx]!==T_WATER && this.occupied[dy*W+tx]<0)
+        this.deer.push({ id:this.nextD++, x:tx+0.5, y:dy+0.5, path:null, frozen:false });
+    }
+  }
+
+  placeStart(){
+    const cx = Math.floor(W/2), cy = Math.floor(H/2);
+    const spots = [ {x:cx-2,y:cy-1}, {x:cx+1,y:cy-1}, {x:cx-2,y:cy+2} ];
+    for(const s of spots){
+      if(this.tiles[s.y*W+s.x]!==T_GRASS) continue;
+      const b = this.makeBuilding("burgage", s.x, s.y);
+      b.done = true; b.progress = 1;
+      const f = this.makeFamily();
+      f.home = b.id; f.x = s.x+0.5; f.y = s.y+0.5;
+    }
+    if(this.families.length===0){
+      const b = this.makeBuilding("burgage", cx, cy); b.done=true; b.progress=1;
+      const f = this.makeFamily(); f.home=b.id; f.x=cx+0.5; f.y=cy+0.5;
+    }
+  }
+
+  /* ---------- fabriques ---------- */
+  makeBuilding(def       , x       , y       )         {
+    const d = BUILD_DEFS[def];
+    const b          = { id:this.nextB++, def, x, y, w:d.w, h:d.h, done:false, progress:0, families:[], lvl:1, ext:null, monthsGood:0, f:null };
+    if(def==="field"){
+      let s=0; for(let yy=0;yy<d.h;yy++) for(let xx=0;xx<d.w;xx++) s += this.soil[(y+yy)*W+(x+xx)];
+      b.f = { fert: Math.min(1, s/(d.w*d.h)), plow:0, sown:false, growth:0, harvestP:0, usedThisYear:false, usedLastYear:false };
+    }
+    this.buildings.push(b);
+    for(let yy=0;yy<d.h;yy++) for(let xx=0;xx<d.w;xx++) this.occupied[(y+yy)*W+(x+xx)] = b.id;
+    return b;
+  }
+
+  makeFamily()       {
+    const f        = { id:this.nextF++, name:"Famille "+SURNAMES[Math.floor(this.rnd()*SURNAMES.length)], home:-1, work:-1,
+      x:0.5, y:H/2, path:null, state:"settle", timer:0, task:null, carry:null,
+      cool:0, starving:0, lastAte:2, lastVariety:1 };
+    this.families.push(f);
+    return f;
+  }
+
+  toast(text       , kind="info"){
+    this.toasts.push({ id:this.toastId++, text, t:Date.now(), kind });
+    if(this.toasts.length>6) this.toasts.shift();
+    this.uiVersion++;
+  }
+
+  /* ---------- utilitaires économie ---------- */
+  storehouseCount(){ return this.buildings.filter(b=>b.done && b.def==="storehouse").length; }
+  capFor(res       ){ return this.capBase + this.capPer*this.storehouseCount(); }
+  hasManor(){ return this.buildings.some(b=>b.done && b.def==="manor"); }
+  hasChurch(){ return this.buildings.some(b=>b.done && b.def==="church"); }
+  marketActive(){ return this.buildings.some(b=>b.done && b.def==="market" && b.families.length>0); }
+  freeBurgages(){ return this.buildings.filter(b=>b.done && b.def==="burgage" && !this.families.some(f=>f.home===b.id)).length; }
+  season(){ return seasonOf(this.time.month); }
+  berrySeason(){ const m=this.time.month; return m>=2 && m<=10; } // mars → novembre
+  unemployed(){ return this.families.filter(f=>f.work<0).length; }
+
+  canAfford(def       ){ const c=BUILD_DEFS[def].cost; return this.stock.timber>=(c.timber||0) && this.stock.stone>=(c.stone||0); }
+  costText(def       ){ const c=BUILD_DEFS[def].cost; const p         =[]; if(c.timber)p.push(c.timber+" 🪵"); if(c.stone)p.push(c.stone+" 🪨"); return p.length?p.join(" "):"Gratuit"; }
+
+  /* ---------- placement ---------- */
+  canPlace(def       , x       , y       )            {
+    const d = BUILD_DEFS[def];
+    if(x<0 || y<0 || x+d.w>W || y+d.h>H) return "Hors de la carte";
+    for(let yy=0;yy<d.h;yy++) for(let xx=0;xx<d.w;xx++){
+      const i=(y+yy)*W+(x+xx);
+      const t=this.tiles[i];
+      if(this.occupied[i]>=0) return "Emplacement occupé";
+      if(t===T_WATER) return "Impossible sur l'eau";
+      if(def==="quarry"){ if(t!==T_STONE) return "Doit être posé sur un gisement de pierre"; }
+      else { if(t!==T_GRASS) return "Terrain impropre (forêt, baies ou rocher)"; }
+    }
+    if(!this.canAfford(def)) return "Ressources insuffisantes";
+    return null;
+  }
+
+  place(def       , x       , y       )            {
+    const err = this.canPlace(def, x, y);
+    if(err) return err;
+    const d = BUILD_DEFS[def];
+    this.stock.timber -= (d.cost.timber||0);
+    this.stock.stone -= (d.cost.stone||0);
+    const b = this.makeBuilding(def, x, y);
+    if(d.instant || d.id==="field"){ b.done = true; b.progress = 1; }
+    this.uiVersion++;
+    return null;
+  }
+
+  demolish(id       ){
+    const idx = this.buildings.findIndex(b=>b.id===id);
+    if(idx<0) return;
+    const b = this.buildings[idx];
+    const d = BUILD_DEFS[b.def];
+    this.stock.timber += Math.floor((d.cost.timber||0)/2);
+    this.stock.stone += Math.floor((d.cost.stone||0)/2);
+    for(let yy=0;yy<b.h;yy++) for(let xx=0;xx<b.w;xx++) this.occupied[(b.y+yy)*W+(b.x+xx)] = -1;
+    for(const f of this.families){
+      if(f.work===b.id){ f.work=-1; f.task=null; f.path=null; f.state="idle"; f.carry=null; }
+      if(f.home===b.id) f.home = -1;
+    }
+    for(const o of this.buildings){ o.families = o.families.filter(fid=>this.families.some(ff=>ff.id===fid)); }
+    this.buildings.splice(idx,1);
+    this.toast(d.name+" démoli (moitié du coût remboursée)");
+  }
+
+  assign(bid       ){
+    const b = this.buildings.find(x=>x.id===bid); if(!b) return;
+    const d = BUILD_DEFS[b.def];
+    if(d.fam<=0) return;
+    if(b.families.length>=d.fam) return;
+    const f = this.families.find(f=>f.work<0); if(!f) return;
+    f.work = bid; b.families.push(f.id);
+    this.resetWorker(f);
+    this.uiVersion++;
+  }
+  unassign(bid       ){
+    const b = this.buildings.find(x=>x.id===bid); if(!b) return;
+    const fid = b.families.pop(); if(fid===undefined) return;
+    const f = this.families.find(f=>f.id===fid); if(!f) return;
+    f.work = -1; this.resetWorker(f);
+    this.uiVersion++;
+  }
+  resetWorker(f       ){ f.task=null; f.path=null; f.state="idle"; f.carry=null; f.timer=0; f.cool=0; }
+
+  setTax(v       ){ this.taxRate = Math.max(0, Math.min(1, v)); this.uiVersion++; }
+
+  buyExtension(bid       , ext       ){
+    const b = this.buildings.find(x=>x.id===bid); if(!b || b.def!=="burgage" || !b.done) return;
+    if(b.ext) return;
+    if(this.stock.timber<1){ this.toast("Il faut 1 🪵 pour cet agrandissement","bad"); return; }
+    this.stock.timber -= 1; b.ext = ext;
+    this.toast("Agrandissement ajouté au bourgage");
+    this.uiVersion++;
+  }
+
+  resolveEvent(choiceIndex       ){
+    const ev = this.pendingEvent; if(!ev) return;
+    const c = ev.choices[choiceIndex];
+    if(c.act==="pay"){ this.treasury -= (c.amount||0); this.toast("Le roi a reçu son dû. La paix est préservée.","good"); }
+    else if(c.act==="refuseTax"){ this.approval -= 12; const lost=this.stock.berries+this.stock.meat+this.stock.bread+this.stock.eggs+this.stock.veg;
+      for(const k of FOOD_TYPES) this.stock[k]=Math.floor(this.stock[k]*0.75); this.toast("Le bailli confisque une partie des récoltes !","bad"); }
+    else if(c.act==="payBandits"){ this.treasury -= (c.amount||0); this.toast("Les brigands s'éloignent, bourse plus légère.","good"); }
+    else if(c.act==="hideBandits"){ for(const k of ["berries","meat","bread","eggs","veg"]) this.stock[k]=Math.floor(this.stock[k]*0.8);
+      this.stock.timber=Math.floor(this.stock.timber*0.9); this.toast("Les brigands pillent la seigneurie et repartent.","bad"); }
+    this.pendingEvent = null;
+    this.approval = Math.max(0, Math.min(100, this.approval));
+    this.uiVersion++;
+  }
+
+  /* ---------- pathfinding ---------- */
+  passable(x       ,y       ){
+    if(x<0||y<0||x>=W||y>=H) return false;
+    const i=y*W+x;
+    return this.tiles[i]!==T_WATER && this.occupied[i]<0;
+  }
+  astar(sx       ,sy       ,tx       ,ty       )           {
+    if(sx===tx && sy===ty) return [];
+    const N=W*H;
+    const open         =[sy*W+sx];
+    const gS=new Float32Array(N).fill(Infinity); gS[sy*W+sx]=0;
+    const came=new Int32Array(N).fill(-1);
+    const inO=new Uint8Array(N); inO[sy*W+sx]=1;
+    let guard=0;
+    while(open.length>0 && guard++<2600){
+      let bi=0, bf=Infinity;
+      for(let i=0;i<open.length;i++){
+        const n=open[i]; const f=gS[n]+Math.abs((n%W)-tx)+Math.abs(((n/W)|0)-ty);
+        if(f<bf){ bf=f; bi=i; }
+      }
+      const cur=open[bi]; open[bi]=open[open.length-1]; open.pop(); inO[cur]=0;
+      const cxx=cur%W, cyy=(cur/W)|0;
+      if(cxx===tx && cyy===ty){
+        const path      =[]; let c=cur;
+        while(c!==-1 && c!==sy*W+sx){ path.push({x:(c%W)+0.5, y:((c/W)|0)+0.5}); c=came[c]; }
+        path.reverse(); return path;
+      }
+      const dirs=[1,-1,W,-W];
+      for(let k=0;k<4;k++){
+        const n=cur+dirs[k];
+        const nx=n%W, ny=(n/W)|0;
+        if(Math.abs(nx-cxx)+Math.abs(ny-cyy)!==1) continue;
+        if(nx<0||ny<0||nx>=W||ny>=H) continue;
+        if(!this.passable(nx,ny)) continue;
+        const ng=gS[cur]+1;
+        if(ng<gS[n]){ gS[n]=ng; came[n]=cur; if(!inO[n]){ inO[n]=1; open.push(n); } }
+      }
+    }
+    return null;
+  }
+  // trouve une case praticable adjacente au bâtiment (pour y travailler)
+  spotFor(b         , fx       , fy       )         {
+    let best         =null, bd=Infinity;
+    for(let r=1;r<=3;r++){
+      for(let yy=b.y-r; yy<=b.y+b.h-1+r; yy++){
+        for(let xx=b.x-r; xx<=b.x+b.w-1+r; xx++){
+          const edge = (xx===b.x-r||xx===b.x+b.w-1+r||yy===b.y-r||yy===b.y+b.h-1+r);
+          if(!edge) continue;
+          if(this.passable(xx,yy)){
+            const d=Math.hypot(xx-fx,yy-fy);
+            if(d<bd){ bd=d; best={x:xx,y:yy}; }
+          }
+        }
+      }
+      if(best) return best;
+    }
+    return null;
+  }
+  sendTo(f       , tx       , ty       , task                                                             )        {
+    const sx=Math.floor(f.x), sy=Math.floor(f.y);
+    let gx=tx, gy=ty;
+    if(!this.passable(tx,ty)){
+      const spot=this.spotFor({id:0,def:"burgage",x:tx,y:ty,w:1,h:1,done:true,progress:1,families:[],lvl:1,ext:null,monthsGood:0,f:null}, f.x, f.y);
+      if(!spot){ f.cool=30; return false; }
+      gx=spot.x; gy=spot.y;
+    }
+    if(sx===gx && sy===gy){ f.state="work"; f.timer=WORK_TIME[task.type]||15; f.task=task; return true; }
+    const p=this.astar(sx,sy,gx,gy);
+    if(!p){ f.cool=40; return false; }
+    f.path=p; f.state="walk"; f.task=task;
+    return true;
+  }
+  sendToBuilding(f       , b         , task                          )        {
+    const spot=this.spotFor(b, f.x, f.y);
+    if(!spot){ f.cool=30; return false; }
+    const sx=Math.floor(f.x), sy=Math.floor(f.y);
+    if(sx===spot.x && sy===spot.y){ f.state="work"; f.timer=WORK_TIME[task.type]||15; f.task=task; return true; }
+    const p=this.astar(sx,sy,spot.x,spot.y);
+    if(!p){ f.cool=40; return false; }
+    f.path=p; f.state="walk"; f.task=task;
+    return true;
+  }
+
+  moveAlong(f                    , path           , speed       )        {
+    if(!path || path.length===0) return true;
+    const wp=path[0];
+    const dx=wp.x-f.x, dy=wp.y-f.y;
+    const d=Math.hypot(dx,dy);
+    if(d<0.06){ path.shift(); if(path.length===0) return true; return false; }
+    const step=Math.min(speed,d);
+    f.x+=dx/d*step; f.y+=dy/d*step;
+    return false;
+  }
+
+  /* ---------- travail des familles ---------- */
+  findForestNear(b         )       {
+    let best=-1, bd=Infinity;
+    for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+      const i=y*W+x;
+      if(this.tiles[i]===T_FOREST && this.treeWood[i]>0){
+        const d=Math.hypot(x+0.5-(b.x+0.5), y+0.5-(b.y+0.5));
+        if(d<=(BUILD_DEFS.woodcutter.radius||5) && d<bd){ bd=d; best=i; }
+      }
+    }
+    return best;
+  }
+  findBerryNear(b         )       {
+    let best=-1, bd=Infinity;
+    for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+      const i=y*W+x;
+      if(this.tiles[i]===T_BERRY && this.berryY[i]>1){
+        const d=Math.hypot(x+0.5-(b.x+0.5), y+0.5-(b.y+0.5));
+        if(d<=(BUILD_DEFS.forager.radius||4) && d<bd){ bd=d; best=i; }
+      }
+    }
+    return best;
+  }
+  findDeerNear(b         )          {
+    let best          =null, bd=Infinity;
+    for(const d of this.deer){
+      if(d.frozen) continue;
+      const dist=Math.hypot(d.x-(b.x+0.5), d.y-(b.y+0.5));
+      if(dist<=(BUILD_DEFS.hunter.radius||9) && dist<bd){ bd=dist; best=d; }
+    }
+    return best;
+  }
+  fields(){ return this.buildings.filter(b=>b.done && b.def==="field" && b.f); }
+
+  assignTask(f       ){
+    if(f.cool>0){ f.cool--; return; }
+    const b = f.work>0 ? this.buildings.find(x=>x.id===f.work && x.done) : undefined;
+    const site = f.work>0 ? this.buildings.find(x=>x.id===f.work && !x.done) : undefined;
+
+    // chantier : les familles affectées à un bâtiment non terminé participent au chantier
+    if(site){ this.taskBuild(f, site); return; }
+    if(!b){
+      // journaliers : construisent le chantier le plus proche, sinon flânent
+      const sites = this.buildings.filter(s=>!s.done);
+      if(sites.length>0){
+        let nearest=sites[0], nd=Infinity;
+        for(const s of sites){ const d=Math.hypot(s.x-f.x,s.y-f.y); if(d<nd){nd=d;nearest=s;} }
+        this.taskBuild(f, nearest); return;
+      }
+      if(this.rnd()<0.3){ // flâner près de chez soi
+        const home = f.home>0 ? this.buildings.find(x=>x.id===f.home) : null;
+        const hx = home?home.x:W/2, hy = home?home.y:H/2;
+        const tx=Math.max(0,Math.min(W-1,Math.floor(hx+this.rnd()*5-2)));
+        const ty=Math.max(0,Math.min(H-1,Math.floor(hy+this.rnd()*5-2)));
+        if(this.passable(tx,ty)){
+          const p=this.astar(Math.floor(f.x),Math.floor(f.y),tx,ty);
+          if(p){ f.path=p; f.state="wander"; return; }
+        }
+        f.cool=20;
+      }
+      return;
+    }
+    const m=this.time.month;
+    switch(b.def){
+      case "woodcutter":{
+        if(this.stock.timber>=this.capFor("timber") && this.stock.firewood>=this.capFor("firewood")){ f.cool=30; return; }
+        const i=this.findForestNear(b);
+        if(i<0){ f.cool=50; return; }
+        if(!this.sendTo(f, i%W, (i/W)|0, {type:"chop", tx:i%W, ty:(i/W)|0})) return;
+        break;
+      }
+      case "forager":{
+        if(!this.berrySeason()){ f.cool=60; return; }
+        if(this.stock.berries>=this.capFor("berries")){ f.cool=30; return; }
+        const i=this.findBerryNear(b);
+        if(i<0){ f.cool=50; return; }
+        if(!this.sendTo(f, i%W, (i/W)|0, {type:"gather", tx:i%W, ty:(i/W)|0})) return;
+        break;
+      }
+      case "hunter":{
+        if(this.stock.meat>=this.capFor("meat")){ f.cool=30; return; }        const d=this.findDeerNear(b);
+        if(!d){ f.cool=60; return; }
+        d.frozen=true;
+        const ok=this.sendTo(f, Math.floor(d.x), Math.floor(d.y), {type:"hunt", deer:d.id});
+        if(!ok){ d.frozen=false; }
+        return;
+      }
+      case "quarry":{
+        if(this.stock.stone>=this.capFor("stone")){ f.cool=30; return; }
+        const i=b.y*W+b.x;
+        if(this.stoneAmt[i]<=0){ f.cool=80; return; }
+        if(!this.sendToBuilding(f, b, {type:"mine"})) return;
+        break;
+      }
+      case "farm":{
+        const fs=this.fields();
+        if(m===2 || m===3){ // mars-avril : labour + semailles
+          let target              =null, td=Infinity;
+          for(const fd of fs){ if(fd.f && fd.f.plow<1){ const d=Math.hypot(fd.x-f.x,fd.y-f.y); if(d<td){td=d;target=fd;} } }
+          if(target && target.f){ this.sendToBuilding(f, target, {type:"plow", bid:target.id}); return; }
+          f.cool=40; return;
+        }
+        if(m===8 || m===9){ // septembre-octobre : moisson
+          let target              =null, td=Infinity;
+          for(const fd of fs){ if(fd.f && fd.f.sown && fd.f.growth>0.85 && fd.f.harvestP<1){ const d=Math.hypot(fd.x-f.x,fd.y-f.y); if(d<td){td=d;target=fd;} } }
+          if(target && target.f){ this.sendToBuilding(f, target, {type:"harvest", bid:target.id}); return; }
+          f.cool=40; return;
+        }
+        f.cool=60; return;
+      }
+      case "windmill":{
+        if(this.stock.grain>0 && this.stock.bread<this.capFor("bread")){
+          this.sendToBuilding(f, b, {type:"mill"}); return;
+        }
+        f.cool=40; return;
+      }
+      case "market":{
+        this.sendToBuilding(f, b, {type:"stall"}); return;
+      }
+      default: f.cool=80; return;
+    }
+  }
+
+  taskBuild(f       , site         ){
+    const d=Math.hypot(site.x+site.w/2-f.x, site.y+site.h/2-f.y);
+    if(d<1.8){ f.state="work"; f.task={type:"build", bid:site.id}; return; }
+    this.sendToBuilding(f, site, {type:"build", bid:site.id});
+  }
+
+  stepFamily(f       ){
+    switch(f.state){
+      case "settle":
+        if(this.moveAlong(f, f.path, 0.25) || !f.path){ f.state="idle"; f.cool=0; f.path=null; }
+        break;
+      case "wander":
+        if(this.moveAlong(f, f.path, 0.18)){ f.state="idle"; f.cool=25; f.path=null; }
+        break;
+      case "walk":
+        if(this.moveAlong(f, f.path, 0.25)){
+          f.path=null;
+          const t=f.task;
+          if(!t){ f.state="idle"; break; }
+          if(t.type==="build"||t.type==="plow"||t.type==="harvest"||t.type==="mill"||t.type==="stall"){ f.state="work"; f.timer=0; }
+          else { f.state="work"; f.timer=WORK_TIME[t.type]||15; }
+        }
+        break;
+      case "work":
+        this.doWork(f);
+        break;
+      case "return":
+        if(this.moveAlong(f, f.path, 0.25)){
+          f.path=null;
+          this.deposit(f);
+          f.state="idle"; f.cool=2;
+        }
+        break;
+      case "idle":
+      default:
+        this.assignTask(f);
+        break;
+    }
+  }
+
+  doWork(f       ){
+    const t=f.task; if(!t){ f.state="idle"; return; }
+    const b = f.work>0 ? this.buildings.find(x=>x.id===f.work) : null;
+    switch(t.type){
+      case "chop":{
+        if(f.timer>0){ f.timer--; if(f.timer===0) this.finishWork(f); }
+        break;
+      }
+      case "gather": case "hunt": case "mine":{
+        if(f.timer>0){ f.timer--; if(f.timer===0) this.finishWork(f); }
+        break;
+      }
+      case "build":{
+        const site = t.bid!==undefined ? this.buildings.find(x=>x.id===t.bid) : null;
+        if(!site || site.done){ f.task=null; f.state="idle"; f.cool=5; break; }
+        site.progress += 0.0045;
+        if(site.progress>=1){
+          site.done=true; site.progress=1;
+          this.toast(BUILD_DEFS[site.def].name+" est achevé(e) !","good");
+          if(site.def==="manor") this.toast("Vous pouvez désormais lever l'impôt.","good");
+          f.task=null; f.state="idle"; f.cool=5;
+        }
+        break;
+      }
+      case "plow":{
+        const fd = t.bid!==undefined ? this.buildings.find(x=>x.id===t.bid) : null;
+        if(!fd || !fd.f){ f.task=null; f.state="idle"; break; }
+        if(this.time.month>3){ f.task=null; f.state="idle"; f.cool=10; break; }
+        fd.f.plow = Math.min(1, fd.f.plow + 0.005);
+        if(fd.f.plow>=1 && !fd.f.sown && this.time.month<=3){
+          fd.f.sown=true; fd.f.usedThisYear=true;
+          this.toast("Les semailles sont faites !","good");
+          f.task=null; f.state="idle"; f.cool=5;
+        } else if(fd.f.plow>=1){ f.task=null; f.state="idle"; f.cool=5; }
+        break;
+      }
+      case "harvest":{
+        const fd = t.bid!==undefined ? this.buildings.find(x=>x.id===t.bid) : null;
+        if(!fd || !fd.f || !fd.f.sown || (this.time.month!==8 && this.time.month!==9)){ f.task=null; f.state="idle"; f.cool=10; break; }
+        fd.f.harvestP = Math.min(1, fd.f.harvestP + 0.008);
+        if(fd.f.harvestP>=1){
+          const yieldQty = Math.round(fd.f.plow>=1 ? fd.w*fd.h*4*fd.f.fert*fd.f.growth : 0);
+          this.stock.grain = Math.min(this.capFor("grain"), this.stock.grain + yieldQty);
+          this.toast("Moisson : "+yieldQty+" 🌾","good");
+          fd.f.sown=false; fd.f.growth=0; fd.f.plow=0; fd.f.harvestP=0;
+          fd.f.fert = Math.max(0.2, fd.f.fert*0.85);
+          f.task=null; f.state="idle"; f.cool=5;
+        }
+        break;
+      }
+      case "mill":{
+        f.timer++;
+        if(f.timer>=12){
+          f.timer=0;
+          if(this.stock.grain>0 && this.stock.bread<this.capFor("bread")){
+            this.stock.grain--; this.stock.bread++;
+          } else { f.task=null; f.state="idle"; f.cool=20; }
+        }
+        break;
+      }
+      case "stall":{
+        // reste au marché, petit va-et-vient décoratif
+        f.timer++;
+        if(f.timer>200){ f.timer=0; }
+        break;
+      }
+    }
+  }
+
+  finishWork(f       ){
+    const t=f.task;
+    if(!t){ f.state="idle"; return; }
+    f.task=null;
+    const cap=(k       )=>this.capFor(k);
+    if(t.type==="chop" && t.tx!==undefined && t.ty!==undefined){
+      const i=t.ty*W+t.tx;
+      this.treeWood[i]-=2;
+      if(this.treeWood[i]<=0){ this.treeWood[i]=0; this.tiles[i]=T_GRASS; }
+      f.carry={ timber:3, firewood:3 };
+    } else if(t.type==="gather" && t.tx!==undefined && t.ty!==undefined){
+      const i=t.ty*W+t.tx;
+      this.berryY[i]=Math.max(0,this.berryY[i]-3);
+      f.carry={ berries:3 };
+    } else if(t.type==="hunt" && t.deer!==undefined){
+      const di=this.deer.findIndex(d=>d.id===t.deer);
+      if(di>=0){ this.deer.splice(di,1); this.deerTimer=300; }
+      f.carry={ meat:3 };
+    } else if(t.type==="mine"){
+      const b=f.work>0?this.buildings.find(x=>x.id===f.work):null;
+      if(b){ const i=b.y*W+b.x; this.stoneAmt[i]=Math.max(0,this.stoneAmt[i]-2);
+        if(this.stoneAmt[i]<=0) this.toast("La carrière est épuisée !","bad");
+      }
+      f.carry={ stone:2 };
+    }
+    // retour au bâtiment de travail pour déposer
+    const b=f.work>0?this.buildings.find(x=>x.id===f.work):null;
+    if(b && f.carry){
+      const spot=this.spotFor(b, f.x, f.y);
+      if(spot && (Math.floor(f.x)!==spot.x || Math.floor(f.y)!==spot.y)){
+        const p=this.astar(Math.floor(f.x),Math.floor(f.y),spot.x,spot.y);
+        if(p){ f.path=p; f.state="return"; return; }
+      }
+      this.deposit(f); f.state="idle"; f.cool=3;
+    } else {
+      f.state="idle"; f.cool=3;
+    }
+  }
+
+  deposit(f       ){
+    if(!f.carry) return;
+    for(const k in f.carry){
+      const cap=this.capFor(k);
+      const room=Math.max(0, cap-this.stock[k]);
+      this.stock[k]+=Math.min(room, f.carry[k]);
+    }
+    f.carry=null;
+  }
+
+  /* ---------- progression du temps ---------- */
+  step(){
+    const t=this.time;
+    t.tick++;
+    // croissance des cultures (mai → août)
+    if(t.month>=4 && t.month<=7){
+      for(const b of this.buildings){
+        if(b.done && b.def==="field" && b.f && b.f.sown && b.f.growth<1){
+          b.f.growth = Math.min(1, b.f.growth + 0.0016);
+        }
+      }
+    }
+    for(const f of this.families) this.stepFamily(f);
+    // cerfs
+    if(t.tick%6===0){
+      for(const d of this.deer){
+        if(d.frozen) continue;
+        if(this.rnd()<0.25 && (!d.path || d.path.length===0)){
+          const dirs=[[1,0],[-1,0],[0,1],[0,-1]];
+          const dd=dirs[Math.floor(this.rnd()*4)];
+          const nx=Math.floor(d.x)+dd[0], ny=Math.floor(d.y)+dd[1];
+          if(this.passable(nx,ny)) d.path=[{x:nx+0.5,y:ny+0.5}];
+        }
+        if(d.path && d.path.length>0) this.moveAlong(d, d.path, 0.06);
+      }
+      if(this.deerTimer>0){ this.deerTimer--; if(this.deerTimer<=0 && this.deer.length<7){
+        const cx=2+Math.floor(this.rnd()*(W-4)), cy=2+Math.floor(this.rnd()*(H-4));
+        if(this.passable(cx,cy)) this.deer.push({id:this.nextD++, x:cx+0.5, y:cy+0.5, path:null, frozen:false});
+      }}
+      // libère les cerfs dont le chasseur a disparu
+      if(t.tick%200===0){
+        const hunting=new Set        ();
+        for(const f of this.families) if(f.task && f.task.type==="hunt" && f.task.deer!==undefined && f.state!=="idle") hunting.add(f.task.deer);
+        for(const d of this.deer) if(d.frozen && !hunting.has(d.id)) d.frozen=false;
+      }
+    }
+    if(t.tick>=TICKS_PER_DAY){
+      t.tick=0; t.day++;
+      if(t.day>=DAYS_PER_MONTH){
+        t.day=0; t.month++;
+        if(t.month>11){ t.month=0; t.year++; this.onYear(); }
+        this.onMonth();
+      }
+    }
+  }
+
+  onYear(){
+    for(const b of this.fields()){
+      const f=b.f; if(!f) continue;
+      if(f.usedLastYear && !f.usedThisYear) f.fert=Math.min(1, f.fert+0.12); // jachère
+      f.usedLastYear=f.usedThisYear; f.usedThisYear=false;
+    }
+  }
+
+  onMonth(){
+    const m=this.time.month;
+    const winter=(seasonOf(m)===0);
+    // production des agrandissements
+    for(const b of this.buildings){
+      if(b.done && b.def==="burgage" && b.ext==="garden") this.stock.veg=Math.min(this.capFor("veg"), this.stock.veg+0.5);
+      if(b.done && b.def==="burgage" && b.ext==="chicken") this.stock.eggs=Math.min(this.capFor("eggs"), this.stock.eggs+0.5);
+    }
+    // repousse des baies et croissance lente des arbres non abattus
+    if(this.berrySeason()){
+      for(let i=0;i<W*H;i++) if(this.tiles[i]===T_BERRY) this.berryY[i]=Math.min(10, this.berryY[i]+0.18*DAYS_PER_MONTH);
+    }
+    for(let i=0;i<W*H;i++){
+      if(this.tiles[i]===T_FOREST && this.treeWood[i]>0 && this.treeWood[i]<8){
+        // croissance des arbres non abattus si un voisin est forestier
+        const x=i%W, y=(i/W)|0;
+        const near = (x>0&&this.tiles[i-1]===T_FOREST)||(x<W-1&&this.tiles[i+1]===T_FOREST)||(y>0&&this.tiles[i-W]===T_FOREST)||(y<H-1&&this.tiles[i+W]===T_FOREST);
+        if(near) this.treeWood[i]=Math.min(8, this.treeWood[i]+0.15);
+      }
+    }
+    // reforestation lente : de jeunes arbres repoussent en lisière
+    let planted=0;
+    for(let tries=0; tries<50 && planted<3; tries++){
+      const i=Math.floor(this.rnd()*W*H);
+      if(this.tiles[i]!==T_GRASS || this.occupied[i]>=0) continue;
+      const x=i%W, y=(i/W)|0;
+      let nf=0;
+      if(x>0&&this.tiles[i-1]===T_FOREST)nf++;
+      if(x<W-1&&this.tiles[i+1]===T_FOREST)nf++;
+      if(y>0&&this.tiles[i-W]===T_FOREST)nf++;
+      if(y<H-1&&this.tiles[i+W]===T_FOREST)nf++;
+      if(nf>=2){ this.tiles[i]=T_FOREST; this.treeWood[i]=3; planted++; }
+    }
+    // ----- consommation des foyers (1 nourriture + bois de chauffe par mois) -----
+    const market=this.marketActive();
+    const available=FOOD_TYPES.filter(k=>this.stock[k]>0.5);
+    const accessible=market?available:available.slice(0,1);
+    const varietyVillage=accessible.length; // variété offerte par le marché
+    let starved=0;
+    for(const f of this.families){
+      let need=1, ate=0, turn=0;
+      while(need>0 && accessible.length>0){
+        accessible.sort((a,b)=>this.stock[b]-this.stock[a]);
+        // on alterne les types pour la variété alimentaire (comme les étals d'un marché)
+        const k = (turn%2===1 && accessible.length>1) ? accessible[1] : accessible[0];
+        turn++;
+        if(this.stock[k]<1) break;
+        this.stock[k]-=1; ate++; need--;
+        if(this.stock[k]<1){ const ix=accessible.indexOf(k); if(ix>=0) accessible.splice(ix,1); }
+      }
+      f.lastAte=ate; f.lastVariety=varietyVillage;
+      if(ate===0){ f.starving++; starved++; } else f.starving=0;
+    }
+    // bois de chauffe
+    const fuelNeed=this.families.length*(winter?2:1);
+    const fuelGot=Math.min(this.stock.firewood, fuelNeed);
+    this.stock.firewood-=fuelGot;
+    const fuelRatio=fuelNeed>0?fuelGot/fuelNeed:1;
+    // pourrissement
+    const spoil=this.buildings.some(b=>b.done&&b.def==="granary")?0.03:0.10;
+    for(const k of FOOD_TYPES) this.stock[k]=Math.max(0,this.stock[k]*(1-spoil));
+    // approbation
+    let a=50;
+    if(varietyVillage>=3) a+=10; else if(varietyVillage===2) a+=4; else if(varietyVillage===1) a-=8; else a-=20;
+    if(fuelRatio>=1) a+=4; else if(fuelRatio>=0.5) a-=5; else a-=15;
+    if(this.hasChurch()) a+=6;
+    if(this.buildings.some(b=>b.done&&b.def==="market")) a+=2; else a-=4;
+    const homeless=this.families.filter(f=>f.home<0).length;
+    a-=Math.min(24, homeless*12);
+    a-=(this.taxRate-0.1)*40;
+    if(starved>0) a-=25;
+    this.approval=Math.max(0,Math.min(100,Math.round(a)));
+    if(this.approval>=50) this.objectives.happyStreak=(this.objectives.happyStreak||0)+1; else this.objectives.happyStreak=0;
+    if(this.approval>=50 && (this.objectives.happyStreak||0)>=3) this.objectives.happy=true;
+    // impôts
+    if(this.hasManor()){
+      let levels=0;
+      for(const b of this.buildings) if(b.done&&b.def==="burgage"&&this.families.some(f=>f.home===b.id)) levels+=[0,1,3,6][b.lvl];
+      this.treasury+=levels*this.taxRate;
+    }
+    // évolution des bourgages
+    for(const b of this.buildings){
+      if(b.def!=="burgage"||!b.done) continue;
+      const res=this.families.find(f=>f.home===b.id);
+      if(!res) continue;
+      const ok=res.lastAte>=1 && fuelRatio>=1 && market && varietyVillage>=2;
+      if(ok) b.monthsGood++; else b.monthsGood=0;
+      if(b.lvl===1 && b.monthsGood>=3 && this.stock.timber>=2){ this.stock.timber-=2; b.lvl=2; this.toast("Un bourgage évolue : niveau 2 !","good"); }
+      else if(b.lvl===2 && b.monthsGood>=3 && this.approval>=65 && this.hasChurch() && this.stock.timber>=2 && this.stock.stone>=2){
+        this.stock.timber-=2; this.stock.stone-=2; b.lvl=3; this.toast("Un bourgage évolue : niveau 3 ! Impôts accrus.","good");
+      }
+    }
+    // migration (personne ne s'installe dans un village au bord de la famine)
+    if(this.approval>=55){
+      const free=this.freeBurgages();
+      const foodTotal=FOOD_TYPES.reduce((s,k)=>s+this.stock[k],0);
+      const n=(this.approval>=75)?2:1;
+      for(let i=0;i<n && i<free;i++){
+        if(foodTotal < (this.families.length+i+1)*2.5) break;
+        const fb=this.buildings.find(bd=>bd.done&&bd.def==="burgage"&&!this.families.some(f=>f.home===bd.id));
+        if(!fb) break;
+        const f=this.makeFamily();
+        f.home=fb.id;
+        // point d'entrée praticable sur le bord ouest
+        let ey=Math.floor(H/2);
+        for(let y2=0;y2<H;y2++){ const yy=(Math.floor(H/2)+y2)%H; if(this.passable(0,yy)){ ey=yy; break; } }
+        f.x=0.5; f.y=ey+0.5;
+        const spot=this.spotFor(fb, f.x, f.y);
+        if(spot){
+          const p=this.astar(0,ey,spot.x,spot.y);
+          if(p && p.length>0){ f.path=p; f.state="settle"; }
+          else { f.x=spot.x+0.5; f.y=spot.y+0.5; f.state="idle"; }
+        } else { f.x=fb.x+0.5; f.y=fb.y+0.5; f.state="idle"; }
+        this.toast(f.name+" s'installe dans la seigneurie !","good");
+      }
+    }
+    if(this.approval<30 && this.families.length>1){
+      // les nouveaux arrivants repartent en premier (les souches fondatrices restent)
+      let f=this.families[0];
+      for(const c of this.families) if(c.id>f.id && c.id<100000) f=c;
+      const fid=f.id;
+      this.families=this.families.filter(x=>x.id!==fid);
+      for(const o of this.buildings) o.families=o.families.filter(id=>id!==fid);
+      this.toast(f.name+" quitte la seigneurie, déçue…","bad");
+    }
+    // objectifs
+    this.objectives.wood=this.objectives.wood||this.buildings.some(b=>b.done&&b.def==="woodcutter"&&b.families.length>0);
+    this.objectives.pop=this.objectives.pop||this.families.length>=10;
+    this.objectives.manor=this.objectives.manor||this.hasManor();
+    if(this.objectives.wood&&this.objectives.happy&&this.objectives.pop&&this.objectives.manor&&!this.victory){
+      this.victory=true;
+      this.toast("🏆 Votre seigneurie prospère ! Tous les objectifs sont accomplis.","good");
+    }
+    // avertissement hiver
+    if(m===9 && !this.winterWarned && this.stock.firewood<this.families.length*6){
+      this.winterWarned=true; this.toast("⚠️ Stockez du bois de chauffe avant l'hiver !","bad");
+    }
+    if(m===2) this.winterWarned=false;
+    // événements
+    if(m===10 && this.time.year>=1177){
+      const amount=Math.round(8+this.families.length*1.2+(this.time.year-1177)*2);
+      this.pendingEvent={ title:"L'impôt du roi",
+        text:"Un héraut du roi exige "+amount+" deniers pour la couronne. Le refroidissement de sa gratitude serait… regrettable.",
+        choices:[
+          { label:"Payer "+amount+" 🪙", act:"pay", amount, disabled:this.treasury<amount },
+          { label:"Refuser (approbation −12, récoltes confisquées)", act:"refuseTax" },
+        ]};
+    }
+    if(m===4 && this.time.year>=1177 && this.rnd()<0.55){
+      const amount=Math.max(8, Math.round(6+this.families.length*1.5));
+      this.pendingEvent={ title:"Des brigands en vue !",
+        text:"Une bande de brigands rôde autour de la seigneurie. Ils exigent "+amount+" deniers pour passer leur chemin.",
+        choices:[
+          { label:"Payer "+amount+" 🪙", act:"payBandits", amount, disabled:this.treasury<amount },
+          { label:"Refuser (ils pillent les réserves)", act:"hideBandits" },
+        ]};
+    }
+    this.uiVersion++;
+  }
+
+  /* ---------- interrogation pour l'UI ---------- */
+  buildingAt(tx       , ty       )              {
+    const id=this.occupied[ty*W+tx];
+    if(id<0) return null;
+    return this.buildings.find(b=>b.id===id) || null;
+  }
+  workStatus(b         )       {
+    const d=BUILD_DEFS[b.def];
+    if(!b.done) return "En construction ("+Math.round(b.progress*100)+" %)";
+    if(d.fam>0 && b.families.length===0) return "Aucune famille affectée";
+    switch(b.def){
+      case "woodcutter": return this.findForestNear(b)<0 ? "Plus d'arbres à portée" : "Abattage en cours";
+      case "forager": return !this.berrySeason() ? "Repos d'hiver" : (this.findBerryNear(b)<0 ? "Plus de baies à portée" : "Cueillette en cours");
+      case "hunter": return this.findDeerNear(b) ? "Chasse en cours" : "Aucun gibier à portée";
+      case "quarry": { const i=b.y*W+b.x; return this.stoneAmt[i]<=0 ? "Carrière épuisée" : "Extraction en cours"; }
+      case "farm": return "Ferme ("+this.fields().length+" champ(s))";
+      case "windmill": return this.stock.grain>0 ? "Mouture du grain" : "En attente de grain";
+      case "market": return b.families.length>0 ? "Étals tenus" : "Marché inactif";
+      default: return "";
+    }
+  }
+  tileName(tx       ,ty       )       {
+    const i=ty*W+tx;
+    switch(this.tiles[i]){
+      case T_FOREST: return "Forêt (bois restant : "+Math.round(this.treeWood[i])+")";
+      case T_BERRY: return "Baies : "+Math.round(this.berryY[i]);
+      case T_STONE: return "Pierre : "+Math.round(this.stoneAmt[i]);
+      case T_WATER: return "Étang";
+      default: return "Prairie · fertilité "+Math.round(this.soil[i]*100)+" %";
+    }
+  }
+
+  /* ---------- sauvegarde ---------- */
+  serialize(){
+    return {
+      v:1,
+      seed:this.seed,
+      tiles:Array.from(this.tiles),
+      treeWood:Array.from(this.treeWood),
+      berryY:Array.from(this.berryY),
+      stoneAmt:Array.from(this.stoneAmt),
+      buildings:this.buildings,
+      families:this.families,
+      deer:this.deer,
+      stock:this.stock,
+      time:this.time,
+      approval:this.approval,
+      treasury:this.treasury,
+      taxRate:this.taxRate,
+      objectives:this.objectives,
+      victory:this.victory,
+      pendingEvent:this.pendingEvent,
+      winterWarned:this.winterWarned,
+    };
+  }
+  static load(data    )          {
+    if(!data || typeof data.seed!=="number" || !data.tiles) throw new Error("sauvegarde invalide");
+    const g = new GameState(data.seed);
+    g.tiles = Uint8Array.from(data.tiles);
+    g.treeWood = Float32Array.from(data.treeWood);
+    g.berryY = Float32Array.from(data.berryY);
+    g.stoneAmt = Float32Array.from(data.stoneAmt);
+    g.buildings = data.buildings || [];
+    g.families = data.families || [];
+    g.deer = data.deer || [];
+    if(data.stock) g.stock = data.stock;
+    if(data.time) g.time = data.time;
+    if(typeof data.approval==="number") g.approval = data.approval;
+    if(typeof data.treasury==="number") g.treasury = data.treasury;
+    if(typeof data.taxRate==="number") g.taxRate = data.taxRate;
+    if(data.objectives) g.objectives = data.objectives;
+    g.victory = !!data.victory;
+    g.pendingEvent = data.pendingEvent || null;
+    g.winterWarned = !!data.winterWarned;
+    g.nextB = Math.max(0, ...g.buildings.map(b=>b.id)) + 1;
+    g.nextF = Math.max(0, ...g.families.map(f=>f.id)) + 1;
+    g.nextD = Math.max(0, ...g.deer.map(d=>d.id)) + 1;
+    // reconstruit l'occupation du sol à partir des bâtiments
+    g.occupied = new Int32Array(W*H).fill(-1);
+    for(const b of g.buildings)
+      for(let yy=0;yy<b.h;yy++) for(let xx=0;xx<b.w;xx++)
+        g.occupied[(b.y+yy)*W+(b.x+xx)] = b.id;
+    return g;
+  }
+}
+
+/* ================= RENDU PIXEL ================= */
+function seasonPalette(season       ){
+  switch(season){
+    case 0: return { grass:"#dfe4ea", grassD:"#c9d2da", treeA:"#4a6b52", treeB:"#3a5a44", trunk:"#5a4632", water:"#7aa0c4", wave:"#9ab8d4", berry:"#8a2a2a", soil:"#9aa4ae" };
+    case 1: return { grass:"#7cb342", grassD:"#6a9c3a", treeA:"#4e8f3a", treeB:"#3a732c", trunk:"#6a4a2a", water:"#3f6fae", wave:"#6b95c8", berry:"#c43a3a", soil:"#8a7a4e" };
+    case 2: return { grass:"#6aa84f", grassD:"#5a9440", treeA:"#3f7f33", treeB:"#2f6626", trunk:"#6a4a2a", water:"#3668a4", wave:"#6b95c8", berry:"#c43a3a", soil:"#8a7a4e" };
+    default: return { grass:"#a89a4e", grassD:"#948540", treeA:"#b0743a", treeB:"#965e2c", trunk:"#6a4a2a", water:"#3f6f9e", wave:"#6b95c8", berry:"#c43a3a", soil:"#8a7a4e" };
+  }
+}
+
+function px(ctx                         , x       , y       , w       , h       , c       ){
+  ctx.fillStyle=c; ctx.fillRect(x,y,w,h);
+}
+
+function drawTile(ctx                         , g          , x       , y       , pal                                 ){
+  const i=y*W+x;
+  const h=hash2(x,y);
+  const t=g.tiles[i];
+  const base = t===T_WATER ? pal.water : pal.grass;
+  px(ctx, x, y, 1.02, 1.02, base);
+  if(t===T_GRASS || t===T_FOREST || t===T_BERRY){
+    // touffes d'herbe
+    const n=2+ (h%3);
+    for(let k=0;k<n;k++){
+      const ox=((h>>(k*3))%10)/10, oy=((h>>(k*3+7))%10)/10;
+      px(ctx, x+ox*0.8, y+oy*0.8, 0.1, 0.12, pal.grassD);
+    }
+  }
+  if(t===T_WATER){
+    const w=Math.floor(g.time.tick/24);
+    if(((x*3+y*5+w)%7)===0) px(ctx, x+0.1, y+((x+y)%2===0?0.3:0.6), 0.5, 0.08, pal.wave);
+    return;
+  }
+  if(t===T_FOREST){
+    // tronc + houppier pixel
+    px(ctx, x+0.44, y+0.55, 0.12, 0.34, pal.trunk);
+    const big=(h%2)===0;
+    const cw=big?0.76:0.6, chh=big?0.52:0.42;
+    px(ctx, x+(1-cw)/2, y+0.18, cw, chh, pal.treeA);
+    px(ctx, x+(1-cw)/2+0.06, y+0.08, cw-0.12, 0.16, pal.treeB);
+    if(seasonOf(g.time.month)===0) px(ctx, x+(1-cw)/2+0.1, y+0.06, cw-0.2, 0.07, "#eef2f6");
+  }
+  if(t===T_BERRY){
+    px(ctx, x+0.15, y+0.28, 0.7, 0.5, pal.treeB);
+    px(ctx, x+0.25, y+0.2, 0.5, 0.18, pal.treeA);
+    const amount=g.berryY[i];
+    const inSeason=g.berrySeason();
+    if(inSeason && amount>0.5){
+      const dots = amount>4?3:amount>2?2:1;
+      const pos=[[0.3,0.5],[0.6,0.42],[0.45,0.68]];
+      for(let k=0;k<dots;k++) px(ctx, x+pos[k][0], y+pos[k][1], 0.09, 0.09, pal.berry);
+    }
+  }
+  if(t===T_STONE){
+    px(ctx, x+0.2, y+0.35, 0.6, 0.4, "#8a8f96");
+    px(ctx, x+0.3, y+0.22, 0.4, 0.2, "#9aa0a8");
+    px(ctx, x+0.38, y+0.3, 0.22, 0.14, "#b8bec6");
+  }
+}
+
+function drawBuilding(ctx                         , g          , b         ){
+  const {x,y,w,h}=b;
+  // ombre
+  ctx.fillStyle="rgba(0,0,0,0.18)";
+  ctx.fillRect(x+0.06, y+h-0.14, w-0.1, 0.14);
+  if(!b.done){
+    // chantier
+    px(ctx, x+0.1, y+0.3, 0.08, h-0.35, "#7a5a34");
+    px(ctx, x+w-0.18, y+0.3, 0.08, h-0.35, "#7a5a34");
+    px(ctx, x+0.1, y+0.3, w-0.2, 0.07, "#9a7a4a");
+    px(ctx, x+0.1, y+h*0.6, w-0.2, 0.07, "#9a7a4a");
+    // tas de matériaux
+    px(ctx, x+w*0.3, y+h-0.4, w*0.4, 0.22, "#6a4a2a");
+    // barre de progression
+    px(ctx, x-0.05, y-0.28, w+0.1, 0.12, "#222");
+    px(ctx, x-0.05, y-0.28, (w+0.1)*b.progress, 0.12, "#7bd88f");
+    return;
+  }
+  switch(b.def){
+    case "burgage":{
+      px(ctx, x+0.04, y+0.04, 0.92, 0.92, "#9c8a5a"); // cour
+      const hw=0.66, hh=0.5;
+      px(ctx, x+(1-hw)/2, y+0.12, hw, hh, "#c9b088"); // mur
+      const roof=b.lvl===1?"#a8823c":b.lvl===2?"#8a5138":"#55606e";
+      px(ctx, x+(1-hw)/2-0.04, y+0.04, hw+0.08, 0.2, roof);
+      px(ctx, x+(1-hw)/2+0.02, y+0.06, hw-0.04, 0.06, "#00000022");
+      px(ctx, x+0.5-0.05, y+0.38, 0.1, 0.24, "#5a4328"); // porte
+      if(b.lvl>=3) px(ctx, x+0.78, y+0.06, 0.06, 0.22, "#b03030"); // bannière
+      if(b.ext==="garden"){ for(let k=0;k<3;k++) px(ctx, x+0.1+k*0.14, y+0.78, 0.08, 0.14, "#4f8f3a"); }
+      if(b.ext==="chicken"){ px(ctx, x+0.72, y+0.76, 0.09, 0.09, "#f0ead8"); px(ctx, x+0.84, y+0.8, 0.07, 0.07, "#f0ead8"); }
+      break;
+    }
+    case "woodcutter":{
+      px(ctx, x+0.1, y+0.55, 0.8, 0.12, "#7a5a34");
+      px(ctx, x+0.2, y+0.45, 0.6, 0.1, "#8a6a3c");
+      px(ctx, x+0.28, y+0.35, 0.44, 0.1, "#9a7a4a");
+      px(ctx, x+0.6, y+0.1, 0.3, 0.26, "#c9b088");
+      px(ctx, x+0.56, y+0.04, 0.38, 0.1, "#6a4a2a");
+      break;
+    }
+    case "forager":{
+      px(ctx, x+0.22, y+0.2, 0.56, 0.5, "#8a6a3c");
+      px(ctx, x+0.18, y+0.12, 0.64, 0.12, "#5f8f3a");
+      px(ctx, x+0.66, y+0.72, 0.22, 0.2, "#b08a4a"); // panier
+      px(ctx, x+0.68, y+0.74, 0.18, 0.08, "#c43a3a");
+      break;
+    }
+    case "hunter":{
+      // tente
+      px(ctx, x+0.2, y+0.3, 0.6, 0.06, "#6a4a2a");
+      px(ctx, x+0.26, y+0.36, 0.48, 0.06, "#7a5a34");
+      px(ctx, x+0.32, y+0.42, 0.36, 0.06, "#8a6a4a");
+      px(ctx, x+0.38, y+0.48, 0.24, 0.06, "#9a7a5a");
+      px(ctx, x+0.42, y+0.54, 0.16, 0.3, "#6a4a2a"); // mât
+      px(ctx, x+0.86, y+0.66, 0.1, 0.3, "#8a8f96"); // pointe de flèche
+      break;
+    }
+    case "quarry":{
+      px(ctx, x+0.05, y+0.05, 0.9, 0.9, "#6f7276");
+      px(ctx, x+0.2, y+0.2, 0.6, 0.6, "#5a5d62");
+      px(ctx, x+0.3, y+0.3, 0.24, 0.24, "#8a8f96");
+      px(ctx, x+0.58, y+0.5, 0.18, 0.18, "#9aa0a8");
+      break;
+    }
+    case "farm":{
+      px(ctx, x+0.08, y+0.08, w-0.16, h-0.16, "#8a5138"); // mur
+      px(ctx, x+0.04, y+0.02, w-0.08, 0.24, "#5a3a26"); // toit
+      px(ctx, x+w/2-0.16, y+0.34, 0.32, h-0.44, "#5a3a26"); // grande porte
+      px(ctx, x+0.2, y+0.3, 0.1, 0.1, "#e8e4d8");
+      break;
+    }
+    case "field":{
+      const f=b.f; if(!f) break;
+      px(ctx, x+0.03, y+0.03, w-0.06, h-0.06, "#7a5230");
+      for(let r=0;r<h*2;r++) px(ctx, x+0.05, y+0.1+r*0.5, w-0.1, 0.06, "#6a4426"); // sillons
+      if(f.sown || f.growth>0){
+        const c = f.growth>0.85 ? "#d4a83a" : f.growth>0.4 ? "#7ba33c" : "#4f8f3a";
+        for(let r=0;r<h*2;r++){
+          const gh=Math.min(0.34, f.growth*0.34);
+          px(ctx, x+0.1, y+0.12+r*0.5, w-0.2, gh, c);
+        }
+      }
+      if(f.harvestP>0) px(ctx, x+w/2-0.3, y-0.24, 0.6, 0.1, "#d4a83a");
+      break;
+    }
+    case "windmill":{
+      px(ctx, x+w/2-0.28, y+0.2, 0.56, h-0.3, "#d8d4c8");
+      px(ctx, x+w/2-0.34, y+0.12, 0.68, 0.16, "#5a4a3a");
+      px(ctx, x+w/2-0.1, y+h-0.34, 0.2, 0.26, "#5a4328");
+      // ailes
+      const ang=g.time.tick*0.02;
+      ctx.save();
+      ctx.translate(x+w/2, y+0.2);
+      ctx.rotate(ang);
+      for(let k=0;k<4;k++){
+        ctx.rotate(Math.PI/2);
+        px(ctx, 0.04, -0.03, 0.72, 0.07, "#3a2f26");
+      }
+      ctx.restore();
+      break;
+    }
+    case "granary":{
+      px(ctx, x+0.15, y+0.3, 0.7, 0.5, "#b08a4a");
+      px(ctx, x+0.2, y+0.34, 0.24, 0.2, "#c2a86a");
+      px(ctx, x+0.5, y+0.38, 0.24, 0.2, "#c2a86a");
+      px(ctx, x+0.35, y+0.58, 0.24, 0.18, "#a8925a");
+      break;
+    }
+    case "storehouse":{
+      px(ctx, x+0.12, y+0.3, 0.76, 0.55, "#8a6a3c");
+      px(ctx, x+0.12, y+0.3, 0.76, 0.1, "#6a4a2a");
+      px(ctx, x+0.2, y+0.42, 0.28, 0.26, "#a8845a");
+      px(ctx, x+0.54, y+0.42, 0.28, 0.26, "#a8845a");
+      break;
+    }
+    case "market":{
+      // 3 étals rayés
+      for(let s=0;s<3;s++){
+        const sx2=x+0.1+s*((w-0.2)/3);
+        const sw=(w-0.2)/3-0.06;
+        px(ctx, sx2, y+0.55, sw, 0.14, "#8a6a3c"); // table
+        for(let r=0;r<Math.max(2,Math.floor(sw/0.14));r++){
+          px(ctx, sx2+r*0.14, y+0.2, Math.min(0.07,sw-r*0.14), 0.3, r%2===0?"#c94a3a":"#e8e4d8");
+        }
+      }
+      break;
+    }
+    case "church":{
+      px(ctx, x+0.1, y+0.34, w-0.2, h-0.4, "#d8d3c8");
+      px(ctx, x+0.06, y+0.16, w-0.12, 0.24, "#3f5a7a");
+      px(ctx, x+w/2-0.06, y+0.02, 0.12, 0.18, "#d8d3c8");
+      px(ctx, x+w/2-0.02, y-0.1, 0.04, 0.14, "#e8c35a");
+      px(ctx, x+w/2-0.05, y-0.06, 0.1, 0.04, "#e8c35a");
+      px(ctx, x+w/2-0.08, y+h-0.3, 0.16, 0.26, "#5a4328");
+      break;
+    }
+    case "manor":{
+      px(ctx, x+0.06, y+0.24, w-0.12, h-0.32, "#6a4a34");
+      px(ctx, x+0.02, y+0.1, w-0.04, 0.2, "#3a2f26");
+      for(let k=0;k<4;k++) px(ctx, x+0.1+k*(w/4.6), y+0.26, 0.05, h-0.36, "#3a2f26"); // colombages
+      px(ctx, x+w/2-0.14, y+h-0.36, 0.28, 0.3, "#4a3220");
+      px(ctx, x+w-0.22, y+0.14, 0.05, 0.4, "#8a8f96");
+      px(ctx, x+w-0.21, y+0.14, 0.16, 0.12, "#b03030"); // bannière
+      break;
+    }
+  }
+}
+
+const JOB_COLORS                        = {
+  laborer:"#8a8a7a", woodcutter:"#a05a2c", forager:"#5a8a3a", hunter:"#6a4a2a",
+  quarry:"#7a7a8a", farm:"#3a6a8a", windmill:"#6a5a9a", market:"#a88a3a",
+};
+
+function jobColor(g          , f       )       {
+  if(f.work<0) return JOB_COLORS.laborer;
+  const b=g.buildings.find(x=>x.id===f.work);
+  return (b && JOB_COLORS[b.def]) || JOB_COLORS.laborer;
+}
+
+function drawWorker(ctx                         , g          , f       ){
+  const moving = f.state==="walk" || f.state==="return" || f.state==="settle" || f.state==="wander";
+  const bob = moving ? Math.sin(g.time.tick*0.9+f.id)*0.03 : 0;
+  const x=f.x-0.16, y=f.y-0.42+bob;
+  ctx.fillStyle="rgba(0,0,0,0.2)";
+  ctx.fillRect(f.x-0.14, f.y-0.06, 0.28, 0.1);
+  px(ctx, x, y, 0.32, 0.34, jobColor(g,f));       // tunique
+  px(ctx, x+0.08, y-0.13, 0.16, 0.15, "#e8c39a"); // tête
+  px(ctx, x+0.1, y-0.17, 0.12, 0.06, "#5a4632");  // cheveux
+  px(ctx, x+0.05, y+0.34, 0.08, 0.1, "#3a2f26");   // jambes
+  px(ctx, x+0.19, y+0.34, 0.08, 0.1, "#3a2f26");
+  if(f.carry) px(ctx, x+0.2, y-0.08, 0.14, 0.12, "#b08a4a"); // hotte
+}
+
+function drawDeer(ctx                         , g          , d     ){
+  const bob=Math.sin(g.time.tick*0.5+d.id)*0.02;
+  const x=d.x-0.2, y=d.y-0.3+bob;
+  ctx.fillStyle="rgba(0,0,0,0.2)";
+  ctx.fillRect(d.x-0.18, d.y+0.02, 0.36, 0.08);
+  px(ctx, x, y, 0.4, 0.22, "#a8814e");
+  px(ctx, x+0.36, y-0.08, 0.14, 0.14, "#96703e");
+  px(ctx, x+0.4, y-0.16, 0.03, 0.1, "#d8c8a8");
+  px(ctx, x+0.44, y-0.16, 0.03, 0.1, "#d8c8a8");
+  px(ctx, x+0.06, y+0.22, 0.05, 0.12, "#7a5c34");
+  px(ctx, x+0.28, y+0.22, 0.05, 0.12, "#7a5c34");
+}
+
+function drawGame(
+  ctx                         , g          , cam                                ,
+  canvas                  , hover                                     ,
+  buildSel            , selId            
+){
+  const dpr = canvas.width/(canvas.clientWidth||1);
+  const cw = canvas.width, ch = canvas.height;
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.imageSmoothingEnabled = false;
+  px(ctx, 0, 0, cw, ch, "#141a26");
+  const z = cam.zoom;
+  const s = 16*z*dpr;
+  const halfW = (canvas.clientWidth||1)/2/(16*z);
+  const halfHh = (canvas.clientHeight||1)/2/(16*z);
+  ctx.setTransform(s, 0, 0, s, dpr*(canvas.clientWidth||1)/2 - cam.x*s, dpr*(canvas.clientHeight||1)/2 - cam.y*s);
+
+  const pal = seasonPalette(g.season());
+  const x0 = Math.max(0, Math.floor(cam.x-halfW)-1), x1 = Math.min(W-1, Math.ceil(cam.x+halfW)+1);
+  const y0 = Math.max(0, Math.floor(cam.y-halfHh)-1), y1 = Math.min(H-1, Math.ceil(cam.y+halfHh)+1);
+
+  // sol
+  for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++) drawTile(ctx, g, x, y, pal);
+
+  // surtinte fertilité en mode champ
+  if(buildSel==="field"){
+    ctx.globalAlpha=0.35;
+    for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){
+      const f=g.soil[y*W+x];
+      if(g.tiles[y*W+x]===T_GRASS){
+        ctx.fillStyle = f>0.66?"#3ad44a":f>0.4?"#c8d43a":"#d47a3a";
+        ctx.fillRect(x,y,1.02,1.02);
+        ctx.fillStyle="#141a26";
+        ctx.globalAlpha=1;
+        ctx.font="0.4px monospace";
+        ctx.fillText(String(Math.round(f*100)), x+0.1, y+0.65);
+        ctx.globalAlpha=0.35;
+      }
+    }
+    ctx.globalAlpha=1;
+  }
+
+  // grille en mode construction
+  if(buildSel){
+    ctx.globalAlpha=0.15;
+    ctx.strokeStyle="#000"; ctx.lineWidth=0.02;
+    for(let x=x0;x<=x1+1;x++){ ctx.beginPath(); ctx.moveTo(x,y0); ctx.lineTo(x,y1+1); ctx.stroke(); }
+    for(let y=y0;y<=y1+1;y++){ ctx.beginPath(); ctx.moveTo(x0,y); ctx.lineTo(x1+1,y); ctx.stroke(); }
+    ctx.globalAlpha=1;
+  }
+
+  // bâtiments (triés par y pour l'empilement)
+  const bs = [...g.buildings].sort((a,b)=>(a.y+a.h)-(b.y+b.h));
+  for(const b of bs) drawBuilding(ctx, g, b);
+
+  // cerfs
+  for(const d of g.deer) drawDeer(ctx, g, d);
+
+  // villageois
+  const fs = [...g.families].sort((a,b)=>a.y-b.y);
+  for(const f of fs) drawWorker(ctx, g, f);
+
+  // sélection
+  if(selId!=null){
+    const b=g.buildings.find(x=>x.id===selId);
+    if(b){
+      ctx.strokeStyle="#ffffff"; ctx.lineWidth=0.06;
+      ctx.strokeRect(b.x-0.06, b.y-0.06, b.w+0.12, b.h+0.12);
+      const d=BUILD_DEFS[b.def];
+      if(d.radius){
