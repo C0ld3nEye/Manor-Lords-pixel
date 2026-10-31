@@ -1,12 +1,12 @@
 # 🏰 Manor Lords Pixel — « Seigneurie »
 
-Un jeu de gestion médiévale en pixel-art, inspiré de Manor Lords. **Un seul fichier HTML, zéro dépendance, zéro serveur** — jouable hors-ligne sur téléphone.
+Un jeu de gestion médiévale en pixel-art, inspiré de Manor Lords. **Zéro dépendance, zéro serveur, zéro build** — du HTML/JS/CSS pur, jouable hors-ligne sur téléphone.
 
 ## 🎮 Jouer
 
 - **En ligne (recommandé sur mobile)** : activez GitHub Pages (voir ci-dessous) puis ouvrez
   `https://c0ld3eneye.github.io/manor-lords-pixel/`
-- **Hors-ligne** : téléchargez `index.html` et ouvrez-le dans n'importe quel navigateur (double-clic suffit).
+- **Hors-ligne** : bouton vert **Code → Download ZIP**, décompressez, puis ouvrez `index.html` dans n'importe quel navigateur (double-clic suffit).
 
 ## 📱 Installer comme une application
 
@@ -32,9 +32,13 @@ Un jeu de gestion médiévale en pixel-art, inspiré de Manor Lords. **Un seul f
 
 Vous arrivez en mars 1176 avec trois familles. Bûcherons, cueilleuses, chasseurs, agriculture, marché, moulin… Gardez vos foyers nourris (avec de la **variété**), chauffés (l'hiver double la consommation !) et logés pour faire grimper l'approbation, attirer de nouveaux colons et faire évoluer vos bourgages. Le roi exigera son impôt en novembre, des brigands rôdent en mai. Objectifs à remplir en haut à gauche ; la victoire couronne une seigneurie prospère.
 
-## 🛠️ Développement
+## 🛠️ Structure du projet
 
-- `index.html` — le jeu complet : simulation + rendu pixel-art + interface, en vanilla JS autonome.
-- Généré à partir d'une source de référence (application React, même simulation à l'identique), développée avec l'agent Vibe.
+- `index.html` — la page (interface, styles, disposition).
+- `js/sim.js` — la simulation (économie, familles, événements, sauvegarde).
+- `js/render.js` — le rendu pixel-art sur canvas (carte, bâtiments, minimap).
+- `js/app.js` — l'application mobile (entrées tactiles, interface, boucle de jeu).
+
+Le tout est du JavaScript lisible sans aucune bibliothèque. Développé avec l'agent Vibe ; la même simulation existe aussi en version React monofichier.
 
 Amusez-vous bien ! 🏰

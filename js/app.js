@@ -1,0 +1,405 @@
+/* ================= APPLICATION MOBILE ================= */
+/* ============ SEIGNEURIE — application mobile (vanilla JS) ============ */
+var SAVE_KEY = "seigneurie-save-v1";
+function persist(g){ try{ window.localStorage.setItem(SAVE_KEY, JSON.stringify(g.serialize())); }catch(e){} }
+function encodeSave(g){ try{ return btoa(unescape(encodeURIComponent(JSON.stringify(g.serialize())))); }catch(e){ return ""; } }
+function decodeSave(code){ try{ return GameState.load(JSON.parse(decodeURIComponent(escape(atob(code.trim()))))); }catch(e){ return null; } }
+
+/* ----- partie (restaurée depuis l'appareil si possible) ----- */
+var game = null;
+try{
+  var _raw = window.localStorage.getItem(SAVE_KEY);
+  if(_raw) game = GameState.load(JSON.parse(_raw));
+}catch(e){}
+if(!game) game = new GameState(Math.floor(Math.random()*2000000000));
+
+var cam = { x:0, y:0, zoom:1.6 };
+function centerCam(){
+  var b = game.buildings[0];
+  if(b){ cam.x = b.x + b.w/2; cam.y = b.y + b.h/2; }
+}
+centerCam();
+
+var ui = { buildSel:null, selId:null, helpOpen:false, flash:null, taxDrag:false };
+function flash(msg){
+  ui.flash = msg;
+  if(ui._ft) clearTimeout(ui._ft);
+  ui._ft = setTimeout(function(){ ui.flash = null; renderUI(); }, 1800);
+}
+
+/* ----- éléments ----- */
+var canvas = document.getElementById("cv");
+var wrap = document.getElementById("mapwrap");
+var hud = document.getElementById("hud");
+var overlay = document.getElementById("overlay");
+var buildbar = document.getElementById("buildbar");
+var tileinfo = document.getElementById("tileinfo");
+var ctx = canvas.getContext("2d");
+var dpr = Math.min(2, window.devicePixelRatio || 1);
+
+function resize(){
+  var r = wrap.getBoundingClientRect();
+  if(r.width<10 || r.height<10) return;
+  canvas.width = Math.floor(r.width*dpr);
+  canvas.height = Math.floor(r.height*dpr);
+  canvas.style.width = r.width+"px";
+  canvas.style.height = r.height+"px";
+}
+window.addEventListener("resize", resize);
+resize();
+
+/* ----- entrées : pointeurs (drag / pinch / clic / minimap) ----- */
+var pointers = new Map();
+var pinch = null;
+var drag = { down:false, sx:0, sy:0, cx:0, cy:0, moved:false };
+var keys = new Set();
+var hover = { tx:-1, ty:-1, inside:false };
+
+function toWorld(clientX, clientY){
+  var r = canvas.getBoundingClientRect();
+  var wx = cam.x + (clientX - r.left - r.width/2)/(16*cam.zoom);
+  var wy = cam.y + (clientY - r.top - r.height/2)/(16*cam.zoom);
+  return { wx:wx, wy:wy, tx:Math.floor(wx), ty:Math.floor(wy) };
+}
+
+canvas.addEventListener("pointerdown", function(e){
+  if(canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+  if(pointers.size===2){
+    var pts = [];
+    pointers.forEach(function(p){ pts.push(p); });
+    var dist = Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y);
+    var w = toWorld((pts[0].x+pts[1].x)/2, (pts[0].y+pts[1].y)/2);
+    pinch = { dist:dist, zoom:cam.zoom, wx:w.wx, wy:w.wy };
+    drag.down = false; drag.moved = true;
+    return;
+  }
+  drag.down = true; drag.moved = false;
+  drag.sx = e.clientX; drag.sy = e.clientY;
+  drag.cx = cam.x; drag.cy = cam.y;
+});
+
+canvas.addEventListener("pointermove", function(e){
+  if(pointers.has(e.pointerId)) pointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+  /* pincement : zoom à deux doigts */
+  if(pointers.size>=2 && pinch){
+    var pts2 = [];
+    pointers.forEach(function(p){ pts2.push(p); });
+    var dist2 = Math.hypot(pts2[0].x-pts2[1].x, pts2[0].y-pts2[1].y);
+    var z = Math.max(0.7, Math.min(4, pinch.zoom * dist2/Math.max(20, pinch.dist)));
+    cam.zoom = z;
+    var r = canvas.getBoundingClientRect();
+    var mx = (pts2[0].x+pts2[1].x)/2, my = (pts2[0].y+pts2[1].y)/2;
+    cam.x = Math.max(-4, Math.min(W+4, pinch.wx - (mx - r.left - r.width/2)/(16*z)));
+    cam.y = Math.max(-4, Math.min(H+4, pinch.wy - (my - r.top - r.height/2)/(16*z)));
+    return;
+  }
+  /* survol (titre de tuile, aperçu de pose) */
+  var w = toWorld(e.clientX, e.clientY);
+  var inside = w.tx>=0 && w.ty>=0 && w.tx<W && w.ty<H;
+  if(hover.tx!==w.tx || hover.ty!==w.ty || hover.inside!==inside){
+    hover.tx = w.tx; hover.ty = w.ty; hover.inside = inside;
+    if(inside && e.pointerType==="mouse"){
+      var hb = game.buildingAt(w.tx, w.ty);
+      tileinfo.textContent = hb ? BUILD_DEFS[hb.def].name+" — "+game.workStatus(hb) : game.tileName(w.tx, w.ty);
+    } else if(!inside){
+      tileinfo.textContent = "";
+    }
+  }
+  /* glissement : déplacement de la caméra */
+  if(drag.down){
+    var dx = e.clientX-drag.sx, dy = e.clientY-drag.sy;
+    if(Math.abs(dx)+Math.abs(dy)>7) drag.moved = true;
+    if(drag.moved){
+      var rr = canvas.getBoundingClientRect();
+      cam.x = Math.max(-4, Math.min(W+4, drag.cx - dx/(16*cam.zoom)));
+      cam.y = Math.max(-4, Math.min(H+4, drag.cy - dy/(16*cam.zoom)));
+    }
+  }
+});
+
+function endPointer(e){
+  pointers.delete(e.pointerId);
+  if(pointers.size<2) pinch = null;
+  drag.down = false;
+}
+
+canvas.addEventListener("pointerup", function(e){
+  endPointer(e);
+  if(drag.moved) return;
+  if(pointers.size>0) return;
+  /* clic sur la minimap : recentrage */
+  var mm = game.mmRect;
+  if(mm){
+    var r = canvas.getBoundingClientRect();
+    var px = e.clientX - r.left, py = e.clientY - r.top;
+    if(px>=mm.x-6 && px<=mm.x+mm.w+6 && py>=mm.y-6 && py<=mm.y+mm.h+6){
+      cam.x = Math.max(-4, Math.min(W+4, (px-mm.x)/mm.ppt));
+      cam.y = Math.max(-4, Math.min(H+4, (py-mm.y)/mm.ppt));
+      return;
+    }
+  }
+  /* clic : pose ou sélection */
+  var w = toWorld(e.clientX, e.clientY);
+  if(w.tx<0||w.ty<0||w.tx>=W||w.ty>=H) return;
+  if(ui.buildSel){
+    var err = game.place(ui.buildSel, w.tx, w.ty);
+    if(err) flash(err);
+    else if(ui.buildSel==="manor"||ui.buildSel==="church"||ui.buildSel==="windmill") ui.buildSel = null;
+  } else {
+    var b = game.buildingAt(w.tx, w.ty);
+    ui.selId = b ? b.id : null;
+  }
+  renderUI();
+});
+canvas.addEventListener("pointercancel", endPointer);
+canvas.addEventListener("wheel", function(e){
+  e.preventDefault();
+  var z = cam.zoom * (e.deltaY>0 ? 0.88 : 1.14);
+  cam.zoom = Math.max(0.7, Math.min(4, z));
+}, { passive:false });
+canvas.addEventListener("contextmenu", function(e){
+  e.preventDefault();
+  ui.buildSel = null; ui.selId = null;
+  renderUI();
+});
+
+/* ----- clavier : pause, vitesse, ZQSD/WASD/flèches ----- */
+window.addEventListener("keydown", function(e){
+  if(e.key===" "){ e.preventDefault(); game.speed = game.speed===0 ? 1 : 0; }
+  if(e.key==="Escape"){ ui.buildSel = null; ui.selId = null; ui.helpOpen = false; renderUI(); }
+  if(e.key==="1") game.speed = 1;
+  if(e.key==="2") game.speed = 2;
+  if(e.key==="3") game.speed = 4;
+  var k = e.key.toLowerCase();
+  if(["arrowup","arrowdown","arrowleft","arrowright","z","q","s","d","w","a"].indexOf(k)>=0){
+    e.preventDefault();
+    keys.add(k);
+  }
+});
+window.addEventListener("keyup", function(e){ keys.delete(e.key.toLowerCase()); });
+
+/* ----- clics UI (délégation) ----- */
+document.addEventListener("pointerdown", function(e){
+  if(e.target && e.target.id==="taxSlider") ui.taxDrag = true;
+});
+document.addEventListener("pointerup", function(){ ui.taxDrag = false; });
+
+document.addEventListener("click", function(e){
+  var el = e.target && e.target.closest ? e.target.closest("[data-act]") : null;
+  if(!el) return;
+  var act = el.getAttribute("data-act");
+  var arg = el.getAttribute("data-arg");
+  if(act==="speed"){ game.speed = Number(arg); }
+  else if(act==="build"){ ui.buildSel = (ui.buildSel===arg ? null : arg); ui.selId = null; }
+  else if(act==="selclose"){ ui.selId = null; }
+  else if(act==="assign"){ if(ui.selId!=null) game.assign(ui.selId); }
+  else if(act==="unassign"){ if(ui.selId!=null) game.unassign(ui.selId); }
+  else if(act==="ext"){ if(ui.selId!=null) game.buyExtension(ui.selId, arg); }
+  else if(act==="demolish"){ if(ui.selId!=null){ game.demolish(ui.selId); ui.selId = null; } }
+  else if(act==="resolve"){ game.resolveEvent(Number(arg)); }
+  else if(act==="help"){ ui.helpOpen = true; }
+  else if(act==="helpclose"){ ui.helpOpen = false; }
+  else if(act==="noop"){ return; } /* clic à l'intérieur d'une modale : ne rien faire */
+  else if(act==="new"){
+    if(window.confirm && window.confirm("Recommencer une nouvelle partie ? La sauvegarde actuelle sera effacée.")){
+      try{ window.localStorage.removeItem(SAVE_KEY); }catch(e2){}
+      game = new GameState(Math.floor(Math.random()*2000000000));
+      ui.selId = null; ui.buildSel = null;
+      centerCam();
+    }
+  }
+  else if(act==="saveCode"){
+    var code = encodeSave(game);
+    window.prompt("Votre code de sauvegarde — copiez-le :", code);
+  }
+  else if(act==="loadCode"){
+    var s = window.prompt("Collez un code de sauvegarde :");
+    if(s){
+      var ng = decodeSave(s);
+      if(ng){
+        game = ng; persist(game);
+        ui.selId = null; ui.buildSel = null;
+        centerCam();
+        flash("Partie chargée !");
+      } else flash("Code invalide.");
+    }
+  }
+  renderUI();
+});
+
+/* curseur d'impôt (le manoir sélectionné) */
+document.addEventListener("input", function(e){
+  if(e.target && e.target.id==="taxSlider"){
+    game.setTax(Number(e.target.value)/100);
+  }
+});
+
+/* ----- rendu de l'interface (toutes les ~300 ms) ----- */
+function renderUI(){
+  var g = game;
+  var season = g.season();
+  var seasonIcon = ["❄️","🌷","☀️","🍂"][season];
+  var apCol = g.approval>=60 ? "#7bd88f" : g.approval>=40 ? "#e8c35a" : "#e86a5a";
+  var homeless = g.families.filter(function(f){ return f.home<0; }).length;
+
+  /* barre du haut */
+  var h = "";
+  h += "<span class='ttl'>🏰 SEIGNEURIE</span>";
+  h += "<span class='chip'>"+MONTHS[g.time.month]+" "+g.time.year+" "+seasonIcon+"</span>";
+  h += "<span class='chip'>🪙 "+Math.floor(g.treasury)+"</span>";
+  h += "<span class='chip' style='color:"+apCol+"'>😊 "+g.approval+"%</span>";
+  h += "<span class='chip'>👨‍👩‍👧 "+g.families.length+(homeless>0 ? " (!"+homeless+")" : "")+"</span>";
+  h += "<div class='res'>";
+  var resList = [["timber",g.stock.timber],["firewood",g.stock.firewood],["stone",g.stock.stone],
+                 ["berries",g.stock.berries],["meat",g.stock.meat],["grain",g.stock.grain],
+                 ["bread",g.stock.bread],["eggs",g.stock.eggs],["veg",g.stock.veg]];
+  for(var ri=0;ri<resList.length;ri++) h += "<span class='chip small'>"+RES_ICONS[resList[ri][0]]+" "+Math.floor(resList[ri][1])+"</span>";
+  h += "</div>";
+  h += "<div class='spacer'></div>";
+  var speeds = [[0,"⏸"],[1,"▶"],[2,"⏩2"],[4,"⏩4"]];
+  for(var si=0;si<speeds.length;si++)
+    h += "<button class='btn"+(g.speed===speeds[si][0]?" on":"")+"' data-act='speed' data-arg='"+speeds[si][0]+"'>"+speeds[si][1]+"</button>";
+  h += "<button class='btn' data-act='saveCode' title='Code de sauvegarde'>💾</button>";
+  h += "<button class='btn' data-act='loadCode' title='Charger un code'>📥</button>";
+  h += "<button class='btn' data-act='help'>?</button>";
+  h += "<button class='btn danger' data-act='new' title='Nouvelle partie'>⟲</button>";
+  hud.innerHTML = h;
+
+  /* calque par-dessus la carte */
+  var o = "";
+  o += "<div class='panel' id='objpanel'>";
+  o += "<b>📜 Objectifs</b>";
+  o += "<div>"+(g.objectives.wood?"✅":"⬜")+" Bûcherons actifs</div>";
+  o += "<div>"+(g.objectives.happy?"✅":"⬜")+" Approbation ≥ 50 % (3 mois)</div>";
+  o += "<div>"+(g.objectives.pop?"✅":"⬜")+" 10 familles</div>";
+  o += "<div>"+(g.objectives.manor?"✅":"⬜")+" Un manoir</div>";
+  if(g.victory) o += "<div class='gold'>🏆 Seigneurie prospère !</div>";
+  o += "</div>";
+
+  var sel = ui.selId!=null ? g.buildings.find(function(b){ return b.id===ui.selId; }) : null;
+  if(sel){
+    var d = BUILD_DEFS[sel.def];
+    o += "<div class='panel' id='selpanel'>";
+    o += "<div class='row'><b>"+d.icon+" "+d.name+(sel.def==="burgage"?" (niv. "+sel.lvl+")":"")+"</b><button class='btn' data-act='selclose'>✕</button></div>";
+    o += "<div class='desc'>"+d.desc+"</div>";
+    o += "<div>"+g.workStatus(sel)+"</div>";
+    if(d.fam>0){
+      o += "<div class='row'>Familles : "+sel.families.length+"/"+d.fam+" ";
+      o += "<button class='btn' data-act='unassign'>−</button> ";
+      o += "<button class='btn' data-act='assign'>+</button>";
+      o += " <span class='dim'>oisifs : "+g.unemployed()+"</span></div>";
+    }
+    if(sel.def==="burgage"){
+      var fam = g.families.find(function(f){ return f.home===sel.id; });
+      o += "<div>"+(fam ? "Résidente : "+fam.name : "Vacante")+"</div>";
+      if(sel.monthsGood>0) o += "<div class='good'>Bilan positif : "+sel.monthsGood+" mois</div>";
+      if(!sel.ext && sel.done){
+        o += "<div class='row'>";
+        o += "<button class='btn' data-act='ext' data-arg='garden'>🥕 Potager (1 🪵)</button> ";
+        o += "<button class='btn' data-act='ext' data-arg='chicken'>🐔 Basse-cour (1 🪵)</button>";
+        o += "</div>";
+      }
+      if(sel.ext) o += "<div class='good'>Agrandissement : "+(sel.ext==="garden"?"🥕 Potager":"🐔 Basse-cour")+"</div>";
+    }
+    if(sel.def==="field" && sel.f){
+      o += "<div>Fertilité : "+Math.round(sel.f.fert*100)+" %</div>";
+      o += "<div>Labour : "+Math.round(sel.f.plow*100)+" %</div>";
+      o += "<div>"+(!sel.f.sown ? (sel.f.growth>0?"Mûr":"Jachère / en attente") : "Croissance : "+Math.round(sel.f.growth*100)+" %")+"</div>";
+      if(sel.f.harvestP>0) o += "<div>Moisson : "+Math.round(sel.f.harvestP*100)+" %</div>";
+    }
+    if(sel.def==="manor" && sel.done){
+      o += "<div>Taux d'imposition : "+Math.round(g.taxRate*100)+" %</div>";
+      o += "<input type='range' min='0' max='100' step='5' id='taxSlider' value='"+Math.round(g.taxRate*100)+"'/>";
+      o += "<div class='dim'>Au-delà de 10 %, l'approbation en pâtit.</div>";
+    }
+    o += "<button class='btn danger wide' data-act='demolish'>Démolir (½ remboursée)</button>";
+    o += "</div>";
+  }
+
+  if(g.pendingEvent){
+    o += "<div class='modalwrap'><div class='modal'>";
+    o += "<b>"+g.pendingEvent.title+"</b>";
+    o += "<p>"+g.pendingEvent.text+"</p>";
+    for(var ci=0;ci<g.pendingEvent.choices.length;ci++){
+      var c = g.pendingEvent.choices[ci];
+      o += "<button class='btn wide"+(c.disabled?" dis":"")+"' data-act='resolve' data-arg='"+ci+"'"+(c.disabled?" disabled":"")+">"+c.label+"</button>";
+    }
+    o += "</div></div>";
+  }
+
+  if(ui.helpOpen){
+    o += "<div class='modalwrap' data-act='helpclose'><div class='modal big' data-act='noop'>";
+    o += "<b>📚 Comment jouer</b>";
+    o += "<p><b>Boucle de base :</b> posez un <b>camp de bûcherons</b> près de la forêt et affectez-lui une famille (panneau du bâtiment, bouton +). Les journaliers (familles non affectées) construisent automatiquement les chantiers.</p>";
+    o += "<p><b>Nourrir :</b> cueilleuses (baies, mars→novembre) et chasseurs (viande). La <b>variété</b> alimentaire est la clé de l'approbation. Un <b>marché</b> actif est indispensable pour y donner accès.</p>";
+    o += "<p><b>Chauffage :</b> les bûcherons fournissent aussi du bois de chauffe. L'hiver, la consommation double — stockez avant décembre !</p>";
+    o += "<p><b>Agriculture :</b> champs gratuits (rendement selon la fertilité), labour au printemps, moisson en septembre. Le <b>moulin</b> transforme le grain en pain. Laissez un champ en jachère une année sur deux.</p>";
+    o += "<p><b>Croissance :</b> approbation ≥ 55 % + bourgage libre = nouvelle famille. Les bourgages évoluent (niveaux 2 et 3) quand leurs foyers sont nourris, chauffés et approvisionnés. Le <b>manoir</b> permet de lever l'impôt.</p>";
+    o += "<p><b>Événements :</b> le roi exigera son impôt en novembre, des brigands peuvent surgir en mai. Gérez votre trésorerie !</p>";
+    o += "<p><b>Commandes :</b> glisser = déplacer · pincer / molette = zoom · ZQSD ou flèches = caméra · Espace = pause · 1/2/3 = vitesse · appui long = annuler · tapez la <b>minimap</b> (en bas à droite) pour recentrer.</p>";
+    o += "<p><b>Sauvegarde :</b> automatique sur cet appareil. 💾 donne un code à copier, 📥 le recharge (n'importe quel appareil).</p>";
+    o += "<button class='btn wide' data-act='helpclose'>Compris !</button>";
+    o += "</div></div>";
+  }
+
+  var now = Date.now();
+  var toasts = g.toasts.filter(function(t){ return now-t.t<6500; });
+  if(toasts.length){
+    o += "<div class='toasts'>";
+    for(var ti=0;ti<toasts.length;ti++) o += "<div class='toast "+toasts[ti].kind+"'>"+toasts[ti].text+"</div>";
+    o += "</div>";
+  }
+  if(ui.flash) o += "<div class='flash'>"+ui.flash+"</div>";
+  if(ui.buildSel) o += "<div class='hint'>Posez : "+BUILD_DEFS[ui.buildSel].name+" — appui long pour annuler</div>";
+
+  if(!ui.taxDrag) overlay.innerHTML = o;
+
+  /* barre de construction (défilement horizontal) */
+  var bh = "";
+  for(var bi=0;bi<BUILD_ORDER.length;bi++){
+    var id = BUILD_ORDER[bi];
+    var dd = BUILD_DEFS[id];
+    var afford = g.canAfford(id);
+    bh += "<button class='bbtn"+(ui.buildSel===id?" on":"")+(afford?"":" off")+"' data-act='build' data-arg='"+id+"'>";
+    bh += "<span class='bicon'>"+dd.icon+"</span>";
+    bh += "<span>"+dd.name+"</span>";
+    bh += "<span class='bcost'>"+g.costText(id)+"</span>";
+    bh += "</button>";
+  }
+  bh += "<span class='dim self'>Journaliers : "+g.unemployed()+"</span>";
+  buildbar.innerHTML = bh;
+}
+renderUI();
+
+/* ----- boucle principale ----- */
+var _last = performance.now(), _acc = 0, _uiAcc = 0, _saveAcc = 0;
+function loop(now){
+  var dt = Math.min(200, now-_last); _last = now;
+  if(game.speed>0 && !game.pendingEvent){
+    _acc += dt*game.speed;
+    var n = Math.floor(_acc/100);
+    if(n>60){ n = 60; _acc = 0; } else _acc -= n*100;
+    for(var i=0;i<n;i++) game.step();
+  }
+  var sp = 14*dt/1000, pvx = 0, pvy = 0;
+  if(keys.has("arrowleft")||keys.has("q")||keys.has("a")) pvx -= sp;
+  if(keys.has("arrowright")||keys.has("d")) pvx += sp;
+  if(keys.has("arrowup")||keys.has("z")||keys.has("w")) pvy -= sp;
+  if(keys.has("arrowdown")||keys.has("s")) pvy += sp;
+  if(pvx||pvy){
+    cam.x = Math.max(-4, Math.min(W+4, cam.x+pvx));
+    cam.y = Math.max(-4, Math.min(H+4, cam.y+pvy));
+  }
+  _saveAcc += dt;
+  if(_saveAcc>5000){ _saveAcc = 0; persist(game); }
+  _uiAcc += dt;
+  if(_uiAcc>300){ _uiAcc = 0; renderUI(); }
+  drawGame(ctx, game, cam, canvas, hover, ui.buildSel, ui.selId);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* sauvegarde quand on quitte / cache l'application */
+document.addEventListener("visibilitychange", function(){ if(document.hidden) persist(game); });
+window.addEventListener("beforeunload", function(){ persist(game); });
