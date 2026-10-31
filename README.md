@@ -30,7 +30,7 @@ Un jeu de gestion médiévale en pixel-art, inspiré de Manor Lords. **Zéro dé
 
 ## 🧠 Le jeu
 
-Vous arrivez en mars 1176 avec trois familles. Bûcherons, cueilleuses, chasseurs, agriculture, marché, moulin… Gardez vos foyers nourris (avec de la **variété**), chauffés (l'hiver double la consommation !) et logés pour faire grimper l'approbation, attirer de nouveaux colons et faire évoluer vos bourgages. Les bourgages se dotent d'agrandissements de cour : potager, basse-cour, verger (récolte d'automne), rucher, et au niveau 2 atelier du tailleur (vêtements) et brasserie (ale, utile l'hiver). Le roi exigera son impôt en novembre, des brigands rôdent en mai. Objectifs à remplir en haut à gauche ; la victoire couronne une seigneurie prospère.
+Vous arrivez en mars 1176 avec trois familles. Bûcherons, cueilleuses, chasseurs, agriculture, marché, moulin… Gardez vos foyers nourris (avec de la **variété**), chauffés (l'hiver double la consommation !) et logés pour faire grimper l'approbation, attirer de nouveaux colons et faire évoluer vos bourgages. Les bourgages se dotent d'agrandissements de cour : potager, basse-cour, verger (récolte d'automne), rucher, et au niveau 2 atelier du tailleur (vêtements) et brasserie (ale, utile l'hiver). Champs de taille variable (3x3, 4x4, 6x6) avec rotation blé / orge / jachère, et bœufs ache tables (20 deniers) pour accélérer le labour. Le roi exigera son impôt en novembre, des brigands rôdent en mai. Objectifs à remplir en haut à gauche ; la victoire couronne une seigneurie prospère.
 
 ## 🛠️ Structure du projet
 

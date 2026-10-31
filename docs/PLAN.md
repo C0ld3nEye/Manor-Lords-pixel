@@ -81,7 +81,7 @@ Chaque étape est livrable et testable seule. Ordre conseillé = du plus fondame
 8. **Artisans de cour** (niveaux 2/3) : tailleur, forgeron, brasseur produisant des biens de consommation (vêtements, outils, ale) qui boostent l'approbation et les taxes.
 9. **Besoins enrichis** : vêtements, outils, mobilier en plus de nourriture/feu/logement, chacun avec impact sur l'approbation et le niveau de la maison.
 
-### 🌾 Phase 2 — Agriculture réaliste (semaines 7-9)
+### 🌾 Phase 2 — Agriculture réaliste (semaines 7-9) ✅ rotation blé/orge/jachère, bœufs, tailles variables livrés
 
 10. **Rotation des cultures** : blé / orge / jachère avec épuisement et restauration de fertilité ; choix de la culture par champ.
 11. **Bœufs et attelage** : achat de bœufs (coûteux), accélèrent labour et transport ; gestion d'écurie.
