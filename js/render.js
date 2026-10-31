@@ -139,7 +139,10 @@ function drawBuilding(ctx                         , g          , b         ){
       px(ctx, x+0.03, y+0.03, w-0.06, h-0.06, "#7a5230");
       for(let r=0;r<h*2;r++) px(ctx, x+0.05, y+0.1+r*0.5, w-0.1, 0.06, "#6a4426"); // sillons
       if(f.sown || f.growth>0){
-        const c = f.growth>0.85 ? "#d4a83a" : f.growth>0.4 ? "#7ba33c" : "#4f8f3a";
+        const base = f.crop==="barley" ? (f.growth>0.85 ? "#c8c05a" : f.growth>0.4 ? "#6b9a3c" : "#4a7a35")
+                   : f.crop==="fallow" ? "#7a6a4a"
+                   : (f.growth>0.85 ? "#d4a83a" : f.growth>0.4 ? "#7ba33c" : "#4f8f3a");
+        const c = base;
         for(let r=0;r<h*2;r++){
           const gh=Math.min(0.34, f.growth*0.34);
           px(ctx, x+0.1, y+0.12+r*0.5, w-0.2, gh, c);
@@ -349,12 +352,14 @@ function drawGame(
   // aperçu de construction
   if(buildSel && hover.inside){
     const d=BUILD_DEFS[buildSel];
+    const pw = d.uiSize ? g.fieldSize() : d.w;
+    const ph = d.uiSize ? g.fieldSize() : d.h;
     const err=g.canPlace(buildSel, hover.tx, hover.ty);
     ctx.globalAlpha=0.4;
-    px(ctx, hover.tx, hover.ty, d.w, d.h, err?"#e05a3a":"#4ae06a");
+    px(ctx, hover.tx, hover.ty, pw, ph, err?"#e05a3a":"#4ae06a");
     ctx.globalAlpha=1;
     ctx.strokeStyle=err?"#e05a3a":"#4ae06a"; ctx.lineWidth=0.06;
-    ctx.strokeRect(hover.tx, hover.ty, d.w, d.h);
+    ctx.strokeRect(hover.tx, hover.ty, pw, ph);
     if(d.radius){
       ctx.globalAlpha=0.4; ctx.strokeStyle="#e8c35a"; ctx.setLineDash([0.3,0.2]);
       ctx.beginPath();

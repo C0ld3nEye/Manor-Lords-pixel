@@ -2,7 +2,7 @@
 /* Tests de la simulation (Phase 0 du plan docs/PLAN.md).
    Lancer avec : node test/sim.test.js */
 const assert = require("assert");
-const { GameState, BUILD_DEFS, EXT_DEFS, EXT_ORDER, W, H, T_GRASS, T_FOREST, T_STONE, MONTHS, seasonOf } = require("../js/sim.js");
+const { GameState, BUILD_DEFS, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, W, H, T_GRASS, T_FOREST, T_STONE, MONTHS, seasonOf } = require("../js/sim.js");
 
 let passed = 0;
 function test(name, fn){
@@ -208,6 +208,77 @@ test("sauvegarde ancienne : ext simple migré en exts", () => {
   data.buildings[0].ext = "garden";
   const g2 = GameState.load(data);
   assert.deepStrictEqual(g2.buildings[0].exts, ["garden"]);
+});
+
+test("phase 2 : 3 cultures et 3 tailles de champ", () => {
+  assert.deepStrictEqual(CROP_ORDER, ["wheat","barley","fallow"]);
+  assert.ok(FIELD_SIZES.length===3);
+  assert.strictEqual(CROP_DEFS.wheat.yield, "grain");
+  assert.strictEqual(CROP_DEFS.barley.yield, "barley");
+  assert.strictEqual(CROP_DEFS.fallow.yield, null);
+});
+
+test("champ de taille variable : pose respecte la taille choisie", () => {
+  const g = fresh();
+  for(const n of [6, 4, 3]){
+    g.setFieldSize(n);
+    let done = false;
+    for(let y=1; y<H-n && !done; y++) for(let x=1; x<W-n && !done; x++){
+      if(g.place("field", x, y) === null){
+        const b = g.buildings[g.buildings.length-1];
+        assert.strictEqual(b.w, n);
+        assert.strictEqual(b.h, n);
+        assert.strictEqual(g.occupied[y*W+x], b.id);
+        done = true;
+      }
+    }
+    assert.ok(done, "champ " + n + "x" + n + " posé");
+  }
+});
+
+test("setCrop change la culture, refuse si champ en croissance", () => {
+  const g = fresh();
+  let b = null;
+  g.setFieldSize(3);
+  for(let y=1; y<H-3 && !b; y++) for(let x=1; x<W-3 && !b; x++)
+    if(g.place("field", x, y) === null) b = g.buildings[g.buildings.length-1];
+  assert.strictEqual(g.setCrop(b.id, "barley"), true);
+  assert.strictEqual(b.f.crop, "barley");
+  b.f.sown = true; b.f.growth = 0.5;
+  assert.strictEqual(g.setCrop(b.id, "wheat"), false);
+});
+
+test("boeufs : achat à 20 deniers, accélération du labour", () => {
+  const g = fresh();
+  g.treasury = 0;
+  assert.strictEqual(g.buyOx(), false);
+  g.treasury = 50;
+  assert.strictEqual(g.buyOx(), true);
+  assert.strictEqual(g.stock.ox, 1);
+  assert.strictEqual(g.treasury, 30);
+  assert.ok(g.oxSpeed() > 1);
+});
+
+test("brasserie consomme de l'orge pour produire de l'ale", () => {
+  const g = fresh();
+  const b = g.buildings.find(x => x.def === "burgage");
+  b.done = true; b.exts = ["brewer"];
+  g.stock.barley = 5; g.stock.ale = 0;
+  for(let i=0;i<160;i++) g.step();
+  assert.ok(g.stock.ale > 0, "ale produite");
+  assert.ok(g.stock.barley < 5, "orge consommée");
+});
+
+test("jachère restaure la fertilité en fin d'année", () => {
+  const g = fresh();
+  let b = null;
+  g.setFieldSize(3);
+  for(let y=1; y<H-3 && !b; y++) for(let x=1; x<W-3 && !b; x++)
+    if(g.place("field", x, y) === null) b = g.buildings[g.buildings.length-1];
+  g.setCrop(b.id, "fallow");
+  b.f.fert = 0.3; b.f.usedThisYear = false;
+  g.onYear();
+  assert.ok(b.f.fert > 0.3, "fertilité restaurée");
 });
 
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));

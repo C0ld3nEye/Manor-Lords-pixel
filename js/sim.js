@@ -68,7 +68,15 @@ const EXT_DEFS = {
   brewer:  { id:"brewer",  name:"Brasserie",          cost:{timber:2,stone:1},   lvl:2, desc:"Produit 1 chope d'ale par mois. Requiert niveau 2." },
 };
 const EXT_ORDER = ["garden","chicken","orchard","beehive","tailor","brewer"];
-const RES_ICONS                        = { timber:"🪵", firewood:"🔥", stone:"🪨", grain:"🌾", bread:"🍞", berries:"🍒", meat:"🍗", eggs:"🥚", veg:"🥕", apples:"🍎", honey:"🍯", clothes:"👕", ale:"🍺" };
+
+const CROP_DEFS = {
+  wheat:  { id:"wheat",  name:"Bl\u00e9",     icon:"\ud83c\udf3e", yield:"grain",  fertCost:0.20, desc:"Bl\u00e9 -> grain -> pain (moulin). \u00c9puise le sol." },
+  barley: { id:"barley", name:"Orge",     icon:"\ud83c\udf33", yield:"barley", fertCost:0.10, desc:"Orge -> brasserie -> ale. Moins \u00e9puisant." },
+  fallow: { id:"fallow", name:"Jach\u00e8re", icon:"\ud83d\udfe4", yield:null,   fertCost:-0.12, desc:"Repos du sol : fertilit\u00e9 restaur\u00e9e." },
+};
+const CROP_ORDER = ["wheat","barley","fallow"];
+const FIELD_SIZES = [3,4,6];
+const RES_ICONS                        = { timber:"🪵", firewood:"🔥", stone:"🪨", grain:"🌾", bread:"🍞", berries:"🍒", meat:"🍗", eggs:"🥚", veg:"🥕", apples:"🍎", honey:"🍯", clothes:"👕", ale:"🍺", barley:"🌾", ox:"🐂" };
 
 const SURNAMES = ["Aldéric","Baptiste","Colin","Eudes","Garlin","Hersende","Mahaut","Odon","Perrot","Raoulin","Sanceline","Thomasse","Ysoré","Gaultier","Béatrice","Manessier","Ferrant","Alips","Jourdaine","Nicaise"];
 
@@ -128,7 +136,7 @@ class GameState {
     this.buildings = []; this.nextB = 1;
     this.families = []; this.nextF = 1;
     this.deer = []; this.nextD = 1; this.deerTimer = 0;
-    this.stock = { timber:15, firewood:8, stone:0, grain:0, bread:0, berries:25, meat:15, eggs:0, veg:0, apples:0, honey:0, clothes:0, ale:0 };
+    this.stock = { timber:15, firewood:8, stone:0, grain:0, bread:0, berries:25, meat:15, eggs:0, veg:0, apples:0, honey:0, clothes:0, ale:0, barley:0, ox:0 };
     this.capBase = 300; this.capPer = 150;
     this.time = { tick:0, day:0, month:2, year:1176 }; // mars 1176
     this.approval = 62; this.treasury = 0; this.taxRate = 0.15;
@@ -245,7 +253,7 @@ class GameState {
     const b          = { id:this.nextB++, def, x, y, w:d.w, h:d.h, done:false, progress:0, families:[], lvl:1, exts:[], monthsGood:0, f:null };
     if(def==="field"){
       let s=0; for(let yy=0;yy<d.h;yy++) for(let xx=0;xx<d.w;xx++) s += this.soil[(y+yy)*W+(x+xx)];
-      b.f = { fert: Math.min(1, s/(d.w*d.h)), plow:0, sown:false, growth:0, harvestP:0, usedThisYear:false, usedLastYear:false };
+      b.f = { fert: Math.min(1, s/(d.w*d.h)), plow:0, sown:false, growth:0, harvestP:0, crop:"wheat", usedThisYear:false, usedLastYear:false };
     }
     this.buildings.push(b);
     for(let yy=0;yy<d.h;yy++) for(let xx=0;xx<d.w;xx++) this.occupied[(y+yy)*W+(x+xx)] = b.id;
@@ -284,10 +292,15 @@ class GameState {
   costText(def       ){ const c=BUILD_DEFS[def].cost; const p         =[]; if(c.timber)p.push(c.timber+" 🪵"); if(c.stone)p.push(c.stone+" 🪨"); return p.length?p.join(" "):"Gratuit"; }
 
   /* ---------- placement ---------- */
+  fieldSize(){ return (this._uiFieldSize||4); }
+  setFieldSize(n       ){ this._uiFieldSize = n; }
+
   canPlace(def       , x       , y       )            {
     const d = BUILD_DEFS[def];
-    if(x<0 || y<0 || x+d.w>W || y+d.h>H) return "Hors de la carte";
-    for(let yy=0;yy<d.h;yy++) for(let xx=0;xx<d.w;xx++){
+    const w = d.uiSize ? this.fieldSize() : d.w;
+    const h = d.uiSize ? this.fieldSize() : d.h;
+    if(x<0 || y<0 || x+w>W || y+h>H) return "Hors de la carte";
+    for(let yy=0;yy<h;yy++) for(let xx=0;xx<w;xx++){
       const i=(y+yy)*W+(x+xx);
       const t=this.tiles[i];
       if(this.occupied[i]>=0) return "Emplacement occupé";
@@ -306,6 +319,12 @@ class GameState {
     this.stock.timber -= (d.cost.timber||0);
     this.stock.stone -= (d.cost.stone||0);
     const b = this.makeBuilding(def, x, y);
+    if(def==="field"){
+      const n=this.fieldSize(); b.w=n; b.h=n;
+      for(let yy=0;yy<n;yy++) for(let xx=0;xx<n;xx++) this.occupied[(y+yy)*W+(x+xx)] = b.id;
+      let sf=0; for(let yy=0;yy<n;yy++) for(let xx=0;xx<n;xx++) sf += this.soil[(y+yy)*W+(x+xx)];
+      b.f.fert = Math.min(1, sf/(n*n));
+    }
     if(d.instant || d.id==="field"){ b.done = true; b.progress = 1; }
     this.uiVersion++;
     return null;
@@ -348,6 +367,21 @@ class GameState {
   resetWorker(f       ){ f.task=null; f.path=null; f.state="idle"; f.carry=null; f.timer=0; f.cool=0; }
 
   setTax(v       ){ this.taxRate = Math.max(0, Math.min(1, v)); this.uiVersion++; }
+
+  buyOx(){
+    if(this.treasury < 20){ this.toast("Il faut 20 deniers pour acheter un boeuf.","bad"); return false; }
+    this.treasury -= 20; this.stock.ox += 1;
+    this.toast("Un boeuf rejoint l'écurie ! Labour et transport accélérés.","good");
+    this.uiVersion++;
+    return true;
+  }
+  oxSpeed(){ return 1 + Math.min(3, this.stock.ox) * 0.6; }
+  setCrop(bid       , crop       ){
+    const b=this.buildings.find(x=>x.id===bid);
+    if(!b || b.def!=="field" || !CROP_DEFS[crop]) return false;
+    if(b.f && b.f.sown && b.f.growth>0) return false;
+    b.f.crop = crop; this.uiVersion++; return true;
+  }
 
   buyExtension(bid       , ext       ){
     const b = this.buildings.find(x=>x.id===bid); if(!b || b.def!=="burgage" || !b.done) return;
@@ -675,11 +709,12 @@ class GameState {
         if(!fd || !fd.f || !fd.f.sown || (this.time.month!==8 && this.time.month!==9)){ f.task=null; f.state="idle"; f.cool=10; break; }
         fd.f.harvestP = Math.min(1, fd.f.harvestP + 0.008);
         if(fd.f.harvestP>=1){
-          const yieldQty = Math.round(fd.f.plow>=1 ? fd.w*fd.h*4*fd.f.fert*fd.f.growth : 0);
-          this.stock.grain = Math.min(this.capFor("grain"), this.stock.grain + yieldQty);
-          this.toast("Moisson : "+yieldQty+" 🌾","good");
+          const cd = CROP_DEFS[fd.f.crop] || CROP_DEFS.wheat;
+          const yieldQty = Math.round(fd.w*fd.h*4*fd.f.fert*fd.f.growth);
+          if(cd.yield) this.stock[cd.yield] = Math.min(this.capFor(cd.yield), this.stock[cd.yield] + yieldQty);
+          this.toast("Moisson de "+cd.name.toLowerCase()+" : "+yieldQty+" "+(RES_ICONS[cd.yield]||""),"good");
           fd.f.sown=false; fd.f.growth=0; fd.f.plow=0; fd.f.harvestP=0;
-          fd.f.fert = Math.max(0.2, fd.f.fert*0.85);
+          fd.f.fert = Math.max(0.2, Math.min(1, fd.f.fert - cd.fertCost));
           f.task=null; f.state="idle"; f.cool=5;
         }
         break;
@@ -801,7 +836,7 @@ class GameState {
   onYear(){
     for(const b of this.fields()){
       const f=b.f; if(!f) continue;
-      if(f.usedLastYear && !f.usedThisYear) f.fert=Math.min(1, f.fert+0.12); // jachère
+      if(!f.usedThisYear) f.fert=Math.min(1, f.fert+0.12); // jachère (champ non semé cette année)
       f.usedLastYear=f.usedThisYear; f.usedThisYear=false;
     }
   }
@@ -820,7 +855,7 @@ class GameState {
         if(e==="orchard" && summer) this.stock.apples=Math.min(this.capFor("apples"), this.stock.apples+1);
         if(e==="beehive" && beeSeason) this.stock.honey=Math.min(this.capFor("honey"), this.stock.honey+0.5);
         if(e==="tailor")  this.stock.clothes=Math.min(this.capFor("clothes"), this.stock.clothes+1);
-        if(e==="brewer")  this.stock.ale=Math.min(this.capFor("ale"), this.stock.ale+1);
+        if(e==="brewer"){ if(this.stock.barley>=1){ this.stock.barley-=1; this.stock.ale=Math.min(this.capFor("ale"), this.stock.ale+1); } }
       }
     }
     // repousse des baies et croissance lente des arbres non abattus
@@ -1089,6 +1124,6 @@ class GameState {
 }
 
 if(typeof module!=="undefined" && module.exports){
-  module.exports = { GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, RES_ICONS, W, H,
+  module.exports = { GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
     T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf };
 }

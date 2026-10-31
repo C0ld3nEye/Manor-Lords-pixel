@@ -201,6 +201,9 @@ document.addEventListener("click", function(e){
   else if(act==="resolve"){ game.resolveEvent(Number(arg)); }
   else if(act==="help"){ ui.helpOpen = true; }
   else if(act==="helpclose"){ ui.helpOpen = false; }
+  else if(act==="buyox"){ game.buyOx(); }
+  else if(act==="crop"){ if(ui.selId!=null) game.setCrop(ui.selId, arg); }
+  else if(act==="fieldsize"){ game.setFieldSize(Number(arg)); }
   else if(act==="layer"){ ui.layers[arg] = !ui.layers[arg]; }
   else if(act==="log"){ ui.logOpen = true; }
   else if(act==="logclose"){ ui.logOpen = false; }
@@ -259,7 +262,7 @@ function renderUI(){
                  ["berries",g.stock.berries],["meat",g.stock.meat],["grain",g.stock.grain],
                  ["bread",g.stock.bread],["eggs",g.stock.eggs],["veg",g.stock.veg],
                  ["apples",g.stock.apples],["honey",g.stock.honey],
-                 ["clothes",g.stock.clothes],["ale",g.stock.ale]];
+                 ["clothes",g.stock.clothes],["ale",g.stock.ale],["barley",g.stock.barley],["ox",g.stock.ox]];
   for(var ri=0;ri<resList.length;ri++) h += "<span class='chip small'>"+RES_ICONS[resList[ri][0]]+" "+Math.floor(resList[ri][1])+"</span>";
   h += "</div>";
   h += "<div class='spacer'></div>";
@@ -270,6 +273,7 @@ function renderUI(){
   h += "<button class='btn"+(ui.layers.stone?" on":"")+"' data-act='layer' data-arg='stone' title='Gisements de pierre'>\ud83e\dea8</button>";
   h += "<button class='btn"+(ui.layers.berry?" on":"")+"' data-act='layer' data-arg='berry' title='Baies'>\ud83e\udfd0</button>";
   h += "<button class='btn"+(ui.layers.soil?" on":"")+"' data-act='layer' data-arg='soil' title='Fertilit\u00e9 du sol'>\ud83c\udf3e</button>";
+  h += "<button class='btn' data-act='buyox' title='Acheter un boeuf (20 deniers)'>🐂+</button>";
   h += "<button class='btn' data-act='log' title='Journal des \u00e9v\u00e9nements'>\ud83d\udcdc</button>";
   h += "<button class='btn' data-act='saveCode' title='Code de sauvegarde'>💾</button>";
   h += "<button class='btn' data-act='loadCode' title='Charger un code'>📥</button>";
@@ -318,6 +322,13 @@ function renderUI(){
       }
     }
     if(sel.def==="field" && sel.f){
+      o += "<div>Taille : "+sel.w+"x"+sel.h+" · Culture : <b>"+CROP_DEFS[sel.f.crop].name+"</b></div>";
+      o += "<div class='row'>";
+      for(var ci=0; ci<CROP_ORDER.length; ci++){
+        var cd = CROP_DEFS[CROP_ORDER[ci]];
+        o += "<button class='btn"+(sel.f.crop===cd.id?" on":"")+"' data-act='crop' data-arg='"+cd.id+"' title='"+cd.desc+"'>"+cd.name+"</button>";
+      }
+      o += "</div>";
       o += "<div>Fertilité : "+Math.round(sel.f.fert*100)+" %</div>";
       o += "<div>Labour : "+Math.round(sel.f.plow*100)+" %</div>";
       o += "<div>"+(!sel.f.sown ? (sel.f.growth>0?"Mûr":"Jachère / en attente") : "Croissance : "+Math.round(sel.f.growth*100)+" %")+"</div>";
@@ -380,7 +391,16 @@ function renderUI(){
     o += "</div>";
   }
   if(ui.flash) o += "<div class='flash'>"+ui.flash+"</div>";
-  if(ui.buildSel) o += "<div class='hint'>Posez : "+BUILD_DEFS[ui.buildSel].name+" — appui long pour annuler</div>";
+  if(ui.buildSel){
+    o += "<div class='hint'>Posez : "+BUILD_DEFS[ui.buildSel].name+" — appui long pour annuler";
+    if(BUILD_DEFS[ui.buildSel].uiSize){
+      o += " · Taille : ";
+      for(var si=0; si<FIELD_SIZES.length; si++){
+        o += "<button class='btn"+(game.fieldSize()===FIELD_SIZES[si]?" on":"")+"' data-act='fieldsize' data-arg='"+FIELD_SIZES[si]+"'>"+FIELD_SIZES[si]+"x"+FIELD_SIZES[si]+"</button>";
+      }
+    }
+    o += "</div>";
+  }
 
   if(!ui.taxDrag) overlay.innerHTML = o;
 
