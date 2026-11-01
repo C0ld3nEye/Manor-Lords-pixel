@@ -1,17 +1,25 @@
 /* ================= APPLICATION MOBILE ================= */
 /* ============ SEIGNEURIE — application mobile (vanilla JS) ============ */
-var SAVE_KEY = "seigneurie-save-v1";
-function persist(g){ try{ window.localStorage.setItem(SAVE_KEY, JSON.stringify(g.serialize())); }catch(e){} }
+var SAVE_SLOTS = ["seigneurie-save-v2-1","seigneurie-save-v2-2","seigneurie-save-v2-3"];
+var SAVE_KEY = SAVE_SLOTS[0];
+var activeSlot = 0;
+function persist(g){ try{ window.localStorage.setItem(SAVE_SLOTS[activeSlot], JSON.stringify(g.serialize())); }catch(e){} }
+function persistSlot(g, i){ try{ window.localStorage.setItem(SAVE_SLOTS[i], JSON.stringify(g.serialize())); }catch(e){} }
+function loadSlot(i){ try{ var r=window.localStorage.getItem(SAVE_SLOTS[i]); return r?GameState.load(JSON.parse(r)):null; }catch(e){ return null; } }
+function slotInfo(i){ var g=loadSlot(i); return g?{mode:g.mode().name, diff:g.diff().name, date:g.time.month+"/"+g.time.year, pop:g.families.length, victory:g.victory, defeat:g.defeat}:null; }
 function encodeSave(g){ try{ return btoa(unescape(encodeURIComponent(JSON.stringify(g.serialize())))); }catch(e){ return ""; } }
 function decodeSave(code){ try{ return GameState.load(JSON.parse(decodeURIComponent(escape(atob(code.trim()))))); }catch(e){ return null; } }
 
 /* ----- partie (restaurée depuis l'appareil si possible) ----- */
 var game = null;
+var uiMenu = false; // écran de démarrage (choix mode/slot)
 try{
-  var _raw = window.localStorage.getItem(SAVE_KEY);
-  if(_raw) game = GameState.load(JSON.parse(_raw));
+  var _last = window.localStorage.getItem("seigneurie-last-slot");
+  if(_last!==null){ activeSlot = Math.max(0, Math.min(2, Number(_last)||0)); }
+  game = loadSlot(activeSlot);
 }catch(e){}
-if(!game) game = new GameState(Math.floor(Math.random()*2000000000));
+if(game){ SAVE_KEY = SAVE_SLOTS[activeSlot]; }
+else { uiMenu = true; }
 
 var cam = { x:0, y:0, zoom:1.6 };
 function centerCam(){
@@ -222,13 +230,29 @@ document.addEventListener("click", function(e){
   else if(act==="log"){ ui.logOpen = true; }
   else if(act==="logclose"){ ui.logOpen = false; }
   else if(act==="noop"){ return; } /* clic à l'intérieur d'une modale : ne rien faire */
-  else if(act==="new"){
-    if(window.confirm && window.confirm("Recommencer une nouvelle partie ? La sauvegarde actuelle sera effacée.")){
-      try{ window.localStorage.removeItem(SAVE_KEY); }catch(e2){}
-      game = new GameState(Math.floor(Math.random()*2000000000));
-      ui.selId = null; ui.buildSel = null;
-      centerCam();
-    }
+  else if(act==="new"){ uiMenu = true; }
+  else if(act==="menuclose"){ uiMenu = false; if(!game){ uiMenu = true; } }
+  else if(act==="startgame"){
+    var mid = el.getAttribute("data-mode") || "prosperity";
+    var did = el.getAttribute("data-diff") || "normal";
+    var slot = Number(el.getAttribute("data-slot")||activeSlot);
+    game = new GameState(Math.floor(Math.random()*2000000000), mid, did);
+    activeSlot = Math.max(0, Math.min(2, slot));
+    SAVE_KEY = SAVE_SLOTS[activeSlot];
+    try{ window.localStorage.setItem("seigneurie-last-slot", String(activeSlot)); }catch(e2){}
+    persist(game);
+    ui.selId = null; ui.buildSel = null; uiMenu = false;
+    centerCam();
+  }
+  else if(act==="loadslot"){
+    var g2 = loadSlot(Number(arg));
+    if(g2){ game = g2; activeSlot = Number(arg); SAVE_KEY = SAVE_SLOTS[activeSlot];
+      try{ window.localStorage.setItem("seigneurie-last-slot", String(activeSlot)); }catch(e2){}
+      ui.selId = null; ui.buildSel = null; uiMenu = false; centerCam(); }
+  }
+  else if(act==="delslot"){
+    try{ window.localStorage.removeItem(SAVE_SLOTS[Number(arg)]); }catch(e2){}
+    if(Number(arg)===activeSlot && game){ persist(game); }
   }
   else if(act==="saveCode"){
     var code = encodeSave(game);
@@ -305,6 +329,45 @@ function renderUI(){
 
   /* calque par-dessus la carte */
   var o = "";
+
+  /* ----- écran de fin (victoire/défaite) ----- */
+  if(g.victory || g.defeat){
+    var win = g.victory;
+    o += "<div class='modalwrap'><div class='modal big'>";
+    o += "<b>"+(win?"\ud83c\udfc6 VICTOIRE !":"\ud83d\udc80 DÉFAITE")+"</b>";
+    o += "<p>Mode : <b>"+esc(g.mode().name)+"</b> \u00b7 Difficulté : <b>"+esc(g.diff().name)+"</b></p>";
+    o += "<p>"+esc(g.time.month)+" "+g.time.year+" \u2014 "+esc(g.settlementName())+" de "+g.families.length+" familles</p>";
+    o += "<p>Trésorerie : "+Math.floor(g.treasury)+" deniers \u00b7 Influence : "+Math.floor(g.influence)+" \u00b7 Approbation : "+g.approval+"%</p>";
+    if(!win && g.endReason) o += "<p class='dim'>Cause : "+esc(g.endReason)+"</p>";
+    o += "<button class='btn wide' data-act='new'>Nouvelle partie</button>";
+    o += "<button class='btn wide' data-act='menuclose'>Continuer à jouer</button>";
+    o += "</div></div>";
+  }
+
+  /* ----- menu de démarrage : modes, difficultés, slots ----- */
+  if(uiMenu){
+    o += "<div class='modalwrap'><div class='modal big'>";
+    o += "<b>\ud83c\udff0 SEIGNEURIE</b>";
+    o += "<p class='dim'>Choisissez un mode et une difficulté :</p>";
+    for(var mi=0; mi<MODES.length; mi++){
+      var md = MODES[mi];
+      for(var di=0; di<DIFFICULTIES.length; di++){
+        var dd = DIFFICULTIES[di];
+        o += "<button class='btn wide' data-act='startgame' data-mode='"+md.id+"' data-diff='"+dd.id+"' data-slot='"+activeSlot+"'>"
+          + esc(md.name)+" \u00b7 "+esc(dd.name)+"</button>";
+      }
+    }
+    o += "<p class='dim'>Sauvegardes :</p>";
+    for(var si=0; si<3; si++){
+      var info = slotInfo(si);
+      o += "<div class='row'>";
+      o += "<button class='btn"+(info?"":" dis")+"' data-act='loadslot' data-arg='"+si+"'"+(info?"":" disabled")+">Slot "+(si+1)+(info?" : "+esc(info.mode)+" "+esc(info.diff)+" "+esc(info.date)+" ("+info.pop+" fam."+(info.victory?", \ud83c\udfc6":"")+(info.defeat?", \ud83d\udc80":"")+")":" (vide)")+"</button>";
+      if(info) o += "<button class='btn danger' data-act='delslot' data-arg='"+si+"'>\u2715</button>";
+      o += "</div>";
+    }
+    if(game) o += "<button class='btn wide' data-act='menuclose'>Reprendre la partie en cours</button>";
+    o += "</div></div>";
+  }
   o += "<div class='panel' id='objpanel'>";
   o += "<b>📜 Objectifs</b>";
   o += "<div>"+(g.objectives.wood?"✅":"⬜")+" Bûcherons actifs</div>";

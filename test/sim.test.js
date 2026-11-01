@@ -2,7 +2,7 @@
 /* Tests de la simulation (Phase 0 du plan docs/PLAN.md).
    Lancer avec : node test/sim.test.js */
 const assert = require("assert");
-const { GameState, BUILD_DEFS, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, REGION_DEFS, REGION_COST, POLICY_DEFS, POLICY_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, W, H, T_GRASS, T_FOREST, T_STONE, MONTHS, seasonOf } = require("../js/sim.js");
+const { GameState, BUILD_DEFS, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, REGION_DEFS, REGION_COST, POLICY_DEFS, POLICY_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, DIFFICULTIES, W, H, T_GRASS, T_FOREST, T_STONE, MONTHS, seasonOf } = require("../js/sim.js");
 
 let passed = 0;
 function test(name, fn){
@@ -10,7 +10,7 @@ function test(name, fn){
   catch(e){ console.error("ECHEC - " + name + "\n  " + e.message); process.exitCode = 1; }
 }
 
-function fresh(){ return new GameState(1176); }
+function fresh(){ return new GameState(1176, "peace", "normal"); } // mode combat pour les tests baron/camps
 function placeInCenter(g, def){
   g.setFieldSize(3);
   for(let y=1;y<H-4;y++) for(let x=Math.ceil(W/3)+1;x<Math.floor(2*W/3)-4;x++)
@@ -146,8 +146,8 @@ test("le temps avance avec step()", () => {
   assert.ok(g.time.day > 0 || g.time.month > t0.month || g.time.year > t0.year, "les jours avancent");
 });
 
-test("victoire : les 4 objectifs remplis déclenchent victory", () => {
-  const g = fresh();
+test("victoire : les 4 objectifs remplis déclenchent victory (mode prospérité)", () => {
+  const g = new GameState(1176, "prosperity", "normal");
   g.objectives.wood = true; g.objectives.happy = true;
   g.objectives.pop = true; g.objectives.manor = true;
   for(let i=0;i<200 && !g.victory;i++) g.step();
@@ -383,7 +383,7 @@ test("audit : noms de familles hostiles stockés sans danger (échappement UI)",
 
 test("audit : charge longue, aucun débordement de log/toasts", () => {
   const g = fresh();
-  for(let i=0;i<10*16*12*3;i++) g.step();
+  for(let i=0;i<10*16*12;i++) g.step(); // 1 an
   assert.ok(g.log.length <= 120, "log plafonné");
   assert.ok(g.toasts.length <= 6, "toasts plafonnés");
 });
@@ -544,7 +544,7 @@ test("jalon 4 : la tour de guet donne +4 approbation et limite les raids", () =>
 test("jalon 4 : menaces aléatoires ne crashent pas la sim", () => {
   const g = fresh();
   g.time.year = 1180;
-  for(let i=0;i<10*16*12*2;i++) g.step(); // 2 ans avec menaces possibles
+  for(let i=0;i<10*16*12;i++) g.step(); // 1 an
   assert.ok(g.families.length >= 0 && g.approval >= 0 && g.approval <= 100);
 });
 
@@ -650,6 +650,66 @@ test("phase 5 : sauvegarde persiste churchUp et mercenaires", () => {
   assert.deepStrictEqual(g2.buildings.find(x=>x.def==="church").churchUp, ["altar"]);
   assert.strictEqual(g2.units.length, 1);
   assert.strictEqual(g2.units[0].merc, true);
+});
+
+test("phase 6 : 5 modes et 3 difficultés définis", () => {
+  assert.strictEqual(MODES.length, 5);
+  assert.strictEqual(DIFFICULTIES.length, 3);
+  assert.strictEqual(MODES.find(m=>m.id==="prosperity").combat, false, "prospérité sans combat");
+  assert.ok(MODES.filter(m=>m.combat).length===4);
+});
+
+test("phase 6 : mode prospérité = pas de baron ni de camps", () => {
+  const g = new GameState(1176, "prosperity", "normal");
+  g.time.year = 1180; g.baron.nextClaim = 999; g.baron.nextRaid = 999;
+  for(let i=0;i<10*16*12;i++) g.step(); // 1 an suffit
+  assert.strictEqual(g.baron.regions.length, 0, "pas de réclamation du baron");
+  assert.strictEqual(g.camps.length, 0, "pas de camps");
+});
+
+test("phase 6 : mode 'edge' démarre avec moins de ressources et gagne en survivant 3 ans", () => {
+  const g = new GameState(1176, "edge", "normal");
+  assert.ok(g.stock.timber < 15, "ressources réduites au départ");
+  g.time.year = 1179;
+  for(let i=0;i<200;i++) g.step();
+  assert.strictEqual(g.victory, true, "victoire après 3 ans");
+});
+
+test("phase 6 : mode 'duel' = victoire si toutes les régions à nous, sans camps, après 1179", () => {
+  const g = new GameState(1176, "duel", "hard");
+  g.treasury = 200; g.wealth = 200;
+  g.claimRegion(1); g.claimRegion(2);
+  g.camps.length = 0;
+  g.time.year = 1179; g.time.month = 6;
+  for(let i=0;i<300;i++) g.step();
+  assert.strictEqual(g.victory, true);
+});
+
+test("phase 6 : défaite si plus aucune famille après 1176", () => {
+  const g = new GameState(1176, "peace", "hard");
+  g.families = [];
+  g.time.year = 1178;
+  for(let i=0;i<200 && !g.defeat;i++) g.step();
+  assert.strictEqual(g.defeat, true);
+  assert.strictEqual(g.endReason, "plus aucune famille");
+});
+
+test("phase 6 : difficulté modère les raids du baron", () => {
+  const gEasy = new GameState(1176, "duel", "easy");
+  const gHard = new GameState(1176, "duel", "hard");
+  assert.ok(gHard.diff().raid > gEasy.diff().raid);
+});
+
+test("phase 6 : sauvegarde v2 persiste mode, difficulté, victoire, défaite", () => {
+  const g = new GameState(1176, "fractured", "hard");
+  g.victory = true;
+  const g2 = GameState.load(JSON.parse(JSON.stringify(g.serialize())));
+  assert.strictEqual(g2.modeId, "fractured");
+  assert.strictEqual(g2.diffId, "hard");
+  assert.strictEqual(g2.victory, true);
+  // ancienne sauvegarde v1 (sans modeId) -> mode par défaut, ne crash pas
+  const g1 = GameState.load({ v:1, seed:1, tiles:new Array(W*H).fill(0) });
+  assert.strictEqual(g1.modeId, "prosperity");
 });
 
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));

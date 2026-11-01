@@ -99,6 +99,21 @@ const CHURCH_UPGRADES = {
   bell:   { id:"bell",   name:"Clocher", cost:{timber:3,stone:2}, bonus:{approval:5, influence:3}, desc:"+5 approbation, +3 influence/mois." },
 };
 const CHURCH_UP_ORDER = ["altar","bell"];
+const MODES = [
+  { id:"prosperity", name:"Prospérité",       desc:"Sans combat : faites prospérer la seigneurie (objectifs classiques).", combat:false },
+  { id:"peace",       name:"Restaurer la paix", desc:"Brigands fréquents : protégez vos réserves et détruisez leurs camps.", combat:true, bandits:1.8 },
+  { id:"edge",        name:"Au bord du gouffre", desc:"Ressources de départ réduites. Survivez 3 ans.", combat:true, bandits:1.4, harsh:true },
+  { id:"duel",        name:"Duel",             desc:"Le Baron est puissant et agressif : survivez à ses raids et réclamez tout.", combat:true, baron:1.8 },
+  { id:"fractured",   name:"Royaume fracturé", desc:"Tout à la fois : brigands, Baron, hiver. Le défi ultime.", combat:true, bandits:2.0, baron:2.0, harsh:true },
+];
+const MODE_BY_ID = Object.fromEntries(MODES.map(m=>[m.id,m]));
+const DIFFICULTIES = [
+  { id:"easy",   name:"Paisible",  tax:0.8, raid:0.6, bandits:0.6 },
+  { id:"normal", name:"Normal",    tax:1.0, raid:1.0, bandits:1.0 },
+  { id:"hard",   name:"Difficile", tax:1.3, raid:1.5, bandits:1.5 },
+];
+const DIFF_BY_ID = Object.fromEntries(DIFFICULTIES.map(d=>[d.id,d]));
+
 const SETTLEMENT_LEVELS = [
   { name:"Hameau", minPop:0 },
   { name:"Village", minPop:8 },
@@ -156,7 +171,9 @@ class GameState {
   winterWarned        ;
   mmRect                                                            ;
 
-  constructor(seed       ){
+  constructor(seed       , modeId       , diffId       ){
+    this.modeId = modeId || "prosperity";
+    this.diffId = diffId || "normal";
     this.seed = seed; this.rnd = mulberry32(seed);
     this.tiles = new Uint8Array(W*H);
     this.treeWood = new Float32Array(W*H);
@@ -185,6 +202,10 @@ class GameState {
     this.uiVersion = 0;
     this.objectives = { wood:false, happy:false, pop:false, manor:false, happyStreak:0 };
     this.victory = false; this.winterWarned = false;
+    this.defeat = false; this.endReason = null;
+    if(MODE_BY_ID[this.modeId] && MODE_BY_ID[this.modeId].harsh){
+      this.stock.timber = 8; this.stock.berries = 10; this.stock.meat = 6; this.stock.firewood = 4;
+    }
     this.mmRect = null;
     this.genMap();
     this.placeStart();
@@ -325,6 +346,8 @@ class GameState {
   marketActive(){ return this.buildings.some(b=>b.done && b.def==="market" && b.families.length>0); }
   freeBurgages(){ return this.buildings.filter(b=>b.done && b.def==="burgage" && !this.families.some(f=>f.home===b.id)).length; }
   season(){ return seasonOf(this.time.month); }
+  mode(){ return MODE_BY_ID[this.modeId] || MODE_BY_ID.prosperity; }
+  diff(){ return DIFF_BY_ID[this.diffId] || DIFF_BY_ID.normal; }
   berrySeason(){ const m=this.time.month; return m>=2 && m<=10; } // mars → novembre
   unemployed(){ return this.families.filter(f=>f.work<0).length; }
 
@@ -592,11 +615,12 @@ class GameState {
   }
   // trouve une case praticable adjacente au bâtiment (pour y travailler)
   spotFor(b         , fx       , fy       )         {
+    if(!isFinite(b.x)||!isFinite(b.y)||!isFinite(b.w)||!isFinite(b.h)||b.w>W||b.h>H) return null;
     let best         =null, bd=Infinity;
     for(let r=1;r<=3;r++){
-      for(let yy=b.y-r; yy<=b.y+b.h-1+r; yy++){
-        for(let xx=b.x-r; xx<=b.x+b.w-1+r; xx++){
-          const edge = (xx===b.x-r||xx===b.x+b.w-1+r||yy===b.y-r||yy===b.y+b.h-1+r);
+      for(let yy=Math.max(0,b.y-r); yy<=Math.min(H-1,b.y+b.h-1+r); yy++){
+        for(let xx=Math.max(0,b.x-r); xx<=Math.min(W-1,b.x+b.w-1+r); xx++){
+          const edge = (xx===Math.max(0,b.x-r)||xx===Math.min(W-1,b.x+b.w-1+r)||yy===Math.max(0,b.y-r)||yy===Math.min(H-1,b.y+b.h-1+r));
           if(!edge) continue;
           if(this.passable(xx,yy)){
             const d=Math.hypot(xx-fx,yy-fy);
@@ -937,7 +961,7 @@ class GameState {
   /* ---------- camps de brigands & milice ---------- */
   campStep(){
     // spawn : un camp tous les ~2 ans à partir de 1178, max 2
-    if(this.time.year>=1178 && this.camps.length<2 && this.rnd()<0.004){
+    if(this.mode().combat && this.time.year>=1177 && this.camps.length<2 && this.rnd()<0.004*(this.mode().bandits||1)*this.diff().bandits){
       for(let tries=0; tries<30; tries++){
         const x=2+Math.floor(this.rnd()*(W-4)), y=2+Math.floor(this.rnd()*(H-4));
         if(this.passable(x,y)){
@@ -1281,9 +1305,21 @@ class GameState {
     this.objectives.wood=this.objectives.wood||this.buildings.some(b=>b.done&&b.def==="woodcutter"&&b.families.length>0);
     this.objectives.pop=this.objectives.pop||this.families.length>=10;
     this.objectives.manor=this.objectives.manor||this.hasManor();
-    if(this.objectives.wood&&this.objectives.happy&&this.objectives.pop&&this.objectives.manor&&!this.victory){
-      this.victory=true;
-      this.toast("🏆 Votre seigneurie prospère ! Tous les objectifs sont accomplis.","good");
+    if(!this.victory && !this.defeat){
+      const mode=this.mode();
+      let win=false;
+      if(mode.id==="prosperity"){
+        win = this.objectives.wood&&this.objectives.happy&&this.objectives.pop&&this.objectives.manor;
+      } else if(mode.id==="edge"){
+        win = this.time.year>=1179;
+      } else if(mode.id==="peace" || mode.id==="duel"){
+        win = this.camps.length===0 && this.regions.every(r=>r.owned) && this.time.year>=1179;
+      } else if(mode.id==="fractured"){
+        win = this.regions.every(r=>r.owned) && this.baron.power===0 && this.time.year>=1180;
+      }
+      if(win){ this.victory=true; this.endReason="victoire"; this.toast("🏆 Victoire ! "+mode.name+" accomplie !","good"); }
+      if(this.approval<=0 && this.families.length>0){ this.defeat=true; this.endReason="approbation à 0"; this.toast("💀 La seigneurie sombre dans le chaos…","bad"); }
+      if(this.families.length===0 && this.time.year>1176){ this.defeat=true; this.endReason="plus aucune famille"; this.toast("💀 Toute la population a disparu…","bad"); }
     }
     // avertissement hiver
     if(m===9 && !this.winterWarned && this.stock.firewood<this.families.length*6){
@@ -1340,7 +1376,8 @@ class GameState {
 
   baronStep(){
     const b = this.baron;
-    if(this.time.year < 1177) return; // il entre en scène en 1177
+    if(!this.mode().combat) return; // pas de baron en mode prospérité
+    if(this.time.year < 1177) return;
     // il réclame une région tous les ~6 mois s'il le peut (gratuit pour lui, il a ses propres terres)
     if(this.time.month % 6 === 0 && b.nextClaim <= 0){
       const free = this.regions.filter(r=>!r.owned && !b.regions.includes(r.id));
@@ -1354,8 +1391,8 @@ class GameState {
     }
     if(b.nextClaim > 0) b.nextClaim--;
     // tous les ~10 mois après 1178, un raid s'il a du pouvoir
-    if(this.time.year >= 1178 && this.time.month % 4 === 0 && b.nextRaid <= 0 && b.power > 0){
-      const amount = 10 + b.power * 8;
+    if(this.time.year >= 1177 && this.time.month % 4 === 0 && b.nextRaid <= 0 && b.power > 0){
+      const amount = Math.round((10 + b.power * 8) * this.diff().raid * (this.mode().baron||1));
       this.pendingEvent = { title:"Raid du Baron !",
         text:"Des cavaliers du "+b.name+" fondent sur la seigneurie et exigent "+amount+" deniers de tribut !",
         choices:[
@@ -1404,8 +1441,10 @@ class GameState {
   /* ---------- sauvegarde ---------- */
   serialize(){
     return {
-      v:1,
+      v:2,
       seed:this.seed,
+      modeId:this.modeId,
+      diffId:this.diffId,
       tiles:Array.from(this.tiles),
       treeWood:Array.from(this.treeWood),
       berryY:Array.from(this.berryY),
@@ -1440,9 +1479,10 @@ class GameState {
     const num = (v)=>typeof v==="number" && isFinite(v);
     const g = new GameState(data.seed);
     g.tiles = Uint8Array.from(data.tiles);
-    g.treeWood = Float32Array.from(data.treeWood);
-    g.berryY = Float32Array.from(data.berryY);
-    g.stoneAmt = Float32Array.from(data.stoneAmt);
+    const arr = (a)=>Array.isArray(a) ? a : new Array(W*H).fill(0);
+    g.treeWood = Float32Array.from(arr(data.treeWood));
+    g.berryY = Float32Array.from(arr(data.berryY));
+    g.stoneAmt = Float32Array.from(arr(data.stoneAmt));
     g.buildings = (data.buildings || []).map(b=>{
       if(b.ext !== undefined && b.ext !== null){
         if(!Array.isArray(b.exts) || b.exts.length===0) b.exts=[b.ext];
@@ -1477,6 +1517,10 @@ class GameState {
       for(const k of Object.keys(data.prices)) if(num(data.prices[k])) g.prices[k] = Math.max(1, data.prices[k]);
     }
     g.victory = !!data.victory;
+    g.defeat = !!data.defeat;
+    g.endReason = data.endReason || null;
+    if(typeof data.modeId==="string" && MODE_BY_ID[data.modeId]) g.modeId = data.modeId;
+    if(typeof data.diffId==="string" && DIFF_BY_ID[data.diffId]) g.diffId = data.diffId;
     g.pendingEvent = data.pendingEvent || null;
     g.winterWarned = !!data.winterWarned;
     g.nextB = Math.max(0, ...g.buildings.map(b=>num(b.id)?b.id:0)) + 1;
@@ -1485,7 +1529,7 @@ class GameState {
     // reconstruit l'occupation du sol à partir des bâtiments (bornes vérifiées)
     g.occupied = new Int32Array(W*H).fill(-1);
     for(const b of g.buildings){
-      if(!num(b.x)||!num(b.y)||!num(b.w)||!num(b.h)) continue;
+      if(!num(b.x)||!num(b.y)||!num(b.w)||!num(b.h)||b.w>W||b.h>H||b.x>W||b.y>H) continue;
       for(let yy=0;yy<b.h;yy++) for(let xx=0;xx<b.w;xx++){
         const bx=b.x+xx, by=b.y+yy;
         if(bx>=0&&by>=0&&bx<W&&by<H) g.occupied[by*W+bx] = b.id;
@@ -1497,5 +1541,5 @@ class GameState {
 
 if(typeof module!=="undefined" && module.exports){
   module.exports = { GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
-    T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf, REGION_DEFS, REGION_COST, POLICY_DEFS, POLICY_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS };
+    T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf, REGION_DEFS, REGION_COST, POLICY_DEFS, POLICY_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, MODE_BY_ID, DIFFICULTIES, DIFF_BY_ID };
 }
