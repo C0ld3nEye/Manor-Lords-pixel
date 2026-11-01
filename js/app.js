@@ -304,6 +304,46 @@ document.addEventListener("input", function(e){
   }
 });
 
+/* ----- sons procéduraux (WebAudio, aucun fichier) ----- */
+var AudioFX = {
+  ctx:null, muted:false, master:null,
+  init(){
+    if(this.ctx) return;
+    try{
+      this.ctx = new (window.AudioContext||window.webkitAudioContext)();
+      this.master = this.ctx.createGain();
+      this.master.gain.value = 0.25;
+      this.master.connect(this.ctx.destination);
+    }catch(e){ this.ctx = null; }
+  },
+  tone(freq, dur, type, vol){
+    if(!this.ctx || this.muted) return;
+    const o=this.ctx.createOscillator(), g=this.ctx.createGain();
+    o.type=type||"sine"; o.frequency.value=freq;
+    g.gain.setValueAtTime(vol||0.5, this.ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime+dur);
+    o.connect(g); g.connect(this.master);
+    o.start(); o.stop(this.ctx.currentTime+dur);
+  },
+  click(){ this.tone(660, 0.06, "square", 0.25); },
+  good(){ this.tone(523, 0.12, "sine", 0.4); this.tone(784, 0.18, "sine", 0.3); },
+  bad(){ this.tone(220, 0.25, "sawtooth", 0.3); },
+  build(){ this.tone(330, 0.08, "triangle", 0.35); this.tone(440, 0.1, "triangle", 0.3); },
+  coin(){ this.tone(988, 0.08, "square", 0.2); this.tone(1319, 0.12, "square", 0.15); },
+};
+// sons déclenchés sur les nouveaux toasts
+var _lastToastId = 0;
+function soundForToasts(g){
+  if(!g.log.length) return;
+  var last = g.log[g.log.length-1];
+  if(last.id > _lastToastId){
+    _lastToastId = last.id;
+    if(last.kind==="good") AudioFX.good();
+    else if(last.kind==="bad") AudioFX.bad();
+  }
+}
+
+
 /* ----- rendu de l'interface (toutes les ~300 ms) ----- */
 function renderUI(){
   if(!game){ hud.innerHTML = ""; buildbar.innerHTML = ""; overlay.innerHTML = menuHtml(); return; }
@@ -556,7 +596,9 @@ function menuHtml(){
     o += "</div>";
   }
 
-  if(!ui.taxDrag) overlay.innerHTML = o;
+  // ne pas réécrire l'overlay quand une modale est ouverte : sinon le scroll de la modale retombe en haut
+  var modalOpen = ui.helpOpen || ui.logOpen || ui.regionsOpen || uiMenu || (g.pendingEvent) || g.victory || g.defeat;
+  if(!ui.taxDrag && !modalOpen) overlay.innerHTML = o;
 
   /* barre de construction (défilement horizontal) */
   var bh = "";
@@ -574,45 +616,6 @@ function menuHtml(){
   buildbar.innerHTML = bh;
 }
 renderUI();
-
-/* ----- sons procéduraux (WebAudio, aucun fichier) ----- */
-var AudioFX = {
-  ctx:null, muted:false, master:null,
-  init(){
-    if(this.ctx) return;
-    try{
-      this.ctx = new (window.AudioContext||window.webkitAudioContext)();
-      this.master = this.ctx.createGain();
-      this.master.gain.value = 0.25;
-      this.master.connect(this.ctx.destination);
-    }catch(e){ this.ctx = null; }
-  },
-  tone(freq, dur, type, vol){
-    if(!this.ctx || this.muted) return;
-    const o=this.ctx.createOscillator(), g=this.ctx.createGain();
-    o.type=type||"sine"; o.frequency.value=freq;
-    g.gain.setValueAtTime(vol||0.5, this.ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime+dur);
-    o.connect(g); g.connect(this.master);
-    o.start(); o.stop(this.ctx.currentTime+dur);
-  },
-  click(){ this.tone(660, 0.06, "square", 0.25); },
-  good(){ this.tone(523, 0.12, "sine", 0.4); this.tone(784, 0.18, "sine", 0.3); },
-  bad(){ this.tone(220, 0.25, "sawtooth", 0.3); },
-  build(){ this.tone(330, 0.08, "triangle", 0.35); this.tone(440, 0.1, "triangle", 0.3); },
-  coin(){ this.tone(988, 0.08, "square", 0.2); this.tone(1319, 0.12, "square", 0.15); },
-};
-// sons déclenchés sur les nouveaux toasts
-var _lastToastId = 0;
-function soundForToasts(g){
-  if(!g.log.length) return;
-  var last = g.log[g.log.length-1];
-  if(last.id > _lastToastId){
-    _lastToastId = last.id;
-    if(last.kind==="good") AudioFX.good();
-    else if(last.kind==="bad") AudioFX.bad();
-  }
-}
 
 /* ----- boucle principale ----- */
 var _last = performance.now(), _acc = 0, _uiAcc = 0, _saveAcc = 0;

@@ -434,6 +434,8 @@ function drawGame(
     }
   }
 
+  const t = now/1000;
+
   // ----- animations : fumée des cheminées + drapeaux -----
   for(const b of g.buildings){
     if(!b.done) continue;
@@ -455,7 +457,6 @@ function drawGame(
   }
 
   // ----- météo -----
-  const t = now/1000;
   if(g.weather==="rain"){
     ctx.strokeStyle="rgba(150,180,220,0.5)"; ctx.lineWidth=0.03;
     for(let i=0;i<60;i++){
