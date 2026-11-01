@@ -19,10 +19,11 @@ try{
   game = loadSlot(activeSlot);
 }catch(e){}
 if(game){ SAVE_KEY = SAVE_SLOTS[activeSlot]; }
-else { uiMenu = true; }
+else { uiMenu = true; game = null; }
 
 var cam = { x:0, y:0, zoom:1.6 };
 function centerCam(){
+  if(!game) return;
   var b = game.buildings[0];
   if(b){ cam.x = b.x + b.w/2; cam.y = b.y + b.h/2; }
 }
@@ -92,6 +93,7 @@ canvas.addEventListener("pointerdown", function(e){
 });
 
 canvas.addEventListener("pointermove", function(e){
+  if(!game) return;
   if(pointers.has(e.pointerId)) pointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
   /* pincement : zoom à deux doigts */
   if(pointers.size>=2 && pinch){
@@ -137,6 +139,7 @@ function endPointer(e){
 }
 
 canvas.addEventListener("pointerup", function(e){
+  if(!game) return;
   endPointer(e);
   if(drag.moved) return;
   if(pointers.size>0) return;
@@ -183,6 +186,7 @@ canvas.addEventListener("contextmenu", function(e){
 window.addEventListener("pointerdown", function(){ AudioFX.init(); }, { once:false });
 window.addEventListener("keydown", function(e){
   AudioFX.init();
+  if(!game && e.key!=="Escape") return;
   if(e.key===" "){ e.preventDefault(); game.speed = game.speed===0 ? 1 : 0; }
   if(e.key==="m"){ AudioFX.muted = !AudioFX.muted; flash(AudioFX.muted ? "Son coupé" : "Son activé"); }
   if(e.key==="Escape"){ ui.buildSel = null; ui.selId = null; ui.helpOpen = false; ui.roadMode = false; renderUI(); }
@@ -295,13 +299,14 @@ document.addEventListener("click", function(e){
 
 /* curseur d'impôt (le manoir sélectionné) */
 document.addEventListener("input", function(e){
-  if(e.target && e.target.id==="taxSlider"){
+  if(game && e.target && e.target.id==="taxSlider"){
     game.setTax(Number(e.target.value)/100);
   }
 });
 
 /* ----- rendu de l'interface (toutes les ~300 ms) ----- */
 function renderUI(){
+  if(!game){ overlay.innerHTML = ""; hud.innerHTML = ""; buildbar.innerHTML = ""; return; }
   var g = game;
   var season = g.season();
   var seasonIcon = ["❄️","🌷","☀️","🍂"][season];
@@ -610,7 +615,7 @@ function soundForToasts(g){
 var _last = performance.now(), _acc = 0, _uiAcc = 0, _saveAcc = 0;
 function loop(now){
   var dt = Math.min(200, now-_last); _last = now;
-  if(game.speed>0 && !game.pendingEvent){
+  if(game && game.speed>0 && !game.pendingEvent){
     _acc += dt*game.speed;
     var n = Math.floor(_acc/100);
     if(n>60){ n = 60; _acc = 0; } else _acc -= n*100;
@@ -626,11 +631,11 @@ function loop(now){
     cam.y = Math.max(-4, Math.min(H+4, cam.y+pvy));
   }
   _saveAcc += dt;
-  if(_saveAcc>5000){ _saveAcc = 0; persist(game); }
-  soundForToasts(game);
+  if(game && _saveAcc>5000){ _saveAcc = 0; persist(game); }
+  if(game) soundForToasts(game);
   _uiAcc += dt;
   if(_uiAcc>300){ _uiAcc = 0; renderUI(); }
-  drawGame(ctx, game, cam, canvas, hover, ui.buildSel, ui.selId, ui.layers, now);
+  if(game) drawGame(ctx, game, cam, canvas, hover, ui.buildSel, ui.selId, ui.layers, now);
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
