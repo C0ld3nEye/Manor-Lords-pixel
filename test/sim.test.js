@@ -434,9 +434,8 @@ test("jalon 1 : sauvegarde persiste les régions", () => {
 
 test("jalon 2 : le baron entre en scène en 1177 et réclame des régions", () => {
   const g = fresh();
-  g.time.year = 1177; g.time.month = 6; // mois % 6 === 0
-  g.baron.nextClaim = 0;
-  for(let i=0;i<200;i++) g.step(); // 1 mois
+  g.time.year = 1177; g.time.month = 5; g.baron.nextClaim = 0;
+  for(let i=0;i<400 && g.baron.regions.length===0;i++) g.step(); // jusqu'au mois 6
   assert.ok(g.baron.regions.length >= 1, "le baron a réclamé une région");
   assert.ok(g.baron.power >= 1);
   const r = g.baron.regions[0];
