@@ -111,7 +111,7 @@ Chaque étape est livrable et testable seule. Ordre conseillé = du plus fondame
 26. **Influence et prestige** : gagnés via brigands détruits, régions réclamées, églises — débloquent réclamations et mercenaires.
 27. **Mercenaires** : unités louables à prix d'or contre brigands et baron.
 
-### 🎮 Phase 6 — Modes, rejouabilité, fin de partie (semaines 26-30)
+### 🎮 Phase 6 — Modes, rejouabilité, fin de partie (semaines 26-30) ✅ 5 modes scénarisés, 3 difficultés, victoire/défaite + écran de fin, 3 slots de sauvegarde — 66 tests — Modes, rejouabilité, fin de partie (semaines 26-30)
 
 28. **5 modes scénarisés** façon l'officiel : *Prospérité* (sans combat), *Restaurer la paix*, *Au bord du gouffre*, *Duel*, *Royaume fracturé*.
 29. **Conditions de victoire/défaite par mode** + écran de fin avec statistiques (années, population max, richesse, pertes).
