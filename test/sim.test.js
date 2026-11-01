@@ -432,4 +432,46 @@ test("jalon 1 : sauvegarde persiste les régions", () => {
   assert.strictEqual(g2.regions[1].owned, false);
 });
 
+test("jalon 2 : le baron entre en scène en 1177 et réclame des régions", () => {
+  const g = fresh();
+  g.time.year = 1177; g.time.month = 0;
+  g.baron.nextClaim = 0;
+  for(let i=0;i<200;i++) g.step(); // 1 mois (mois 0)
+  assert.ok(g.baron.regions.length >= 1, "le baron a réclamé une région");
+  assert.ok(g.baron.power >= 1);
+  const r = g.baron.regions[0];
+  assert.strictEqual(g.regions[r].owned, false, "région ni à nous ni réclamée par nous");
+});
+
+test("jalon 2 : le baron lance un raid après 1178 s'il a du pouvoir", () => {
+  const g = fresh();
+  g.time.year = 1178; g.time.month = 0;
+  g.baron.power = 2; g.baron.nextRaid = 0;
+  g.baron.regions = [1,2]; g.baron.nextClaim = 999;
+  for(let i=0;i<800 && !g.pendingEvent;i++) g.step(); // jusqu'au mois 4
+  assert.ok(g.pendingEvent, "raid déclenché");
+  assert.ok(/Baron/.test(g.pendingEvent.title));
+  assert.strictEqual(g.baron.power, 1, "le raid consomme du pouvoir");
+});
+
+test("jalon 2 : payer le raid débite la trésorerie, refuser pille", () => {
+  const g = fresh();
+  g.treasury = 100; g.stock.bread = 50; g.approval = 80;
+  g.pendingEvent = { title:"Raid", text:"", choices:[ {label:"Payer", act:"payRaid", amount:30}, {label:"Refuser", act:"refuseRaid"} ] };
+  g.resolveEvent(0);
+  assert.strictEqual(g.treasury, 70);
+  g.pendingEvent = { title:"Raid", text:"", choices:[ {label:"Refuser", act:"refuseRaid"} ] };
+  g.resolveEvent(0);
+  assert.ok(g.stock.bread < 50, "récoltes pillées");
+  assert.ok(g.approval < 80, "approbation pénalisée");
+});
+
+test("jalon 2 : sauvegarde persiste le baron", () => {
+  const g = fresh();
+  g.baron.regions = [1]; g.baron.power = 3;
+  const g2 = GameState.load(JSON.parse(JSON.stringify(g.serialize())));
+  assert.deepStrictEqual(g2.baron.regions, [1]);
+  assert.strictEqual(g2.baron.power, 3);
+});
+
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));

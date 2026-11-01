@@ -144,6 +144,7 @@ class GameState {
     this.roads = new Uint8Array(W*H);
     this.wealth = 0;
     this.regions = REGION_DEFS.map(r=>({ id:r.id, owned:r.id===0 }));
+    this.baron = { name:"Baron von Graufeld", regions:[], power:0, nextClaim:6, nextRaid:10 };
     this.prices = { bread:2, clothes:3, ale:2, apples:1, honey:4, meat:1, berries:1 };
     this.occupied = new Int32Array(W*H).fill(-1);
     this.buildings = []; this.nextB = 1;
@@ -417,6 +418,11 @@ class GameState {
     if(c.act==="pay"){ this.treasury -= (c.amount||0); this.toast("Le roi a reçu son dû. La paix est préservée.","good"); }
     else if(c.act==="refuseTax"){ this.approval -= 12; const lost=this.stock.berries+this.stock.meat+this.stock.bread+this.stock.eggs+this.stock.veg;
       for(const k of FOOD_TYPES) this.stock[k]=Math.floor(this.stock[k]*0.75); this.toast("Le bailli confisque une partie des récoltes !","bad"); }
+    else if(c.act==="payRaid"){ this.treasury -= (c.amount||0); this.toast("Le tribut est versé au Baron. Il se retire… pour l'instant.","good"); }
+    else if(c.act==="refuseRaid"){ this.approval -= 15;
+      for(const k of ["berries","meat","bread","eggs","veg","apples","honey"]) this.stock[k]=Math.floor((this.stock[k]||0)*0.7);
+      this.stock.timber=Math.floor(this.stock.timber*0.85);
+      this.toast("Les cavaliers pillent la seigneurie !","bad"); }
     else if(c.act==="payBandits"){ this.treasury -= (c.amount||0); this.toast("Les brigands s'éloignent, bourse plus légère.","good"); }
     else if(c.act==="hideBandits"){ for(const k of ["berries","meat","bread","eggs","veg"]) this.stock[k]=Math.floor(this.stock[k]*0.8);
       this.stock.timber=Math.floor(this.stock.timber*0.9); this.toast("Les brigands pillent la seigneurie et repartent.","bad"); }
@@ -1117,7 +1123,39 @@ class GameState {
           { label:"Refuser (ils pillent les réserves)", act:"hideBandits" },
         ]};
     }
+    // ----- IA du Baron rival -----
+    this.baronStep();
     this.uiVersion++;
+  }
+
+  baronStep(){
+    const b = this.baron;
+    if(this.time.year < 1177) return; // il entre en scène en 1177
+    // il réclame une région tous les ~6 mois s'il le peut (gratuit pour lui, il a ses propres terres)
+    if(this.time.month % 6 === 0 && b.nextClaim <= 0){
+      const free = this.regions.filter(r=>!r.owned && !b.regions.includes(r.id));
+      if(free.length){
+        const r = free[Math.floor(this.rnd()*free.length)];
+        b.regions.push(r.id);
+        b.power += 1;
+        this.toast("⚔️ Le "+b.name+" réclame la région « "+REGION_DEFS[r.id].name+" » !","bad");
+      }
+      b.nextClaim = 6;
+    }
+    if(b.nextClaim > 0) b.nextClaim--;
+    // tous les ~10 mois après 1178, un raid s'il a du pouvoir
+    if(this.time.year >= 1178 && this.time.month % 4 === 0 && b.nextRaid <= 0 && b.power > 0){
+      const amount = 10 + b.power * 8;
+      this.pendingEvent = { title:"Raid du Baron !",
+        text:"Des cavaliers du "+b.name+" fondent sur la seigneurie et exigent "+amount+" deniers de tribut !",
+        choices:[
+          { label:"Payer "+amount+" \u00a0\U0001fa99", act:"payRaid", amount, disabled:this.treasury<amount },
+          { label:"Refuser (pillage + approbation -15)", act:"refuseRaid" },
+        ]};
+      b.power = Math.max(0, b.power - 1);
+      b.nextRaid = 10;
+    }
+    if(b.nextRaid > 0) b.nextRaid--;
   }
 
   /* ---------- interrogation pour l'UI ---------- */
@@ -1174,6 +1212,7 @@ class GameState {
       log:this.log,
       roads:Array.from(this.roads),
       regions:this.regions,
+      baron:this.baron,
       wealth:this.wealth,
       prices:this.prices,
       victory:this.victory,
@@ -1211,6 +1250,7 @@ class GameState {
     if(data.objectives) g.objectives = data.objectives;
     g.log = Array.isArray(data.log) ? data.log : [];
     if(Array.isArray(data.roads) && data.roads.length===W*H) g.roads = Uint8Array.from(data.roads);
+    if(data.baron && typeof data.baron==="object") g.baron = Object.assign(g.baron, data.baron);
     if(Array.isArray(data.regions)) g.regions = REGION_DEFS.map(r=>({ id:r.id, owned: !!(data.regions[r.id] && data.regions[r.id].owned) || r.id===0 }));
     g.wealth = typeof data.wealth==="number" ? data.wealth : 0;
     if(data.prices && typeof data.prices==="object"){

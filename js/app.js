@@ -284,6 +284,7 @@ function renderUI(){
   h += "<button class='btn"+(ui.layers.berry?" on":"")+"' data-act='layer' data-arg='berry' title='Baies'>\ud83e\udfd0</button>";
   h += "<button class='btn"+(ui.layers.soil?" on":"")+"' data-act='layer' data-arg='soil' title='Fertilit\u00e9 du sol'>\ud83c\udf3e</button>";
   h += "<button class='btn"+(ui.roadMode?" on":"")+"' data-act='road' title='Tracer des routes'>\U0001f6e4</button>";
+  if(game.time.year >= 1177) h += "<span class='chip small' style='color:#e86a5a' title='Puissance du Baron rival'>⚔️ "+game.baron.power+"</span>";
   h += "<span class='chip small' title='Richesse régionale'>\U0001f4b0 "+Math.floor(g.wealth)+"</span>";
   h += "<button class='btn' data-act='buyox' title='Acheter un boeuf (20 deniers)'>🐂+</button>";
   h += "<button class='btn' data-act='regions' title='Régions'>\U0001f5fa\ufe0f</button>";
@@ -376,7 +377,8 @@ function renderUI(){
     o += "<b>\U0001f5fa\ufe0f Régions du domaine</b>";
     for(var ri=0; ri<REGION_DEFS.length; ri++){
       var rd = REGION_DEFS[ri], rr = g.regions[ri];
-      o += "<div class='row'><b>"+esc(rd.name)+"</b> "+(rr.owned?"<span class='good'>à vous</span>":"");
+      var baronHas = g.baron.regions.indexOf(ri)>=0;
+      o += "<div class='row'><b>"+esc(rd.name)+"</b> "+(rr.owned?"<span class='good'>à vous</span>":(baronHas?"<span style='color:#e86a5a'>au Baron</span>":""));
       if(!rr.owned){
         o += "<button class='btn' data-act='claim' data-arg='"+ri+"' title='Coût : 30 deniers + 15 richesse'>Réclamer (30\u00a0\U0001fa99 + 15\U0001f4b0)</button>";
       }
