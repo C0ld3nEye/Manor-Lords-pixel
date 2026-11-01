@@ -203,6 +203,8 @@ class GameState {
     this.objectives = { wood:false, happy:false, pop:false, manor:false, happyStreak:0 };
     this.victory = false; this.winterWarned = false;
     this.defeat = false; this.endReason = null;
+    this.weather = "clear"; // clear | rain | snow | fog
+    this.weatherT = 0;
     if(MODE_BY_ID[this.modeId] && MODE_BY_ID[this.modeId].harsh){
       this.stock.timber = 8; this.stock.berries = 10; this.stock.meat = 6; this.stock.firewood = 4;
     }
@@ -1054,7 +1056,8 @@ class GameState {
     if(t.month>=4 && t.month<=7){
       for(const b of this.buildings){
         if(b.done && b.def==="field" && b.f && b.f.sown && b.f.growth<1){
-          b.f.growth = Math.min(1, b.f.growth + 0.0016);
+          const wMul = this.weather==="rain" ? 0.7 : 1;
+          b.f.growth = Math.min(1, b.f.growth + 0.0016*wMul);
         }
       }
     }
@@ -1107,6 +1110,13 @@ class GameState {
   onMonth(){
     const m=this.time.month;
     const winter=(seasonOf(m)===0);
+    // ----- météo du mois : neige en hiver, sinon pluie/brouillard aléatoires -----
+    if(winter){ this.weather = this.rnd()<0.5 ? "snow" : "clear"; }
+    else {
+      const r=this.rnd();
+      this.weather = r<0.18 ? "rain" : r<0.30 ? "fog" : "clear";
+    }
+    this.weatherT = 0;
     // production des extensions de cour
     const summer = m>=7 && m<=9;
     const beeSeason = m>=3 && m<=8;
@@ -1166,8 +1176,8 @@ class GameState {
       f.lastAte=ate; f.lastVariety=varietyVillage;
       if(ate===0){ f.starving++; starved++; } else f.starving=0;
     }
-    // bois de chauffe
-    const fuelNeed=this.families.length*(winter?2:1);
+    // bois de chauffe (neige = +1 par famille en plus)
+    const fuelNeed=this.families.length*(winter?2:1)+(this.weather==="snow"?this.families.length:0);
     const fuelGot=Math.min(this.stock.firewood, fuelNeed);
     this.stock.firewood-=fuelGot;
     const fuelRatio=fuelNeed>0?fuelGot/fuelNeed:1;
@@ -1444,6 +1454,7 @@ class GameState {
       v:2,
       seed:this.seed,
       modeId:this.modeId,
+      weather:this.weather,
       diffId:this.diffId,
       tiles:Array.from(this.tiles),
       treeWood:Array.from(this.treeWood),
@@ -1519,6 +1530,7 @@ class GameState {
     g.victory = !!data.victory;
     g.defeat = !!data.defeat;
     g.endReason = data.endReason || null;
+    if(typeof data.weather==="string") g.weather = data.weather;
     if(typeof data.modeId==="string" && MODE_BY_ID[data.modeId]) g.modeId = data.modeId;
     if(typeof data.diffId==="string" && DIFF_BY_ID[data.diffId]) g.diffId = data.diffId;
     g.pendingEvent = data.pendingEvent || null;

@@ -281,7 +281,7 @@ function drawDeer(ctx                         , g          , d     ){
 function drawGame(
   ctx                         , g          , cam                                ,
   canvas                  , hover                                     ,
-  buildSel            , selId            , layers          
+  buildSel            , selId            , layers          , now          
 ){
   const dpr = canvas.width/(canvas.clientWidth||1);
   const cw = canvas.width, ch = canvas.height;
@@ -432,6 +432,37 @@ function drawGame(
       ctx.arc(hover.tx+d.w/2, hover.ty+d.h/2, d.radius, 0, Math.PI*2);
       ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha=1;
     }
+  }
+
+  // ----- météo -----
+  const t = now/1000;
+  if(g.weather==="rain"){
+    ctx.strokeStyle="rgba(150,180,220,0.5)"; ctx.lineWidth=0.03;
+    for(let i=0;i<60;i++){
+      const rx=(i*7.13)%W, ry=((i*3.7 + t*14)%H);
+      ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(rx-0.15, ry+0.5); ctx.stroke();
+    }
+  } else if(g.weather==="snow"){
+    ctx.fillStyle="rgba(255,255,255,0.8)";
+    for(let i=0;i<40;i++){
+      const rx=(i*5.3 + Math.sin(t+i)*0.3)%W, ry=((i*2.9 + t*2.2)%H);
+      ctx.fillRect(rx, ry, 0.09, 0.09);
+    }
+  } else if(g.weather==="fog"){
+    ctx.globalAlpha=0.35; ctx.fillStyle="#c8ccd4";
+    for(let i=0;i<6;i++){
+      const fx=((i*11.7 + t*0.5)%(W+10))-5, fy=(i*5.9)%H;
+      ctx.beginPath(); ctx.ellipse(fx, fy, 6, 1.6, 0, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha=1;
+  }
+
+  // jour/nuit : voile sombre la nuit (heure du tick)
+  const hourFrac = g.time.tick/10;
+  if(hourFrac>0.75 || hourFrac<0.08){
+    ctx.globalAlpha=0.18; ctx.fillStyle="#0a1024";
+    ctx.fillRect(x0, y0, x1-x0+1, y1-y0+1);
+    ctx.globalAlpha=1;
   }
 
   // ===== minimap =====

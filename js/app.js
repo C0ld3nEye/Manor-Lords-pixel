@@ -293,6 +293,8 @@ function renderUI(){
   h += "<span class='ttl'>🏰 SEIGNEURIE</span>";
   h += "<span class='chip'>"+MONTHS[g.time.month]+" "+g.time.year+" "+seasonIcon+"</span>";
   h += "<span class='chip' title='Niveau de la seigneurie'>"+esc(g.settlementName())+"</span>";
+  var wIcon = { clear:"\u2600\ufe0f", rain:"\ud83c\udf27\ufe0f", snow:"\ud83c\udf28\ufe0f", fog:"\ud83c\udf2b\ufe0f" }[g.weather] || "\u2600\ufe0f";
+  h += "<span class='chip' title='Météo'>"+wIcon+"</span>";
   h += "<span class='chip'>💰 "+Math.floor(g.treasury)+"</span>";
   h += "<span class='chip' style='color:"+apCol+"'>😊 "+g.approval+"%</span>";
   h += "<span class='chip'>👨‍👩‍👧 "+g.families.length+(homeless>0 ? " (!"+homeless+")" : "")+"</span>";
@@ -567,7 +569,7 @@ function loop(now){
   if(_saveAcc>5000){ _saveAcc = 0; persist(game); }
   _uiAcc += dt;
   if(_uiAcc>300){ _uiAcc = 0; renderUI(); }
-  drawGame(ctx, game, cam, canvas, hover, ui.buildSel, ui.selId, ui.layers);
+  drawGame(ctx, game, cam, canvas, hover, ui.buildSel, ui.selId, ui.layers, now);
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
