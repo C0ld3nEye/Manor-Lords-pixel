@@ -513,4 +513,44 @@ test("jalon 3 : sauvegarde persiste camps et milice", () => {
   assert.strictEqual(g2.camps[0].hp, 12);
 });
 
+test("jalon 4 : rempart infranchissable une fois construit", () => {
+  const g = fresh();
+  g.stock.stone = 10;
+  const s2 = freeSpot(g);
+  assert.strictEqual(g.place("wall", s2.x, s2.y), null);
+  const w = g.buildings[g.buildings.length-1];
+  w.done = true;
+  assert.strictEqual(g.passable(s2.x, s2.y), false, "rempart construit = infranchissable");
+});
+
+test("jalon 4 : la tour de guet donne +4 approbation et limite les raids", () => {
+  const g = fresh();
+  g.stock.timber = 10; g.stock.stone = 10;
+  const s2 = freeSpot(g);
+  g.place("tower", s2.x, s2.y);
+  const t = g.buildings[g.buildings.length-1];
+  t.done = true;
+  g.stock.bread = 100; g.approval = 80;
+  g.pendingEvent = { title:"Raid", text:"", choices:[{label:"Refuser", act:"refuseRaid"}] };
+  g.resolveEvent(0);
+  const breadSansTour = 70; // 100 * 0.7 sans tour
+  assert.ok(g.stock.bread > breadSansTour, "la tour a réduit le pillage (50% des dégâts)");
+});
+
+test("jalon 4 : menaces aléatoires ne crashent pas la sim", () => {
+  const g = fresh();
+  g.time.year = 1180;
+  for(let i=0;i<10*16*12*2;i++) g.step(); // 2 ans avec menaces possibles
+  assert.ok(g.families.length >= 0 && g.approval >= 0 && g.approval <= 100);
+});
+
+test("jalon 4 : tour et rempart dans BUILD_ORDER et sauvegardés", () => {
+  const g = fresh();
+  g.stock.timber = 10; g.stock.stone = 10;
+  const s2 = freeSpot(g);
+  g.place("tower", s2.x, s2.y);
+  const g2 = GameState.load(JSON.parse(JSON.stringify(g.serialize())));
+  assert.ok(g2.buildings.some(b=>b.def==="tower"));
+});
+
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));

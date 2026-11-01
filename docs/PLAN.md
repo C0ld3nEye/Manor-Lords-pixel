@@ -94,7 +94,7 @@ Chaque étape est livrable et testable seule. Ordre conseillé = du plus fondame
 15. **Commerce régional** : routes commerciales vers des marchés extérieurs (achat de bœufs, vente de surplus), prix fluctuants, **richesse régionale** vs **trésorerie du seigneur**.
 16. **Nouvelles ressources et chaînes** : planches (scierie), charbon de bois, ale (brasserie), lin, outils, armes, chevaux.
 
-### ⚔️ Phase 4 — Guerre, territoires et menaces (semaines 15-20)
+### ⚔️ Phase 4 — Guerre, territoires et menaces (semaines 15-20) ✅ 3 régions + réclamation, Baron rival (réclamations + raids), milice + camps de brigands avec combats, tour/remparts, peste/incendie/hiver rude — 50 tests
 
 17. **Carte multi-régions** : 3-6 régions adjacentes, réclamables (coût en trésorerie/influence) avec bonus de ressources par région.
 18. **Baron rival (IA)** : il réclame des régions, fonde des colonies, progresse — il faut le devancer ou le combattre.

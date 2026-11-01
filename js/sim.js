@@ -54,9 +54,11 @@ const BUILD_DEFS                              = {
   market:    { id:"market",    name:"Marché",          icon:"⛺", w:2,h:2, cost:{timber:2}, fam:3, instant:false, desc:"Sans marché actif, vos familles n'ont accès qu'à un seul type de nourriture." },
   church:    { id:"church",    name:"Église",          icon:"⛪", w:2,h:2, cost:{timber:2,stone:2}, fam:0, instant:false, desc:"+6 d'approbation. Requise pour les bourgages de niveau 3." },
   trade:     { id:"trade",     name:"Comptoir",       icon:"\u26fa", w:2,h:2, cost:{timber:3,stone:2}, fam:1, instant:false, desc:"Vente automatique des surplus chaque mois (prix fluctuants). +richesse régionale." },
+  tower:     { id:"tower",     name:"Tour de guet",   icon:"\ud83d\udde1\ufe0f", w:1,h:1, cost:{timber:2,stone:3}, fam:0, instant:false, desc:"+4 approbation, repousse les raids (réduit le pillage de moitié)." },
+  wall:      { id:"wall",      name:"Rempart",        icon:"🧱", w:1,h:1, cost:{stone:2}, fam:0, instant:false, wall:true, desc:"Mur défensif : les brigands ne passent pas dessus (case infranchissable)." },
   manor:     { id:"manor",     name:"Manoir",          icon:"🏰", w:2,h:2, cost:{timber:4,stone:3}, fam:0, instant:false, desc:"Permet de lever l'impôt (curseur dans le panneau du manoir)." },
 };
-const BUILD_ORDER = ["burgage","woodcutter","forager","hunter","quarry","farm","field","windmill","granary","storehouse","market","trade","church","manor"];
+const BUILD_ORDER = ["burgage","woodcutter","forager","hunter","quarry","farm","field","windmill","granary","storehouse","market","trade","church","tower","wall","manor"];
 
 const FOOD_TYPES = ["berries","meat","bread","eggs","veg","apples","honey"];
 
@@ -423,9 +425,10 @@ class GameState {
       for(const k of FOOD_TYPES) this.stock[k]=Math.floor(this.stock[k]*0.75); this.toast("Le bailli confisque une partie des récoltes !","bad"); }
     else if(c.act==="payRaid"){ this.treasury -= (c.amount||0); this.toast("Le tribut est versé au Baron. Il se retire… pour l'instant.","good"); }
     else if(c.act==="refuseRaid"){ this.approval -= 15;
-      for(const k of ["berries","meat","bread","eggs","veg","apples","honey"]) this.stock[k]=Math.floor((this.stock[k]||0)*0.7);
-      this.stock.timber=Math.floor(this.stock.timber*0.85);
-      this.toast("Les cavaliers pillent la seigneurie !","bad"); }
+      const fort = this.buildings.some(b=>b.done&&b.def==="tower") ? 0.5 : 1.0;
+      for(const k of ["berries","meat","bread","eggs","veg","apples","honey"]) this.stock[k]=Math.floor((this.stock[k]||0)*(1-0.3*fort));
+      this.stock.timber=Math.floor(this.stock.timber*(1-0.15*fort));
+      this.toast("Les cavaliers pillent la seigneurie !"+(fort<1?" (la tour en a limité les dégâts)":""),"bad"); }
     else if(c.act==="payBandits"){ this.treasury -= (c.amount||0); this.toast("Les brigands s'éloignent, bourse plus légère.","good"); }
     else if(c.act==="hideBandits"){ for(const k of ["berries","meat","bread","eggs","veg"]) this.stock[k]=Math.floor(this.stock[k]*0.8);
       this.stock.timber=Math.floor(this.stock.timber*0.9); this.toast("Les brigands pillent la seigneurie et repartent.","bad"); }
@@ -469,7 +472,14 @@ class GameState {
     if(x<0||y<0||x>=W||y>=H) return false;
     if(!this.regionOwned(x)) return false;
     const i=y*W+x;
-    return this.tiles[i]!==T_WATER && this.occupied[i]<0;
+    if(this.tiles[i]===T_WATER) return false;
+    const ob=this.occupied[i];
+    if(ob>=0){
+      const b=this.buildings.find(b=>b.id===ob);
+      if(b && b.def==="wall" && b.done) return false; // rempart infranchissable
+      return false;
+    }
+    return true;
   }
   astar(sx       ,sy       ,tx       ,ty       )           {
     if(sx===tx && sy===ty) return [];
@@ -1082,6 +1092,7 @@ class GameState {
     if(clothRatio>=1) a+=4; else if(clothRatio>=0.5) a-=3; else a-=8;
     if(winter){ if(aleRatio>=1) a+=3; else if(aleRatio<0.5) a-=6; }
     if(this.hasChurch()) a+=6;
+    if(this.buildings.some(b=>b.done&&b.def==="tower")) a+=4;
     if(this.buildings.some(b=>b.done&&b.def==="market")) a+=2; else a-=4;
     const homeless=this.families.filter(f=>f.home<0).length;
     a-=Math.min(24, homeless*12);
@@ -1206,6 +1217,30 @@ class GameState {
           { label:"Payer "+amount+" 🪙", act:"payBandits", amount, disabled:this.treasury<amount },
           { label:"Refuser (ils pillent les réserves)", act:"hideBandits" },
         ]};
+    }
+    // ----- menaces aléatoires (à partir de 1178) -----
+    if(this.time.year>=1178 && this.rnd()<0.02){
+      const roll=this.rnd();
+      if(roll<0.33){
+        // peste : quelques familles meurent ou partent
+        const n=Math.min(this.families.length-1, 1+Math.floor(this.rnd()*2));
+        for(let i=0;i<n;i++){
+          const f=this.families[this.families.length-1];
+          this.families.splice(this.families.indexOf(f),1);
+          for(const o of this.buildings) o.families=o.families.filter(id=>id!==f.id);
+        }
+        this.approval=Math.max(0,this.approval-10);
+        this.toast("🦠 Une peste frappe la seigneurie ! "+n+" famille(s) disparue(s).","bad");
+      } else if(roll<0.66){
+        // incendie : perte de bois et approbation
+        this.stock.timber=Math.floor(this.stock.timber*0.6);
+        this.approval=Math.max(0,this.approval-6);
+        this.toast("🔥 Un incendie ravage une partie des réserves de bois !","bad");
+      } else {
+        // hiver rude : consommation de bois doublée ce mois-ci (déjà le cas), avertissement
+        this.stock.firewood=Math.max(0,this.stock.firewood-this.families.length);
+        this.toast("❄️ Un hiver précoce ! Surveillez le bois de chauffe.","bad");
+      }
     }
     // ----- IA du Baron rival -----
     this.baronStep();

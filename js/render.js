@@ -127,6 +127,20 @@ function drawBuilding(ctx                         , g          , b         ){
       px(ctx, x+0.58, y+0.5, 0.18, 0.18, "#9aa0a8");
       break;
     }
+    case "tower":{
+      px(ctx, x+0.2, y+0.2, 0.6, 0.7, "#8a8f96");
+      px(ctx, x+0.14, y+0.1, 0.72, 0.16, "#6f7276");
+      px(ctx, x+0.4, y-0.06, 0.2, 0.2, "#5a5d62");
+      px(ctx, x+0.44, y+0.24, 0.12, 0.2, "#3a3d42"); // meurtrière
+      break;
+    }
+    case "wall":{
+      px(ctx, x+0.05, y+0.05, 0.9, 0.9, "#9aa0a8");
+      px(ctx, x+0.05, y+0.05, 0.9, 0.22, "#b8bdc4");
+      px(ctx, x+0.05, y+0.45, 0.9, 0.06, "#6f7276");
+      px(ctx, x+0.4, y+0.45, 0.2, 0.06, "#6f7276");
+      break;
+    }
     case "trade":{
       px(ctx, x+0.08, y+0.08, w-0.16, h-0.16, "#7a5a34");
       px(ctx, x+0.04, y+0.02, w-0.08, 0.22, "#5a3a26");
