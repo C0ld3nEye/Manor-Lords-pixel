@@ -180,8 +180,11 @@ canvas.addEventListener("contextmenu", function(e){
 });
 
 /* ----- clavier : pause, vitesse, ZQSD/WASD/flèches ----- */
+window.addEventListener("pointerdown", function(){ AudioFX.init(); }, { once:false });
 window.addEventListener("keydown", function(e){
+  AudioFX.init();
   if(e.key===" "){ e.preventDefault(); game.speed = game.speed===0 ? 1 : 0; }
+  if(e.key==="m"){ AudioFX.muted = !AudioFX.muted; flash(AudioFX.muted ? "Son coupé" : "Son activé"); }
   if(e.key==="Escape"){ ui.buildSel = null; ui.selId = null; ui.helpOpen = false; ui.roadMode = false; renderUI(); }
   if(e.key==="1") game.speed = 1;
   if(e.key==="2") game.speed = 2;
@@ -205,6 +208,7 @@ document.addEventListener("click", function(e){
   if(!el) return;
   var act = el.getAttribute("data-act");
   var arg = el.getAttribute("data-arg");
+  if(act && act!=="noop") AudioFX.click();
   if(act==="speed"){ game.speed = Number(arg); }
   else if(act==="build"){ ui.buildSel = (ui.buildSel===arg ? null : arg); ui.selId = null; }
   else if(act==="selclose"){ ui.selId = null; }
@@ -230,6 +234,7 @@ document.addEventListener("click", function(e){
   else if(act==="log"){ ui.logOpen = true; }
   else if(act==="logclose"){ ui.logOpen = false; }
   else if(act==="noop"){ return; } /* clic à l'intérieur d'une modale : ne rien faire */
+  else if(act==="mute"){ AudioFX.init(); AudioFX.muted = !AudioFX.muted; }
   else if(act==="new"){ uiMenu = true; }
   else if(act==="menuclose"){ uiMenu = false; if(!game){ uiMenu = true; } }
   else if(act==="startgame"){
@@ -325,6 +330,7 @@ function renderUI(){
   h += "<button class='btn' data-act='log' title='Journal des \u00e9v\u00e9nements'>\ud83d\udcdc</button>";
   h += "<button class='btn' data-act='saveCode' title='Code de sauvegarde'>💾</button>";
   h += "<button class='btn' data-act='loadCode' title='Charger un code'>📥</button>";
+  h += "<button class='btn' data-act='mute' title='Son on/off (M)'>"+(AudioFX.muted?"\ud83d\udd07":"\ud83d\udd0a")+"</button>";
   h += "<button class='btn' data-act='help'>?</button>";
   h += "<button class='btn danger' data-act='new' title='Nouvelle partie'>⟲</button>";
   hud.innerHTML = h;
@@ -546,6 +552,45 @@ function renderUI(){
 }
 renderUI();
 
+/* ----- sons procéduraux (WebAudio, aucun fichier) ----- */
+var AudioFX = {
+  ctx:null, muted:false, master:null,
+  init(){
+    if(this.ctx) return;
+    try{
+      this.ctx = new (window.AudioContext||window.webkitAudioContext)();
+      this.master = this.ctx.createGain();
+      this.master.gain.value = 0.25;
+      this.master.connect(this.ctx.destination);
+    }catch(e){ this.ctx = null; }
+  },
+  tone(freq, dur, type, vol){
+    if(!this.ctx || this.muted) return;
+    const o=this.ctx.createOscillator(), g=this.ctx.createGain();
+    o.type=type||"sine"; o.frequency.value=freq;
+    g.gain.setValueAtTime(vol||0.5, this.ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime+dur);
+    o.connect(g); g.connect(this.master);
+    o.start(); o.stop(this.ctx.currentTime+dur);
+  },
+  click(){ this.tone(660, 0.06, "square", 0.25); },
+  good(){ this.tone(523, 0.12, "sine", 0.4); this.tone(784, 0.18, "sine", 0.3); },
+  bad(){ this.tone(220, 0.25, "sawtooth", 0.3); },
+  build(){ this.tone(330, 0.08, "triangle", 0.35); this.tone(440, 0.1, "triangle", 0.3); },
+  coin(){ this.tone(988, 0.08, "square", 0.2); this.tone(1319, 0.12, "square", 0.15); },
+};
+// sons déclenchés sur les nouveaux toasts
+var _lastToastId = 0;
+function soundForToasts(g){
+  if(!g.log.length) return;
+  var last = g.log[g.log.length-1];
+  if(last.id > _lastToastId){
+    _lastToastId = last.id;
+    if(last.kind==="good") AudioFX.good();
+    else if(last.kind==="bad") AudioFX.bad();
+  }
+}
+
 /* ----- boucle principale ----- */
 var _last = performance.now(), _acc = 0, _uiAcc = 0, _saveAcc = 0;
 function loop(now){
@@ -567,6 +612,7 @@ function loop(now){
   }
   _saveAcc += dt;
   if(_saveAcc>5000){ _saveAcc = 0; persist(game); }
+  soundForToasts(game);
   _uiAcc += dt;
   if(_uiAcc>300){ _uiAcc = 0; renderUI(); }
   drawGame(ctx, game, cam, canvas, hover, ui.buildSel, ui.selId, ui.layers, now);

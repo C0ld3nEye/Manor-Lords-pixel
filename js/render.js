@@ -434,6 +434,26 @@ function drawGame(
     }
   }
 
+  // ----- animations : fumée des cheminées + drapeaux -----
+  for(const b of g.buildings){
+    if(!b.done) continue;
+    if(b.def==="burgage" || b.def==="farm" || b.def==="windmill" || (b.exts&&b.exts.includes("brewer"))){
+      const fx=b.x+b.w-0.15, fy=b.y+0.1;
+      for(let k=0;k<3;k++){
+        const ph=((t*0.6+k*0.33)%1);
+        ctx.globalAlpha=0.35*(1-ph);
+        ctx.fillStyle="#d8d8d8";
+        ctx.fillRect(fx+Math.sin(t+k)*0.06*ph, fy-ph*0.9, 0.12*(0.5+ph*0.8), 0.12*(0.5+ph*0.8));
+      }
+      ctx.globalAlpha=1;
+    }
+    if(b.def==="manor" || b.def==="tower"){
+      const wave=Math.sin(t*3)*0.08;
+      px(ctx, b.x+0.85, b.y-0.05, 0.2, 0.12+wave, "#b03030");
+      px(ctx, b.x+0.85, b.y-0.05, 0.06, 0.12+wave, "#e8c35a");
+    }
+  }
+
   // ----- météo -----
   const t = now/1000;
   if(g.weather==="rain"){
