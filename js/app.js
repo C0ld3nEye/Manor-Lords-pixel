@@ -212,6 +212,7 @@ document.addEventListener("click", function(e){
   else if(act==="crop"){ if(ui.selId!=null) game.setCrop(ui.selId, arg); }
   else if(act==="fieldsize"){ game.setFieldSize(Number(arg)); }
   else if(act==="layer"){ ui.layers[arg] = !ui.layers[arg]; }
+  else if(act==="militia"){ game.raiseMilitia(); }
   else if(act==="regions"){ ui.regionsOpen = true; }
   else if(act==="regionsclose"){ ui.regionsOpen = false; }
   else if(act==="claim"){ game.claimRegion(Number(arg)); }
@@ -287,6 +288,7 @@ function renderUI(){
   if(game.time.year >= 1177) h += "<span class='chip small' style='color:#e86a5a' title='Puissance du Baron rival'>⚔️ "+game.baron.power+"</span>";
   h += "<span class='chip small' title='Richesse régionale'>\U0001f4b0 "+Math.floor(g.wealth)+"</span>";
   h += "<button class='btn' data-act='buyox' title='Acheter un boeuf (20 deniers)'>🐂+</button>";
+  h += "<button class='btn' data-act='militia' title='Lever la milice (1 soldat pour 2 familles)'>\U0001f6e1\ufe0f "+game.units.length+"/"+game.militiaCount()+"</button>";
   h += "<button class='btn' data-act='regions' title='Régions'>\U0001f5fa\ufe0f</button>";
   h += "<button class='btn' data-act='log' title='Journal des \u00e9v\u00e9nements'>\ud83d\udcdc</button>";
   h += "<button class='btn' data-act='saveCode' title='Code de sauvegarde'>💾</button>";

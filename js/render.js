@@ -353,6 +353,24 @@ function drawGame(
   const bs = [...g.buildings].sort((a,b)=>(a.y+a.h)-(b.y+b.h));
   for(const b of bs) drawBuilding(ctx, g, b);
 
+  // camps de brigands
+  for(const c of g.camps){
+    px(ctx, c.x-0.4, c.y-0.3, 0.8, 0.5, "#5a3a2a");
+    px(ctx, c.x-0.3, c.y-0.4, 0.6, 0.2, "#4a2f22");
+    px(ctx, c.x+0.2, c.y-0.1, 0.14, 0.2, "#2a1a12");
+    // barre de vie
+    px(ctx, c.x-0.45, c.y-0.55, 0.9, 0.1, "#222");
+    px(ctx, c.x-0.45, c.y-0.55, 0.9*Math.max(0,c.hp/c.maxHp), 0.1, "#e05a3a");
+  }
+  // soldats de la milice
+  for(const u of g.units){
+    px(ctx, u.x-0.12, u.y-0.12, 0.24, 0.24, "#5a6a8a");
+    px(ctx, u.x-0.08, u.y-0.16, 0.16, 0.08, "#8a8f96");
+    px(ctx, u.x+0.12, u.y-0.05, 0.05, 0.18, "#8a8f96");
+    px(ctx, u.x-0.14, u.y-0.14, 0.28, 0.07, "#222");
+    px(ctx, u.x-0.14, u.y-0.14, 0.28*Math.max(0,u.hp/u.maxHp), 0.07, "#7bd88f");
+  }
+
   // cerfs
   for(const d of g.deer) drawDeer(ctx, g, d);
 
@@ -423,6 +441,9 @@ function drawGame(
       ctx.fillStyle = b.done ? "#e8c35a" : "#c97a4a";
       ctx.fillRect(mmx+b.x*ppt, mmy+b.y*ppt, Math.max(ppt,b.w*ppt), Math.max(ppt,b.h*ppt));
     }
+    // camps de brigands
+    ctx.fillStyle = "#c43a3a";
+    for(const c of g.camps) ctx.fillRect(mmx+c.x*ppt-1, mmy+c.y*ppt-1, 3, 3);
     // rectangle de vue
     ctx.strokeStyle = "#ffffff";
     ctx.lineWidth = 1;

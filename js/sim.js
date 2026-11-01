@@ -121,7 +121,8 @@ class GameState {
   occupied           ;
   buildings           ; nextB       ;
   families         ; nextF       ;
-  deer       ; nextD       ; deerTimer       ;
+  deer       ; nextD       ; deerTimer       ; camps          ; nextC       ;
+  units            ; nextU       ;
   stock                      ;
   capBase       ; capPer       ;
   time                                                       ;
@@ -150,6 +151,8 @@ class GameState {
     this.buildings = []; this.nextB = 1;
     this.families = []; this.nextF = 1;
     this.deer = []; this.nextD = 1; this.deerTimer = 0;
+    this.camps = []; this.nextC = 1;
+    this.units = []; this.nextU = 1;
     this.stock = { timber:15, firewood:8, stone:0, grain:0, bread:0, berries:25, meat:15, eggs:0, veg:0, apples:0, honey:0, clothes:0, ale:0, barley:0, ox:0 };
     this.capBase = 300; this.capPer = 150;
     this.time = { tick:0, day:0, month:2, year:1176 }; // mars 1176
@@ -856,6 +859,78 @@ class GameState {
     f.carry=null;
   }
 
+  /* ---------- camps de brigands & milice ---------- */
+  campStep(){
+    // spawn : un camp tous les ~2 ans à partir de 1178, max 2
+    if(this.time.year>=1178 && this.camps.length<2 && this.rnd()<0.004){
+      for(let tries=0; tries<30; tries++){
+        const x=2+Math.floor(this.rnd()*(W-4)), y=2+Math.floor(this.rnd()*(H-4));
+        if(this.passable(x,y)){
+          this.camps.push({ id:this.nextC++, x:x+0.5, y:y+0.5, hp:20, maxHp:20 });
+          this.toast("🏕️ Un camp de brigands s'installe aux alentours !","bad");
+          break;
+        }
+      }
+    }
+    for(const c of this.camps){
+      // les brigands pillent un peu de nourriture chaque mois (géré dans onMonth)
+    }
+  }
+  militiaCount(){ return Math.floor(this.families.length/2); } // 1 soldat pour 2 familles
+  raiseMilitia(){
+    const want = this.militiaCount();
+    const have = this.units.length;
+    if(want<=have) return 0;
+    const n = want-have;
+    for(let i=0;i<n;i++){
+      const b = this.buildings.find(b=>b.done && b.def==="manor") || this.buildings[0];
+      this.units.push({ id:this.nextU++, x:b.x+0.5, y:b.y+b.h+0.5, hp:10, maxHp:10, state:"guard", target:null, cool:0 });
+    }
+    this.toast("🛡️ Milice levée : "+n+" soldat(s) !","good");
+    this.uiVersion++;
+    return n;
+  }
+  unitStep(u){
+    if(u.state==="guard"){
+      // cherche le camp le plus proche
+      let best=null, bd=Infinity;
+      for(const c of this.camps){ const d=Math.hypot(c.x-u.x, c.y-u.y); if(d<bd){ bd=d; best=c; } }
+      if(best && bd<14){ u.state="attack"; u.target=best.id; }
+      else if(u.cool>0) u.cool--;
+    } else if(u.state==="attack"){
+      const c = this.camps.find(c=>c.id===u.target);
+      if(!c){ u.state="guard"; u.target=null; return; }
+      const d = Math.hypot(c.x-u.x, c.y-u.y);
+      if(d>1.6){
+        const p=this.astar(Math.floor(u.x),Math.floor(u.y),Math.floor(c.x),Math.floor(c.y));
+        if(p && p.length){ u.path=p; this.moveAlong(u, u.path, 0.3); } else { u.x+=(c.x-u.x)/d*0.3; u.y+=(c.y-u.y)/d*0.3; }
+      } else {
+        // combat : le soldat tape (x6 par tick de combat), le camp riposte
+        c.hp -= 0.30; u.hp -= 0.03;
+        if(c.hp<=0){
+          this.camps.splice(this.camps.indexOf(c),1);
+          this.treasury += 15;
+          this.wealth += 10;
+          this.toast("🏆 Camp de brigands détruit ! +15 deniers de butin.","good");
+          u.state="guard"; u.target=null; u.hp=u.maxHp;
+        }
+        if(u.hp<=0){
+          this.units.splice(this.units.indexOf(u),1);
+          this.approval=Math.max(0,this.approval-5);
+          this.toast("💀 Un soldat est tombé au combat…","bad");
+        }
+      }
+    }
+  }
+  pillageCamps(){
+    if(!this.camps.length) return 0;
+    let lost=0;
+    for(const c of this.camps){
+      for(const k of FOOD_TYPES){ const take=Math.min(this.stock[k]||0, 1); this.stock[k]-=take; lost+=take; }
+    }
+    return lost;
+  }
+
   /* ---------- progression du temps ---------- */
   step(){
     const t=this.time;
@@ -885,6 +960,10 @@ class GameState {
         const cx=2+Math.floor(this.rnd()*(W-4)), cy=2+Math.floor(this.rnd()*(H-4));
         if(this.passable(cx,cy)) this.deer.push({id:this.nextD++, x:cx+0.5, y:cy+0.5, path:null, frozen:false});
       }}
+      // camps de brigands : spawn aléatoire + déplacement + pillage
+      this.campStep();
+      // milice : les soldats patrouillent et affrontent les brigands
+      for(const u of this.units) this.unitStep(u);
       // libère les cerfs dont le chasseur a disparu
       if(t.tick%200===0){
         const hunting=new Set        ();
@@ -1038,6 +1117,11 @@ class GameState {
     } else {
       // sans comptoir, la richesse régionale vient des impôts locaux
       this.wealth = Math.max(0, this.wealth*0.98);
+    }
+    // pillage des camps de brigands
+    if(this.camps.length){
+      const lost=this.pillageCamps();
+      if(lost>0) this.toast("🏕️ Les brigands ont pillé "+lost+" denrées !","bad");
     }
     // bonus des régions réclamées
     for(const r of this.regions){
@@ -1213,6 +1297,8 @@ class GameState {
       roads:Array.from(this.roads),
       regions:this.regions,
       baron:this.baron,
+      camps:this.camps,
+      units:this.units,
       wealth:this.wealth,
       prices:this.prices,
       victory:this.victory,
@@ -1251,6 +1337,10 @@ class GameState {
     g.log = Array.isArray(data.log) ? data.log : [];
     if(Array.isArray(data.roads) && data.roads.length===W*H) g.roads = Uint8Array.from(data.roads);
     if(data.baron && typeof data.baron==="object") g.baron = Object.assign(g.baron, data.baron);
+    g.camps = Array.isArray(data.camps) ? data.camps : [];
+    g.units = Array.isArray(data.units) ? data.units : [];
+    g.nextC = Math.max(0, ...g.camps.map(c=>typeof c.id==="number"?c.id:0)) + 1;
+    g.nextU = Math.max(0, ...g.units.map(u=>typeof u.id==="number"?u.id:0)) + 1;
     if(Array.isArray(data.regions)) g.regions = REGION_DEFS.map(r=>({ id:r.id, owned: !!(data.regions[r.id] && data.regions[r.id].owned) || r.id===0 }));
     g.wealth = typeof data.wealth==="number" ? data.wealth : 0;
     if(data.prices && typeof data.prices==="object"){

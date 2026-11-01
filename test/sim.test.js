@@ -473,4 +473,44 @@ test("jalon 2 : sauvegarde persiste le baron", () => {
   assert.strictEqual(g2.baron.power, 3);
 });
 
+test("jalon 3 : milice levée = 1 soldat pour 2 familles", () => {
+  const g = fresh();
+  assert.strictEqual(g.militiaCount(), 1); // 3 familles
+  assert.strictEqual(g.raiseMilitia(), 1);
+  assert.strictEqual(g.units.length, 1);
+  assert.strictEqual(g.raiseMilitia(), 0, "déjà levée");
+});
+
+test("jalon 3 : un soldat détruit un camp de brigands et rapporte du butin", () => {
+  const g = fresh();
+  const b = g.buildings[0];
+  g.camps.push({ id:99, x:b.x+3.5, y:b.y+0.5, hp:20, maxHp:20 });
+  g.raiseMilitia();
+  const u = g.units[0];
+  assert.strictEqual(u.state, "guard");
+  const t0 = g.treasury;
+  for(let i=0;i<5000 && g.camps.length>0;i++) g.step();
+  assert.strictEqual(g.camps.length, 0, "camp détruit");
+  assert.ok(g.treasury > t0, "butin gagné");
+});
+
+test("jalon 3 : les camps pillent la nourriture chaque mois", () => {
+  const g = fresh();
+  g.camps.push({ id:99, x:5.5, y:5.5, hp:20, maxHp:20 });
+  g.stock.bread = 20;
+  const lost = g.pillageCamps();
+  assert.ok(lost > 0, "nourriture pillée");
+  assert.ok(g.stock.bread < 20);
+});
+
+test("jalon 3 : sauvegarde persiste camps et milice", () => {
+  const g = fresh();
+  g.raiseMilitia();
+  g.camps.push({ id:99, x:5.5, y:5.5, hp:12, maxHp:20 });
+  const g2 = GameState.load(JSON.parse(JSON.stringify(g.serialize())));
+  assert.strictEqual(g2.units.length, 1);
+  assert.strictEqual(g2.camps.length, 1);
+  assert.strictEqual(g2.camps[0].hp, 12);
+});
+
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));
