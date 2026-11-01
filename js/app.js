@@ -265,7 +265,7 @@ function renderUI(){
   var h = "";
   h += "<span class='ttl'>🏰 SEIGNEURIE</span>";
   h += "<span class='chip'>"+MONTHS[g.time.month]+" "+g.time.year+" "+seasonIcon+"</span>";
-  h += "<span class='chip'>🪙 "+Math.floor(g.treasury)+"</span>";
+  h += "<span class='chip'>💰 "+Math.floor(g.treasury)+"</span>";
   h += "<span class='chip' style='color:"+apCol+"'>😊 "+g.approval+"%</span>";
   h += "<span class='chip'>👨‍👩‍👧 "+g.families.length+(homeless>0 ? " (!"+homeless+")" : "")+"</span>";
   h += "<div class='res'>";
@@ -284,12 +284,12 @@ function renderUI(){
   h += "<button class='btn"+(ui.layers.stone?" on":"")+"' data-act='layer' data-arg='stone' title='Gisements de pierre'>\ud83e\dea8</button>";
   h += "<button class='btn"+(ui.layers.berry?" on":"")+"' data-act='layer' data-arg='berry' title='Baies'>\ud83e\udfd0</button>";
   h += "<button class='btn"+(ui.layers.soil?" on":"")+"' data-act='layer' data-arg='soil' title='Fertilit\u00e9 du sol'>\ud83c\udf3e</button>";
-  h += "<button class='btn"+(ui.roadMode?" on":"")+"' data-act='road' title='Tracer des routes'>🛤</button>";
+  h += "<button class='btn"+(ui.roadMode?" on":"")+"' data-act='road' title='Tracer des routes'>≡</button>";
   if(game.time.year >= 1177) h += "<span class='chip small' style='color:#e86a5a' title='Puissance du Baron rival'>⚔️ "+game.baron.power+"</span>";
-  h += "<span class='chip small' title='Richesse régionale'>💰 "+Math.floor(g.wealth)+"</span>";
+  h += "<span class='chip small' title='Richesse régionale'>💵 "+Math.floor(g.wealth)+"</span>";
   h += "<button class='btn' data-act='buyox' title='Acheter un boeuf (20 deniers)'>🐂+</button>";
-  h += "<button class='btn' data-act='militia' title='Lever la milice (1 soldat pour 2 familles)'>🛡\ufe0f "+game.units.length+"/"+game.militiaCount()+"</button>";
-  h += "<button class='btn' data-act='regions' title='Régions'>🗺\ufe0f</button>";
+  h += "<button class='btn' data-act='militia' title='Lever la milice (1 soldat pour 2 familles)'>⚔️\ufe0f "+game.units.length+"/"+game.militiaCount()+"</button>";
+  h += "<button class='btn' data-act='regions' title='Régions'>🏰️\ufe0f</button>";
   h += "<button class='btn' data-act='log' title='Journal des \u00e9v\u00e9nements'>\ud83d\udcdc</button>";
   h += "<button class='btn' data-act='saveCode' title='Code de sauvegarde'>💾</button>";
   h += "<button class='btn' data-act='loadCode' title='Charger un code'>📥</button>";
@@ -376,13 +376,13 @@ function renderUI(){
 
   if(ui.regionsOpen){
     o += "<div class='modalwrap' data-act='regionsclose'><div class='modal big' data-act='noop'>";
-    o += "<b>🗺\ufe0f Régions du domaine</b>";
+    o += "<b>🏰️\ufe0f Régions du domaine</b>";
     for(var ri=0; ri<REGION_DEFS.length; ri++){
       var rd = REGION_DEFS[ri], rr = g.regions[ri];
       var baronHas = g.baron.regions.indexOf(ri)>=0;
       o += "<div class='row'><b>"+esc(rd.name)+"</b> "+(rr.owned?"<span class='good'>à vous</span>":(baronHas?"<span style='color:#e86a5a'>au Baron</span>":""));
       if(!rr.owned){
-        o += "<button class='btn' data-act='claim' data-arg='"+ri+"' title='Coût : 30 deniers + 15 richesse'>Réclamer (30\u00a0🪙 + 15💰)</button>";
+        o += "<button class='btn' data-act='claim' data-arg='"+ri+"' title='Coût : 30 deniers + 15 richesse'>Réclamer (30\u00a0💰 + 15💵)</button>";
       }
       o += "</div><div class='dim'>"+esc(rd.desc)+"</div>";
     }
@@ -427,7 +427,7 @@ function renderUI(){
     o += "</div>";
   }
   if(ui.flash) o += "<div class='flash'>"+esc(ui.flash)+"</div>";
-  if(ui.roadMode) o += "<div class='hint'>🛤 Mode route : touchez une case pour tracer/supprimer \u2014 les travailleurs empruntent les routes (plus rapides). Appui long ou \u00c9chap pour quitter.</div>";
+  if(ui.roadMode) o += "<div class='hint'>≡ Mode route : touchez une case pour tracer/supprimer \u2014 les travailleurs empruntent les routes (plus rapides). Appui long ou \u00c9chap pour quitter.</div>";
   if(ui.buildSel){
     o += "<div class='hint'>Posez : "+BUILD_DEFS[ui.buildSel].name+" — appui long pour annuler";
     if(BUILD_DEFS[ui.buildSel].uiSize){

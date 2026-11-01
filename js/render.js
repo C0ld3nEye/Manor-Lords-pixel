@@ -303,7 +303,7 @@ function drawGame(
       ctx.globalAlpha=0.25; ctx.fillStyle="#3a2a2a"; ctx.fillRect(x,y,1.02,1.02); ctx.globalAlpha=1;
     }
   }
-  const xb1 = Math.floor(W/3), xb2 = Math.floor(2*W/3);
+  const xb1 = Math.floor(W/3), xb2 = Math.floor(2*W/3); // frontières ouest/centre et centre/est
   ctx.strokeStyle="#e8c35a"; ctx.lineWidth=0.06; ctx.setLineDash([0.4,0.3]);
   ctx.beginPath(); ctx.moveTo(xb1, y0); ctx.lineTo(xb1, y1+1); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(xb2, y0); ctx.lineTo(xb2, y1+1); ctx.stroke();

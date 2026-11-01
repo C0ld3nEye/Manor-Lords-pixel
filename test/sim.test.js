@@ -11,8 +11,16 @@ function test(name, fn){
 }
 
 function fresh(){ return new GameState(1176); }
+function placeInCenter(g, def){
+  g.setFieldSize(3);
+  for(let y=1;y<H-4;y++) for(let x=Math.ceil(W/3)+1;x<Math.floor(2*W/3)-4;x++)
+    if(g.place(def, x, y)===null) return g.buildings[g.buildings.length-1];
+  throw new Error("pas de place pour "+def);
+}
+
+
 function freeSpot(g){
-  for(let y=1;y<H-1;y++) for(let x=1;x<W/3-1;x++) // région 0 uniquement (toujours réclamée)
+  for(let y=1;y<H-1;y++) for(let x=Math.ceil(W/3)+1;x<Math.floor(2*W/3)-1;x++) // région centrale (id 0, toujours réclamée)
     if(g.tiles[y*W+x]===T_GRASS && g.occupied[y*W+x]<0) return { x, y };
   throw new Error("aucune tuile libre");
 }
@@ -306,9 +314,9 @@ test("route interdite sur bâtiment et eau", () => {
 test("A* emprunte les routes quand c'est plus court", () => {
   const g = fresh();
   // trace une route horizontale longue
-  const xEnd = Math.floor(W/3)-2;
-  for(let x=2;x<=xEnd;x++) g.toggleRoad(x, 17);
-  const pRoad = g.astar(2, 17, xEnd, 17);
+  const x0 = Math.ceil(W/3)+1, xEnd = Math.floor(2*W/3)-2;
+  for(let x=x0;x<=xEnd;x++) g.toggleRoad(x, 17);
+  const pRoad = g.astar(x0, 17, xEnd, 17);
   assert.ok(pRoad, "chemin trouvé");
   // le coût total doit être réduit par la route
   let cost = 0;
@@ -318,12 +326,9 @@ test("A* emprunte les routes quand c'est plus court", () => {
 
 test("comptoir : vend les surplus, crédite trésorerie et richesse", () => {
   const g = fresh();
-  g.stock.timber = 50;
   g.stock.bread = 20; g.prices.bread = 3;
-  const s = freeSpot(g);
   g.stock.timber = 50; g.stock.stone = 20;
-  assert.strictEqual(g.place("trade", s.x, s.y), null);
-  const b = g.buildings[g.buildings.length-1];
+  const b = placeInCenter(g, "trade");
   b.done = true; b.progress = 1;
   g.assign(b.id);
   assert.ok(b.families.length > 0, "commerçant affecté");
@@ -337,9 +342,7 @@ test("comptoir : vend les surplus, crédite trésorerie et richesse", () => {
 test("prix du marché fluctuent chaque mois", () => {
   const g = fresh();
   g.stock.timber = 50; g.stock.stone = 20;
-  const s = freeSpot(g);
-  g.place("trade", s.x, s.y);
-  const b = g.buildings[g.buildings.length-1];
+  const b = placeInCenter(g, "trade");
   b.done = true; g.assign(b.id);
   const p0 = { ...g.prices };
   for(let i=0;i<400;i++) g.step(); // 2 mois
@@ -391,14 +394,15 @@ test("jalon 1 : 3 régions, seule la 0 est possédée au départ", () => {
   assert.strictEqual(g.regions[0].owned, true);
   assert.strictEqual(g.regions[1].owned, false);
   assert.strictEqual(g.regions[2].owned, false);
-  assert.strictEqual(g.regionOwned(1), true);
+  assert.strictEqual(g.regionOwned(Math.floor(W/2)), true, "le centre est possédé");
+  assert.strictEqual(g.regionOwned(1), false);
   assert.strictEqual(g.regionOwned(W-1), false);
 });
 
 test("jalon 1 : région non réclamée infranchissable et non constructible", () => {
   const g = fresh();
-  assert.strictEqual(g.passable(W-1, 5), false, "passable refuse la région 2");
-  const err = g.place("burgage", W-2, 5);
+  assert.strictEqual(g.passable(1, 5), false, "passable refuse la région ouest");
+  const err = g.place("burgage", 1, 5);
   assert.strictEqual(err, "Région non réclamée");
 });
 
@@ -410,7 +414,7 @@ test("jalon 1 : réclamation coûte trésorerie + richesse, puis débloque", () 
   assert.strictEqual(g.claimRegion(1), true);
   assert.strictEqual(g.treasury, 100 - REGION_COST.treasury);
   assert.strictEqual(g.wealth, 100 - REGION_COST.wealth);
-  assert.strictEqual(g.passable(Math.floor(W/3)+2, 5), true, "région 1 débloquée");
+  assert.strictEqual(g.passable(2, 5), true, "région ouest débloquée");
   assert.strictEqual(g.claimRegion(1), false, "déjà possédée");
 });
 

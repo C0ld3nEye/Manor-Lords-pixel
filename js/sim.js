@@ -55,7 +55,7 @@ const BUILD_DEFS                              = {
   church:    { id:"church",    name:"Église",          icon:"⛪", w:2,h:2, cost:{timber:2,stone:2}, fam:0, instant:false, desc:"+6 d'approbation. Requise pour les bourgages de niveau 3." },
   trade:     { id:"trade",     name:"Comptoir",       icon:"\u26fa", w:2,h:2, cost:{timber:3,stone:2}, fam:1, instant:false, desc:"Vente automatique des surplus chaque mois (prix fluctuants). +richesse régionale." },
   tower:     { id:"tower",     name:"Tour de guet",   icon:"\ud83d\udde1\ufe0f", w:1,h:1, cost:{timber:2,stone:3}, fam:0, instant:false, desc:"+4 approbation, repousse les raids (réduit le pillage de moitié)." },
-  wall:      { id:"wall",      name:"Rempart",        icon:"🧱", w:1,h:1, cost:{stone:2}, fam:0, instant:false, wall:true, desc:"Mur défensif : les brigands ne passent pas dessus (case infranchissable)." },
+  wall:      { id:"wall",      name:"Rempart",        icon:"⬛", w:1,h:1, cost:{stone:2}, fam:0, instant:false, wall:true, desc:"Mur défensif : les brigands ne passent pas dessus (case infranchissable)." },
   manor:     { id:"manor",     name:"Manoir",          icon:"🏰", w:2,h:2, cost:{timber:4,stone:3}, fam:0, instant:false, desc:"Permet de lever l'impôt (curseur dans le panneau du manoir)." },
 };
 const BUILD_ORDER = ["burgage","woodcutter","forager","hunter","quarry","farm","field","windmill","granary","storehouse","market","trade","church","tower","wall","manor"];
@@ -81,9 +81,9 @@ const CROP_ORDER = ["wheat","barley","fallow"];
 const FIELD_SIZES = [3,4,6];
 
 const REGION_DEFS = [
-  { id:0, name:"Vallée du Cœur",  bonus:null,          desc:"Votre terre natale. Déjà à vous." },
-  { id:1, name:"Marches de l'Est",bonus:{berries:2},  desc:"Réclamez-la : +2 baies par mois." },
-  { id:2, name:"Hautes Terres",   bonus:{stone:1},    desc:"Réclamez-la : +1 pierre par mois." },
+  { id:0, name:"Vallée du Cœur",   bonus:null,          desc:"Votre terre natale (au centre). Déjà à vous." },
+  { id:1, name:"Marches de l'Ouest",bonus:{berries:2}, desc:"Réclamez-la : +2 baies par mois." },
+  { id:2, name:"Hautes Terres",    bonus:{stone:1},    desc:"Réclamez-la (à l'est) : +1 pierre par mois." },
 ];
 const REGION_COST = { treasury:30, wealth:15 };
 const RES_ICONS                        = { timber:"🪵", firewood:"🔥", stone:"🪨", grain:"🌾", bread:"🍞", berries:"🍒", meat:"🍗", eggs:"🥚", veg:"🥕", apples:"🍎", honey:"🍯", clothes:"👕", ale:"🍺", barley:"🌾", ox:"🐂" };
@@ -438,7 +438,7 @@ class GameState {
   }
 
   /* ---------- régions ---------- */
-  regionAt(x       ){ return x < W/3 ? 0 : (x < (2*W)/3 ? 1 : 2); }
+  regionAt(x       ){ return x < W/3 ? 1 : (x < (2*W)/3 ? 0 : 2); }
   regionOwned(x       ){ const r=this.regions[this.regionAt(x)]; return r ? r.owned : true; }
   claimRegion(rid       ){
     const r=this.regions[rid]; if(!r || r.owned) return false;
@@ -1205,7 +1205,7 @@ class GameState {
       this.pendingEvent={ title:"L'impôt du roi",
         text:"Un héraut du roi exige "+amount+" deniers pour la couronne. Le refroidissement de sa gratitude serait… regrettable.",
         choices:[
-          { label:"Payer "+amount+" 🪙", act:"pay", amount, disabled:this.treasury<amount },
+          { label:"Payer "+amount+" 💰", act:"pay", amount, disabled:this.treasury<amount },
           { label:"Refuser (approbation −12, récoltes confisquées)", act:"refuseTax" },
         ]};
     }
@@ -1214,7 +1214,7 @@ class GameState {
       this.pendingEvent={ title:"Des brigands en vue !",
         text:"Une bande de brigands rôde autour de la seigneurie. Ils exigent "+amount+" deniers pour passer leur chemin.",
         choices:[
-          { label:"Payer "+amount+" 🪙", act:"payBandits", amount, disabled:this.treasury<amount },
+          { label:"Payer "+amount+" 💰", act:"payBandits", amount, disabled:this.treasury<amount },
           { label:"Refuser (ils pillent les réserves)", act:"hideBandits" },
         ]};
     }
@@ -1230,7 +1230,7 @@ class GameState {
           for(const o of this.buildings) o.families=o.families.filter(id=>id!==f.id);
         }
         this.approval=Math.max(0,this.approval-10);
-        this.toast("🦠 Une peste frappe la seigneurie ! "+n+" famille(s) disparue(s).","bad");
+        this.toast("☠️ Une peste frappe la seigneurie ! "+n+" famille(s) disparue(s).","bad");
       } else if(roll<0.66){
         // incendie : perte de bois et approbation
         this.stock.timber=Math.floor(this.stock.timber*0.6);
@@ -1268,7 +1268,7 @@ class GameState {
       this.pendingEvent = { title:"Raid du Baron !",
         text:"Des cavaliers du "+b.name+" fondent sur la seigneurie et exigent "+amount+" deniers de tribut !",
         choices:[
-          { label:"Payer "+amount+" \u00a0🪙", act:"payRaid", amount, disabled:this.treasury<amount },
+          { label:"Payer "+amount+" \u00a0💰", act:"payRaid", amount, disabled:this.treasury<amount },
           { label:"Refuser (pillage + approbation -15)", act:"refuseRaid" },
         ]};
       b.power = Math.max(0, b.power - 1);
