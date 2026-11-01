@@ -1268,7 +1268,7 @@ class GameState {
       this.pendingEvent = { title:"Raid du Baron !",
         text:"Des cavaliers du "+b.name+" fondent sur la seigneurie et exigent "+amount+" deniers de tribut !",
         choices:[
-          { label:"Payer "+amount+" \u00a0\U0001fa99", act:"payRaid", amount, disabled:this.treasury<amount },
+          { label:"Payer "+amount+" \u00a0🪙", act:"payRaid", amount, disabled:this.treasury<amount },
           { label:"Refuser (pillage + approbation -15)", act:"refuseRaid" },
         ]};
       b.power = Math.max(0, b.power - 1);
