@@ -20,7 +20,7 @@ function centerCam(){
 }
 centerCam();
 
-var ui = { buildSel:null, selId:null, helpOpen:false, flash:null, taxDrag:false, logOpen:false,
+var ui = { buildSel:null, selId:null, helpOpen:false, flash:null, taxDrag:false, logOpen:false, roadMode:false,
   layers:{ forest:false, stone:false, berry:false, soil:false } };
 function flash(msg){
   ui.flash = msg;
@@ -143,7 +143,10 @@ canvas.addEventListener("pointerup", function(e){
   /* clic : pose ou sélection */
   var w = toWorld(e.clientX, e.clientY);
   if(w.tx<0||w.ty<0||w.tx>=W||w.ty>=H) return;
-  if(ui.buildSel){
+  if(ui.roadMode){
+    if(!game.toggleRoad(w.tx, w.ty)) flash("Impossible de tracer une route ici.");
+  }
+  else if(ui.buildSel){
     var err = game.place(ui.buildSel, w.tx, w.ty);
     if(err) flash(err);
     else if(ui.buildSel==="manor"||ui.buildSel==="church"||ui.buildSel==="windmill") ui.buildSel = null;
@@ -168,7 +171,7 @@ canvas.addEventListener("contextmenu", function(e){
 /* ----- clavier : pause, vitesse, ZQSD/WASD/flèches ----- */
 window.addEventListener("keydown", function(e){
   if(e.key===" "){ e.preventDefault(); game.speed = game.speed===0 ? 1 : 0; }
-  if(e.key==="Escape"){ ui.buildSel = null; ui.selId = null; ui.helpOpen = false; renderUI(); }
+  if(e.key==="Escape"){ ui.buildSel = null; ui.selId = null; ui.helpOpen = false; ui.roadMode = false; renderUI(); }
   if(e.key==="1") game.speed = 1;
   if(e.key==="2") game.speed = 2;
   if(e.key==="3") game.speed = 4;
@@ -201,6 +204,7 @@ document.addEventListener("click", function(e){
   else if(act==="resolve"){ game.resolveEvent(Number(arg)); }
   else if(act==="help"){ ui.helpOpen = true; }
   else if(act==="helpclose"){ ui.helpOpen = false; }
+  else if(act==="road"){ ui.roadMode = !ui.roadMode; if(ui.roadMode){ ui.buildSel=null; ui.selId=null; } }
   else if(act==="buyox"){ game.buyOx(); }
   else if(act==="crop"){ if(ui.selId!=null) game.setCrop(ui.selId, arg); }
   else if(act==="fieldsize"){ game.setFieldSize(Number(arg)); }
@@ -273,6 +277,8 @@ function renderUI(){
   h += "<button class='btn"+(ui.layers.stone?" on":"")+"' data-act='layer' data-arg='stone' title='Gisements de pierre'>\ud83e\dea8</button>";
   h += "<button class='btn"+(ui.layers.berry?" on":"")+"' data-act='layer' data-arg='berry' title='Baies'>\ud83e\udfd0</button>";
   h += "<button class='btn"+(ui.layers.soil?" on":"")+"' data-act='layer' data-arg='soil' title='Fertilit\u00e9 du sol'>\ud83c\udf3e</button>";
+  h += "<button class='btn"+(ui.roadMode?" on":"")+"' data-act='road' title='Tracer des routes'>\U0001f6e4</button>";
+  h += "<span class='chip small' title='Richesse régionale'>\U0001f4b0 "+Math.floor(g.wealth)+"</span>";
   h += "<button class='btn' data-act='buyox' title='Acheter un boeuf (20 deniers)'>🐂+</button>";
   h += "<button class='btn' data-act='log' title='Journal des \u00e9v\u00e9nements'>\ud83d\udcdc</button>";
   h += "<button class='btn' data-act='saveCode' title='Code de sauvegarde'>💾</button>";
@@ -334,6 +340,10 @@ function renderUI(){
       o += "<div>"+(!sel.f.sown ? (sel.f.growth>0?"Mûr":"Jachère / en attente") : "Croissance : "+Math.round(sel.f.growth*100)+" %")+"</div>";
       if(sel.f.harvestP>0) o += "<div>Moisson : "+Math.round(sel.f.harvestP*100)+" %</div>";
     }
+    if(sel.def==="trade" && sel.done){
+      o += "<div class='row'><span class='dim'>Prix du marché :</span></div>";
+      for(var pk in g.prices) o += "<span class='chip small'>"+(RES_ICONS[pk]||pk)+" "+g.prices[pk]+"d</span> ";
+    }
     if(sel.def==="manor" && sel.done){
       o += "<div>Taux d'imposition : "+Math.round(g.taxRate*100)+" %</div>";
       o += "<input type='range' min='0' max='100' step='5' id='taxSlider' value='"+Math.round(g.taxRate*100)+"'/>";
@@ -391,6 +401,7 @@ function renderUI(){
     o += "</div>";
   }
   if(ui.flash) o += "<div class='flash'>"+ui.flash+"</div>";
+  if(ui.roadMode) o += "<div class='hint'>\U0001f6e4 Mode route : touchez une case pour tracer/supprimer \u2014 les travailleurs empruntent les routes (plus rapides). Appui long ou \u00c9chap pour quitter.</div>";
   if(ui.buildSel){
     o += "<div class='hint'>Posez : "+BUILD_DEFS[ui.buildSel].name+" — appui long pour annuler";
     if(BUILD_DEFS[ui.buildSel].uiSize){

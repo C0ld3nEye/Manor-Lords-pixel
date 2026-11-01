@@ -87,7 +87,7 @@ Chaque étape est livrable et testable seule. Ordre conseillé = du plus fondame
 11. **Bœufs et attelage** : achat de bœufs (coûteux), accélèrent labour et transport ; gestion d'écurie.
 12. **Champs de taille variable** (voire forme libre) : rendement proportionnel à la surface labourée.
 
-### 🛣️ Phase 3 — Routes, logistique, commerce (semaines 10-14)
+### 🛣️ Phase 3 — Routes, logistique, commerce (semaines 10-14) ✅ routes tracées + A* pondéré, comptoir avec prix fluctuants et richesse régionale livrés
 
 13. **Routes tracées par le joueur** : les travailleurs empruntent le réseau ; temps de trajet réel, entrepôts intermédiaires, brouettes.
 14. **Main-d'œuvre dynamique** : assignation manuelle des familles aux emplois, priorité des tâches par bâtiment.

@@ -53,9 +53,10 @@ const BUILD_DEFS                              = {
   storehouse:{ id:"storehouse",name:"Entrepôt",        icon:"📦", w:1,h:1, cost:{timber:2}, fam:0, instant:false, desc:"+150 de capacité de stockage pour chaque ressource." },
   market:    { id:"market",    name:"Marché",          icon:"⛺", w:2,h:2, cost:{timber:2}, fam:3, instant:false, desc:"Sans marché actif, vos familles n'ont accès qu'à un seul type de nourriture." },
   church:    { id:"church",    name:"Église",          icon:"⛪", w:2,h:2, cost:{timber:2,stone:2}, fam:0, instant:false, desc:"+6 d'approbation. Requise pour les bourgages de niveau 3." },
+  trade:     { id:"trade",     name:"Comptoir",       icon:"\u26fa", w:2,h:2, cost:{timber:3,stone:2}, fam:1, instant:false, desc:"Vente automatique des surplus chaque mois (prix fluctuants). +richesse régionale." },
   manor:     { id:"manor",     name:"Manoir",          icon:"🏰", w:2,h:2, cost:{timber:4,stone:3}, fam:0, instant:false, desc:"Permet de lever l'impôt (curseur dans le panneau du manoir)." },
 };
-const BUILD_ORDER = ["burgage","woodcutter","forager","hunter","quarry","farm","field","windmill","granary","storehouse","market","church","manor"];
+const BUILD_ORDER = ["burgage","woodcutter","forager","hunter","quarry","farm","field","windmill","granary","storehouse","market","trade","church","manor"];
 
 const FOOD_TYPES = ["berries","meat","bread","eggs","veg","apples","honey"];
 
@@ -108,7 +109,8 @@ const WORK_TIME                        = { chop:14, gather:14, hunt:12, mine:20 
 
 class GameState {
   seed       ; rnd           ;
-  tiles           ; treeWood             ; berryY             ; stoneAmt             ; soil             ;
+  tiles           ; treeWood             ; berryY             ; stoneAmt             ; soil             ; roads             ;
+  wealth          ; prices                 ;
   occupied           ;
   buildings           ; nextB       ;
   families         ; nextF       ;
@@ -132,6 +134,9 @@ class GameState {
     this.berryY = new Float32Array(W*H);
     this.stoneAmt = new Float32Array(W*H);
     this.soil = new Float32Array(W*H);
+    this.roads = new Uint8Array(W*H);
+    this.wealth = 0;
+    this.prices = { bread:2, clothes:3, ale:2, apples:1, honey:4, meat:1, berries:1 };
     this.occupied = new Int32Array(W*H).fill(-1);
     this.buildings = []; this.nextB = 1;
     this.families = []; this.nextF = 1;
@@ -411,6 +416,20 @@ class GameState {
     this.uiVersion++;
   }
 
+  /* ---------- routes ---------- */
+  toggleRoad(x       , y       ){
+    if(x<0||y<0||x>=W||y>=H) return false;
+    const i=y*W+x;
+    if(this.occupied[i]>=0 || this.tiles[i]===T_WATER) return false;
+    this.roads[i] = this.roads[i] ? 0 : 1;
+    this.uiVersion++;
+    return true;
+  }
+  roadAt(x       , y       ){ return x>=0&&y>=0&&x<W&&y<H && this.roads[y*W+x]===1; }
+  passableCost(x       , y       ){
+    return this.roadAt(x,y) ? 0.4 : 1.0;
+  }
+
   /* ---------- pathfinding ---------- */
   passable(x       ,y       ){
     if(x<0||y<0||x>=W||y>=H) return false;
@@ -445,7 +464,7 @@ class GameState {
         if(Math.abs(nx-cxx)+Math.abs(ny-cyy)!==1) continue;
         if(nx<0||ny<0||nx>=W||ny>=H) continue;
         if(!this.passable(nx,ny)) continue;
-        const ng=gS[cur]+1;
+        const ng=gS[cur]+this.passableCost(nx,ny);
         if(ng<gS[n]){ gS[n]=ng; came[n]=cur; if(!inO[n]){ inO[n]=1; open.push(n); } }
       }
     }
@@ -624,6 +643,9 @@ class GameState {
       case "market":{
         this.sendToBuilding(f, b, {type:"stall"}); return;
       }
+      case "trade":{
+        this.sendToBuilding(f, b, {type:"trade"}); return;
+      }
       default: f.cool=80; return;
     }
   }
@@ -731,6 +753,11 @@ class GameState {
       }
       case "stall":{
         // reste au marché, petit va-et-vient décoratif
+        f.timer++;
+        if(f.timer>200){ f.timer=0; }
+        break;
+      }
+      case "trade":{
         f.timer++;
         if(f.timer>200){ f.timer=0; }
         break;
@@ -948,6 +975,28 @@ class GameState {
       for(const b of this.buildings) if(b.done&&b.def==="burgage"&&this.families.some(f=>f.home===b.id)) levels+=[0,1,3,6][b.lvl];
       this.treasury+=levels*this.taxRate;
     }
+    // ----- commerce régional : comptoir vend les surplus, prix fluctuants -----
+    const tradeActive = this.buildings.some(b=>b.done && b.def==="trade" && b.families.length>0);
+    if(tradeActive){
+      let earned = 0;
+      for(const k of Object.keys(this.prices)){
+        const p = this.prices[k];
+        const surplus = Math.floor(this.stock[k]||0);
+        if(surplus >= 3){
+          const sold = Math.min(surplus, 4 + Math.floor(this.rnd()*3));
+          this.stock[k] -= sold;
+          earned += sold * p;
+        }
+        // fluctuation des prix +-20%
+        this.prices[k] = Math.max(1, Math.round(p * (0.8 + this.rnd()*0.4)));
+      }
+      this.treasury += earned;
+      this.wealth += earned * 0.6; // la richesse régionale reflète l'activité commerciale
+      if(earned>0) this.toast("Comptoir : +"+earned+" deniers de ventes.","good");
+    } else {
+      // sans comptoir, la richesse régionale vient des impôts locaux
+      this.wealth = Math.max(0, this.wealth*0.98);
+    }
     // évolution des bourgages
     for(const b of this.buildings){
       if(b.def!=="burgage"||!b.done) continue;
@@ -1046,6 +1095,7 @@ class GameState {
       case "farm": return "Ferme ("+this.fields().length+" champ(s))";
       case "windmill": return this.stock.grain>0 ? "Mouture du grain" : "En attente de grain";
       case "market": return b.families.length>0 ? "Étals tenus" : "Marché inactif";
+      case "trade": return b.families.length>0 ? "Comptoir actif (ventes auto)" : "Comptoir inactif";
       default: return "";
     }
   }
@@ -1079,6 +1129,9 @@ class GameState {
       taxRate:this.taxRate,
       objectives:this.objectives,
       log:this.log,
+      roads:Array.from(this.roads),
+      wealth:this.wealth,
+      prices:this.prices,
       victory:this.victory,
       pendingEvent:this.pendingEvent,
       winterWarned:this.winterWarned,
@@ -1108,6 +1161,9 @@ class GameState {
     if(typeof data.taxRate==="number") g.taxRate = data.taxRate;
     if(data.objectives) g.objectives = data.objectives;
     g.log = Array.isArray(data.log) ? data.log : [];
+    if(data.roads) g.roads = Uint8Array.from(data.roads);
+    g.wealth = typeof data.wealth==="number" ? data.wealth : 0;
+    if(data.prices) g.prices = data.prices;
     g.victory = !!data.victory;
     g.pendingEvent = data.pendingEvent || null;
     g.winterWarned = !!data.winterWarned;

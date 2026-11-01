@@ -281,4 +281,79 @@ test("jachère restaure la fertilité en fin d'année", () => {
   assert.ok(b.f.fert > 0.3, "fertilité restaurée");
 });
 
+test("phase 3 : routes tracées, coût de déplacement réduit", () => {
+  const g = fresh();
+  const s = freeSpot(g);
+  assert.strictEqual(g.roadAt(s.x, s.y), false);
+  assert.strictEqual(g.toggleRoad(s.x, s.y), true);
+  assert.strictEqual(g.roadAt(s.x, s.y), true);
+  assert.ok(g.passableCost(s.x, s.y) < 1, "route = déplacement accéléré");
+  assert.strictEqual(g.toggleRoad(s.x, s.y), true);
+  assert.strictEqual(g.roadAt(s.x, s.y), false, "second appui supprime la route");
+});
+
+test("route interdite sur bâtiment et eau", () => {
+  const g = fresh();
+  const b = g.buildings[0];
+  assert.strictEqual(g.toggleRoad(b.x, b.y), false);
+  let water = -1;
+  for(let i=0;i<W*H;i++) if(g.tiles[i]===4){ water=i; break; }
+  assert.strictEqual(g.toggleRoad(water%W, Math.floor(water/W)), false);
+});
+
+test("A* emprunte les routes quand c'est plus court", () => {
+  const g = fresh();
+  // trace une route horizontale longue
+  for(let x=2;x<W-2;x++) g.toggleRoad(x, 17);
+  const pRoad = g.astar(2, 17, W-3, 17);
+  assert.ok(pRoad, "chemin trouvé");
+  // le coût total doit être réduit par la route
+  let cost = 0;
+  for(const wp of pRoad) cost += g.passableCost(Math.floor(wp.x), Math.floor(wp.y));
+  assert.ok(cost < pRoad.length * 0.9, "les routes réduisent le coût du trajet");
+});
+
+test("comptoir : vend les surplus, crédite trésorerie et richesse", () => {
+  const g = fresh();
+  g.stock.timber = 50;
+  g.stock.bread = 20; g.prices.bread = 3;
+  const s = freeSpot(g);
+  g.stock.timber = 50; g.stock.stone = 20;
+  assert.strictEqual(g.place("trade", s.x, s.y), null);
+  const b = g.buildings[g.buildings.length-1];
+  b.done = true; b.progress = 1;
+  g.assign(b.id);
+  assert.ok(b.families.length > 0, "commerçant affecté");
+  const t0 = g.treasury, w0 = g.wealth, bread0 = g.stock.bread;
+  for(let i=0;i<200;i++) g.step(); // ~1 mois
+  assert.ok(g.treasury > t0, "trésorerie augmentée par les ventes");
+  assert.ok(g.wealth > w0, "richesse régionale augmentée");
+  assert.ok(g.stock.bread < bread0, "surplus de pain vendu");
+});
+
+test("prix du marché fluctuent chaque mois", () => {
+  const g = fresh();
+  g.stock.timber = 50; g.stock.stone = 20;
+  const s = freeSpot(g);
+  g.place("trade", s.x, s.y);
+  const b = g.buildings[g.buildings.length-1];
+  b.done = true; g.assign(b.id);
+  const p0 = { ...g.prices };
+  for(let i=0;i<400;i++) g.step(); // 2 mois
+  const diff = Object.keys(p0).some(k => g.prices[k] !== p0[k]);
+  assert.ok(diff, "au moins un prix a changé");
+  for(const k of Object.keys(g.prices)) assert.ok(g.prices[k] >= 1, "prix plancher à 1");
+});
+
+test("sauvegarde : routes, richesse et prix persistés", () => {
+  const g = fresh();
+  const s = freeSpot(g);
+  g.toggleRoad(s.x, s.y);
+  g.wealth = 123; g.prices.bread = 5;
+  const g2 = GameState.load(JSON.parse(JSON.stringify(g.serialize())));
+  assert.strictEqual(g2.roadAt(s.x, s.y), true);
+  assert.strictEqual(g2.wealth, 123);
+  assert.strictEqual(g2.prices.bread, 5);
+});
+
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));

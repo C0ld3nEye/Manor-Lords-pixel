@@ -127,6 +127,14 @@ function drawBuilding(ctx                         , g          , b         ){
       px(ctx, x+0.58, y+0.5, 0.18, 0.18, "#9aa0a8");
       break;
     }
+    case "trade":{
+      px(ctx, x+0.08, y+0.08, w-0.16, h-0.16, "#7a5a34");
+      px(ctx, x+0.04, y+0.02, w-0.08, 0.22, "#5a3a26");
+      px(ctx, x+w/2-0.14, y+0.3, 0.28, h-0.4, "#4a3420"); // porte
+      px(ctx, x+0.2, y+0.3, 0.24, 0.18, "#e8c35a"); // enseigne dorée
+      px(ctx, x+w-0.4, y+0.3, 0.24, 0.18, "#e8c35a");
+      break;
+    }
     case "farm":{
       px(ctx, x+0.08, y+0.08, w-0.16, h-0.16, "#8a5138"); // mur
       px(ctx, x+0.04, y+0.02, w-0.08, 0.24, "#5a3a26"); // toit
@@ -275,6 +283,16 @@ function drawGame(
   // sol
   for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++) drawTile(ctx, g, x, y, pal);
 
+  // routes
+  for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){
+    if(g.roads[y*W+x]){
+      ctx.fillStyle="#8a7a5a";
+      ctx.fillRect(x+0.25,y+0.25,0.5,0.5);
+      ctx.fillStyle="#a8946a";
+      ctx.fillRect(x+0.38,y+0.38,0.24,0.24);
+    }
+  }
+
   // surtintes de filtres de carte (overlays)
   if(layers){
     ctx.globalAlpha=0.30;
@@ -385,6 +403,9 @@ function drawGame(
       ctx.fillStyle = mmColors[t];
       ctx.fillRect(mmx+x*ppt, mmy+y*ppt, ppt, ppt);
     }
+    // routes
+    ctx.fillStyle = "#c9b088";
+    for(let y=0;y<H;y++) for(let x=0;x<W;x++) if(g.roads[y*W+x]) ctx.fillRect(mmx+x*ppt, mmy+y*ppt, ppt, ppt);
     // bâtiments
     for(const b of g.buildings){
       ctx.fillStyle = b.done ? "#e8c35a" : "#c97a4a";
