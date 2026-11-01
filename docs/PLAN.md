@@ -103,7 +103,7 @@ Chaque étape est livrable et testable seule. Ordre conseillé = du plus fondame
 21. **Fortifications** : murailles, tours, portes, château améliorable (défense contre les sièges).
 22. **Menaces variées** : camps de brigands à détruire physiquement (récompense en deniers), raids, sièges du baron, hiver rude aléatoire, peste/incendie.
 
-### 🏛️ Phase 5 — Profondeur sociale et progression (semaines 21-25)
+### 🏛️ Phase 5 — Profondeur sociale et progression (semaines 21-25) ✅ influence ⭐, 3 décrets du manoir, église améliorable (autel/clocher), niveaux hameau→ville, mercenaires louables — 59 tests
 
 23. **Politiques/décrets du manoir** : 2-3 choix actifs (dîme vs taxes, service militaire, marchés libres) avec avantages/inconvénients.
 24. **Église améliorable** : autel, clocher, école — bonus de foi, d'approbation, de santé.

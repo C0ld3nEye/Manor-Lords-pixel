@@ -213,7 +213,9 @@ document.addEventListener("click", function(e){
   else if(act==="fieldsize"){ game.setFieldSize(Number(arg)); }
   else if(act==="layer"){ ui.layers[arg] = !ui.layers[arg]; }
   else if(act==="militia"){ game.raiseMilitia(); }
+  else if(act==="merc"){ game.hireMercenary(); }
   else if(act==="policy"){ game.setPolicy(arg, !game.policies[arg]); }
+  else if(act==="churchup"){ if(ui.selId!=null) game.churchUp(ui.selId, arg); }
   else if(act==="regions"){ ui.regionsOpen = true; }
   else if(act==="regionsclose"){ ui.regionsOpen = false; }
   else if(act==="claim"){ game.claimRegion(Number(arg)); }
@@ -266,6 +268,7 @@ function renderUI(){
   var h = "";
   h += "<span class='ttl'>🏰 SEIGNEURIE</span>";
   h += "<span class='chip'>"+MONTHS[g.time.month]+" "+g.time.year+" "+seasonIcon+"</span>";
+  h += "<span class='chip' title='Niveau de la seigneurie'>"+esc(g.settlementName())+"</span>";
   h += "<span class='chip'>💰 "+Math.floor(g.treasury)+"</span>";
   h += "<span class='chip' style='color:"+apCol+"'>😊 "+g.approval+"%</span>";
   h += "<span class='chip'>👨‍👩‍👧 "+g.families.length+(homeless>0 ? " (!"+homeless+")" : "")+"</span>";
@@ -291,6 +294,7 @@ function renderUI(){
   h += "<span class='chip small' title='Richesse régionale'>💵 "+Math.floor(g.wealth)+"</span>";
   h += "<button class='btn' data-act='buyox' title='Acheter un boeuf (20 deniers)'>🐂+</button>";
   h += "<button class='btn' data-act='militia' title='Lever la milice (1 soldat pour 2 familles)'>⚔️\ufe0f "+game.units.length+"/"+game.militiaCount()+"</button>";
+  h += "<button class='btn' data-act='merc' title='Louer un mercenaire (25 deniers, 6 mois)'>\u2694\ufe0f+</button>";
   h += "<button class='btn' data-act='regions' title='Régions'>🏰️\ufe0f</button>";
   h += "<button class='btn' data-act='log' title='Journal des \u00e9v\u00e9nements'>\ud83d\udcdc</button>";
   h += "<button class='btn' data-act='saveCode' title='Code de sauvegarde'>💾</button>";
@@ -355,6 +359,16 @@ function renderUI(){
     if(sel.def==="trade" && sel.done){
       o += "<div class='row'><span class='dim'>Prix du marché :</span></div>";
       for(var pk in g.prices) o += "<span class='chip small'>"+(RES_ICONS[pk]||pk)+" "+g.prices[pk]+"d</span> ";
+    }
+    if(sel.def==="church" && sel.done){
+      var cups = sel.churchUp || [];
+      if(cups.length) o += "<div class='good'>Améliorations : "+cups.map(function(u){ return CHURCH_UPGRADES[u].name; }).join(", ")+"</div>";
+      for(var cui=0; cui<CHURCH_UP_ORDER.length; cui++){
+        var cu = CHURCH_UPGRADES[CHURCH_UP_ORDER[cui]];
+        if(cups.indexOf(cu.id)>=0) continue;
+        var ccost = Object.keys(cu.cost).map(function(k){ return cu.cost[k]+" "+(RES_ICONS[k]||k); }).join(" + ");
+        o += "<div class='row'><button class='btn' data-act='churchup' data-arg='"+cu.id+"' title='"+esc(cu.desc)+"'>"+cu.name+" ("+ccost+")</button></div>";
+      }
     }
     if(sel.def==="manor" && sel.done){
       o += "<div class='row'><b>Décrets :</b></div>";

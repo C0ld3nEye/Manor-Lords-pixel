@@ -216,12 +216,16 @@ function drawBuilding(ctx                         , g          , b         ){
       break;
     }
     case "church":{
+      var hasBell = (b.churchUp||[]).includes("bell");
+      var hasAltar = (b.churchUp||[]).includes("altar");
       px(ctx, x+0.1, y+0.34, w-0.2, h-0.4, "#d8d3c8");
       px(ctx, x+0.06, y+0.16, w-0.12, 0.24, "#3f5a7a");
       px(ctx, x+w/2-0.06, y+0.02, 0.12, 0.18, "#d8d3c8");
       px(ctx, x+w/2-0.02, y-0.1, 0.04, 0.14, "#e8c35a");
       px(ctx, x+w/2-0.05, y-0.06, 0.1, 0.04, "#e8c35a");
       px(ctx, x+w/2-0.08, y+h-0.3, 0.16, 0.26, "#5a4328");
+            if(hasBell){ px(ctx, x+0.06, y-0.14, 0.2, 0.3, "#8a8f96"); px(ctx, x+0.04, y-0.18, 0.24, 0.08, "#6f7276"); }
+      if(hasAltar){ px(ctx, x+w-0.3, y+h-0.35, 0.2, 0.18, "#e8c35a"); }
       break;
     }
     case "manor":{

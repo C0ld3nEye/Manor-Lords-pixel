@@ -93,6 +93,18 @@ const POLICY_DEFS = {
   militiaService:{ id:"militiaService",name:"Service militaire",    desc:"+1 soldat de milice en plus, -3 approbation/mois." },
 };
 const POLICY_ORDER = ["tithe","freeMarket","militiaService"];
+
+const CHURCH_UPGRADES = {
+  altar:  { id:"altar",  name:"Autel",   cost:{stone:3},           bonus:{approval:3, influence:2}, desc:"+3 approbation, +2 influence/mois." },
+  bell:   { id:"bell",   name:"Clocher", cost:{timber:3,stone:2}, bonus:{approval:5, influence:3}, desc:"+5 approbation, +3 influence/mois." },
+};
+const CHURCH_UP_ORDER = ["altar","bell"];
+const SETTLEMENT_LEVELS = [
+  { name:"Hameau", minPop:0 },
+  { name:"Village", minPop:8 },
+  { name:"Bourg", minPop:20 },
+  { name:"Ville", minPop:40 },
+];
 const RES_ICONS                        = { timber:"🪵", firewood:"🔥", stone:"🪨", grain:"🌾", bread:"🍞", berries:"🍒", meat:"🍗", eggs:"🥚", veg:"🥕", apples:"🍎", honey:"🍯", clothes:"👕", ale:"🍺", barley:"🌾", ox:"🐂" };
 
 const SURNAMES = ["Aldéric","Baptiste","Colin","Eudes","Garlin","Hersende","Mahaut","Odon","Perrot","Raoulin","Sanceline","Thomasse","Ysoré","Gaultier","Béatrice","Manessier","Ferrant","Alips","Jourdaine","Nicaise"];
@@ -462,6 +474,39 @@ class GameState {
     this.uiVersion++;
     return true;
   }
+
+  /* ---------- église améliorable & niveaux de bourg ---------- */
+  churchUp(bid       , up       ){
+    const b = this.buildings.find(x=>x.id===bid);
+    if(!b || b.def!=="church" || !b.done) return false;
+    const d = CHURCH_UPGRADES[up]; if(!d) return false;
+    if((b.churchUp||[]).includes(up)){ this.toast("Déjà installé.","bad"); return false; }
+    for(const k of Object.keys(d.cost)) if((this.stock[k]||0) < d.cost[k]){ this.toast("Ressources insuffisantes pour "+d.name+".","bad"); return false; }
+    for(const k of Object.keys(d.cost)) this.stock[k] -= d.cost[k];
+    if(!b.churchUp) b.churchUp = [];
+    b.churchUp.push(up);
+    this.toast("Église améliorée : "+d.name+" !","good");
+    this.uiVersion++;
+    return true;
+  }
+  churchBonus(){
+    let ap = 0, inf = 0;
+    for(const b of this.buildings){
+      if(b.def!=="church" || !b.done) continue;
+      for(const up of (b.churchUp||[])){
+        ap += CHURCH_UPGRADES[up].bonus.approval;
+        inf += CHURCH_UPGRADES[up].bonus.influence;
+      }
+    }
+    return { approval:ap, influence:inf };
+  }
+  settlementLevel(){
+    const pop = this.families.length;
+    let lvl = 0;
+    for(let i=0;i<SETTLEMENT_LEVELS.length;i++) if(pop >= SETTLEMENT_LEVELS[i].minPop) lvl = i;
+    return lvl;
+  }
+  settlementName(){ return SETTLEMENT_LEVELS[this.settlementLevel()].name; }
 
   /* ---------- influence & politiques ---------- */
   gainInfluence(n       ){ this.influence += n; }
@@ -921,6 +966,11 @@ class GameState {
     return n;
   }
   unitStep(u){
+    if(u.merc){ u.ttl--; if(u.ttl<=0){
+      this.units.splice(this.units.indexOf(u),1);
+      this.toast("Le mercenaire quitte la seigneurie (contrat terminé).");
+      return;
+    } }
     if(u.state==="guard"){
       // cherche le camp le plus proche
       let best=null, bd=Infinity;
@@ -952,6 +1002,17 @@ class GameState {
       }
     }
   }
+  hireMercenary(){
+    const cost = 25;
+    if(this.treasury < cost){ this.toast("Il faut "+cost+" deniers pour louer un mercenaire.","bad"); return false; }
+    this.treasury -= cost;
+    const b = this.buildings.find(b=>b.done && b.def==="manor") || this.buildings[0];
+    this.units.push({ id:this.nextU++, x:b.x+0.5, y:b.y+b.h+0.5, hp:14, maxHp:14, state:"guard", target:null, cool:0, merc:true, ttl:96 }); // 6 mois (unitStep appelé tous les 10 ticks : 6*16*10/10)
+    this.toast("\u2694\ufe0f Un mercenaire rejoint vos rangs (25 deniers).","good");
+    this.uiVersion++;
+    return true;
+  }
+
   pillageCamps(){
     if(!this.camps.length) return 0;
     let lost=0;
@@ -1110,7 +1171,7 @@ class GameState {
     if(this.policies.freeMarket){ this.wealth += 6; }
     if(this.policies.militiaService){ /* milice déjà comptée dans militiaCount */ }
     // influence passive : église + manoir
-    if(this.hasChurch()) this.influence += 1;
+    if(this.hasChurch()) this.influence += 1 + this.churchBonus().influence;
     if(this.hasManor()) this.influence += 1;
     // approbation
     let a=50;
@@ -1118,7 +1179,7 @@ class GameState {
     if(fuelRatio>=1) a+=4; else if(fuelRatio>=0.5) a-=5; else a-=15;
     if(clothRatio>=1) a+=4; else if(clothRatio>=0.5) a-=3; else a-=8;
     if(winter){ if(aleRatio>=1) a+=3; else if(aleRatio<0.5) a-=6; }
-    if(this.hasChurch()) a+=6;
+    if(this.hasChurch()) a+=6 + this.churchBonus().approval;
     if(this.buildings.some(b=>b.done&&b.def==="tower")) a+=4;
     if(this.buildings.some(b=>b.done&&b.def==="market")) a+=2; else a-=4;
     const homeless=this.families.filter(f=>f.home<0).length;
@@ -1436,5 +1497,5 @@ class GameState {
 
 if(typeof module!=="undefined" && module.exports){
   module.exports = { GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
-    T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf, REGION_DEFS, REGION_COST, POLICY_DEFS, POLICY_ORDER };
+    T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf, REGION_DEFS, REGION_COST, POLICY_DEFS, POLICY_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS };
 }

@@ -2,7 +2,7 @@
 /* Tests de la simulation (Phase 0 du plan docs/PLAN.md).
    Lancer avec : node test/sim.test.js */
 const assert = require("assert");
-const { GameState, BUILD_DEFS, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, REGION_DEFS, REGION_COST, POLICY_DEFS, POLICY_ORDER, W, H, T_GRASS, T_FOREST, T_STONE, MONTHS, seasonOf } = require("../js/sim.js");
+const { GameState, BUILD_DEFS, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, REGION_DEFS, REGION_COST, POLICY_DEFS, POLICY_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, W, H, T_GRASS, T_FOREST, T_STONE, MONTHS, seasonOf } = require("../js/sim.js");
 
 let passed = 0;
 function test(name, fn){
@@ -591,6 +591,65 @@ test("phase 5 jalon 1 : sauvegarde persiste influence et décrets", () => {
   const g2 = GameState.load(JSON.parse(JSON.stringify(g.serialize())));
   assert.strictEqual(g2.influence, 42);
   assert.strictEqual(g2.policies.freeMarket, true);
+});
+
+test("phase 5 jalon 3 : niveaux de bourg selon la population", () => {
+  const g = fresh();
+  assert.strictEqual(g.settlementName(), "Hameau");
+  assert.strictEqual(SETTLEMENT_LEVELS.length, 4);
+  while(g.families.length < 8) g.families.push({ id:1000+g.families.length, name:"X", home:-1, work:-1 });
+  assert.strictEqual(g.settlementName(), "Village");
+  while(g.families.length < 20) g.families.push({ id:1000+g.families.length, name:"X", home:-1, work:-1 });
+  assert.strictEqual(g.settlementName(), "Bourg");
+});
+
+test("phase 5 jalon 3 : église améliorable (autel + clocher), bonus cumulés", () => {
+  const g = fresh();
+  g.stock.timber = 20; g.stock.stone = 20;
+  const b = placeInCenter(g, "church");
+  b.done = true;
+  assert.strictEqual(g.churchUp(b.id, "altar"), true);
+  assert.strictEqual(g.churchUp(b.id, "altar"), false, "pas de doublon");
+  assert.strictEqual(g.churchUp(b.id, "bell"), true);
+  assert.deepStrictEqual(b.churchUp, ["altar","bell"]);
+  const bonus = g.churchBonus();
+  assert.strictEqual(bonus.approval, 3+5);
+  assert.strictEqual(bonus.influence, 2+3);
+});
+
+test("phase 5 jalon 4 : mercenaire loué contre 25 deniers, disparaît après 6 mois", () => {
+  const g = fresh();
+  g.treasury = 0;
+  assert.strictEqual(g.hireMercenary(), false);
+  g.treasury = 100;
+  assert.strictEqual(g.hireMercenary(), true);
+  assert.strictEqual(g.treasury, 75);
+  assert.strictEqual(g.units.length, 1);
+  assert.strictEqual(g.units[0].merc, true);
+  for(let i=0;i<1200 && g.units.length>0;i++) g.step(); // ~6 mois
+  assert.strictEqual(g.units.length, 0, "mercenaire parti après son contrat");
+});
+
+test("phase 5 jalon 4 : mercenaire attaque un camp comme la milice", () => {
+  const g = fresh();
+  g.treasury = 100;
+  const b = g.buildings[0];
+  g.camps.push({ id:99, x:b.x+1.5, y:b.y+0.5, hp:20, maxHp:20 });
+  g.hireMercenary();
+  for(let i=0;i<5000 && g.camps.length>0;i++) g.step();
+  assert.strictEqual(g.camps.length, 0, "camp détruit par le mercenaire");
+});
+
+test("phase 5 : sauvegarde persiste churchUp et mercenaires", () => {
+  const g = fresh();
+  g.treasury = 100; g.stock.stone = 10;
+  const b = placeInCenter(g, "church"); b.done = true;
+  g.churchUp(b.id, "altar");
+  g.hireMercenary();
+  const g2 = GameState.load(JSON.parse(JSON.stringify(g.serialize())));
+  assert.deepStrictEqual(g2.buildings.find(x=>x.def==="church").churchUp, ["altar"]);
+  assert.strictEqual(g2.units.length, 1);
+  assert.strictEqual(g2.units[0].merc, true);
 });
 
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));
