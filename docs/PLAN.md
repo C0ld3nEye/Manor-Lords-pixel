@@ -118,7 +118,7 @@ Chaque étape est livrable et testable seule. Ordre conseillé = du plus fondame
 30. **Difficultés** (paisible / normal / difficile) + **carte aléatoire partageable par code**.
 31. **Sauvegarde multiple** (3 slots) + export/import amélioré + reprise automatique.
 
-### ✨ Phase 7 — Polissage final (semaines 31-34)
+### ✨ Phase 7 — Polissage final (semaines 31-34) ✅ météo dynamique + effets, jour/nuit + fumées/drapeaux animés, sons WebAudio procéduraux (M), accessibilité (+/− zoom, T taille texte), équilibrage (5/8 victoires, 0 défaites en test), défaite par famine 6 mois — 66 tests — PROJET TERMINÉ
 
 32. **Météo dynamique** : pluie, neige, brouillard avec effets sur rendements et combats.
 33. **Animations pixel-art** : travailleurs en action, fumée, drapeaux, jour/nuit, saisons visuelles sur les arbres.

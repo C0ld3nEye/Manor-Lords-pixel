@@ -189,6 +189,9 @@ window.addEventListener("keydown", function(e){
   if(e.key==="1") game.speed = 1;
   if(e.key==="2") game.speed = 2;
   if(e.key==="3") game.speed = 4;
+  if(e.key==="+"||e.key==="="){ zoomStep(1.2); }
+  if(e.key==="-"){ zoomStep(0.85); }
+  if(e.key.toLowerCase()==="t"){ cycleTextSize(); }
   var k = e.key.toLowerCase();
   if(["arrowup","arrowdown","arrowleft","arrowright","z","q","s","d","w","a"].indexOf(k)>=0){
     e.preventDefault();
@@ -196,6 +199,18 @@ window.addEventListener("keydown", function(e){
   }
 });
 window.addEventListener("keyup", function(e){ keys.delete(e.key.toLowerCase()); });
+
+function zoomStep(f){
+  cam.zoom = Math.max(0.7, Math.min(4, cam.zoom*f));
+}
+var _txtSize = 0;
+function cycleTextSize(){
+  _txtSize = (_txtSize+1)%3;
+  document.body.classList.remove("txt-lg","txt-xl");
+  if(_txtSize===1) document.body.classList.add("txt-lg");
+  if(_txtSize===2) document.body.classList.add("txt-xl");
+  flash("Taille du texte : "+["normal","grand","très grand"][_txtSize]);
+}
 
 /* ----- clics UI (délégation) ----- */
 document.addEventListener("pointerdown", function(e){
@@ -507,7 +522,7 @@ function renderUI(){
     o += "<p><b>Agriculture :</b> champs gratuits (rendement selon la fertilité), labour au printemps, moisson en septembre. Le <b>moulin</b> transforme le grain en pain. Laissez un champ en jachère une année sur deux.</p>";
     o += "<p><b>Croissance :</b> approbation ≥ 55 % + bourgage libre = nouvelle famille. Les bourgages évoluent (niveaux 2 et 3) quand leurs foyers sont nourris, chauffés et approvisionnés. Le <b>manoir</b> permet de lever l'impôt.</p>";
     o += "<p><b>Événements :</b> le roi exigera son impôt en novembre, des brigands peuvent surgir en mai. Gérez votre trésorerie !</p>";
-    o += "<p><b>Commandes :</b> glisser = déplacer · pincer / molette = zoom · ZQSD ou flèches = caméra · Espace = pause · 1/2/3 = vitesse · appui long = annuler · tapez la <b>minimap</b> (en bas à droite) pour recentrer.</p>";
+    o += "<p><b>Commandes :</b> glisser = déplacer · pincer / molette / <b>+ et −</b> = zoom · ZQSD ou flèches = caméra · <b>Espace</b> = pause · <b>1/2/3</b> = vitesse · <b>M</b> = son on/off · <b>T</b> = taille du texte · appui long = annuler · tapez la <b>minimap</b> (en bas à droite) pour recentrer.<br/><b>Modes :</b> 5 scénarios × 3 difficultés au démarrage (bouton ⟳). 3 slots de sauvegarde. Météo, saisons, régions à réclamer, Baron, milice et mercenaires inclus !</p>";
     o += "<p><b>Sauvegarde :</b> automatique sur cet appareil. 💾 donne un code à copier, 📥 le recharge (n'importe quel appareil).</p>";
     o += "<button class='btn wide' data-act='helpclose'>Compris !</button>";
     o += "</div></div>";

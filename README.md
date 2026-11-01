@@ -3,7 +3,9 @@
 ### 🎮 Modes de jeu (5) et difficultés (3)
 Au démarrage, choisissez : **Prospérité** (sans combat), **Restaurer la paix**, **Au bord du gouffre**, **Duel** (Baron agressif), **Royaume fracturé** (défi ultime), chacun en Paisible / Normal / Difficile. Victoire et défaite avec écran récapitulatif. **3 slots de sauvegarde** sur l'appareil. — « Seigneurie »
 
-Un jeu de gestion médiévale en pixel-art, inspiré de Manor Lords. **Zéro dépendance, zéro serveur, zéro build** — du HTML/JS/CSS pur, jouable hors-ligne sur téléphone.
+Un jeu de gestion médiéval en pixel-art, inspiré de Manor Lords. **Zéro dépendance, zéro serveur, zéro build** — du HTML/JS/CSS pur, jouable hors-ligne sur téléphone.
+
+✨ **Météo dynamique** (pluie, neige, brouillard), cycle jour/nuit, fumées et drapeaux animés, **sons procéduraux** (touche M pour couper), 3 tailles de texte (touche T), zoom au clavier (+/−).
 
 ## 🎮 Jouer
 

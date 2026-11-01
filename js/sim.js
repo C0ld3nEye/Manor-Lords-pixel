@@ -193,7 +193,7 @@ class GameState {
     this.deer = []; this.nextD = 1; this.deerTimer = 0;
     this.camps = []; this.nextC = 1;
     this.units = []; this.nextU = 1;
-    this.stock = { timber:15, firewood:8, stone:0, grain:0, bread:0, berries:25, meat:15, eggs:0, veg:0, apples:0, honey:0, clothes:0, ale:0, barley:0, ox:0 };
+    this.stock = { timber:15, firewood:12, stone:0, grain:0, bread:6, berries:40, meat:25, eggs:0, veg:0, apples:0, honey:0, clothes:2, ale:0, barley:0, ox:0 };
     this.capBase = 300; this.capPer = 150;
     this.time = { tick:0, day:0, month:2, year:1176 }; // mars 1176
     this.approval = 62; this.treasury = 0; this.taxRate = 0.15;
@@ -203,6 +203,7 @@ class GameState {
     this.objectives = { wood:false, happy:false, pop:false, manor:false, happyStreak:0 };
     this.victory = false; this.winterWarned = false;
     this.defeat = false; this.endReason = null;
+    this.lowApprovalStreak = 0;
     this.weather = "clear"; // clear | rain | snow | fog
     this.weatherT = 0;
     if(MODE_BY_ID[this.modeId] && MODE_BY_ID[this.modeId].harsh){
@@ -345,7 +346,7 @@ class GameState {
   capFor(res       ){ return this.capBase + this.capPer*this.storehouseCount(); }
   hasManor(){ return this.buildings.some(b=>b.done && b.def==="manor"); }
   hasChurch(){ return this.buildings.some(b=>b.done && b.def==="church"); }
-  marketActive(){ return this.buildings.some(b=>b.done && b.def==="market" && b.families.length>0); }
+  marketActive(){ return this.buildings.some(b=>b.done && b.def==="market"); }
   freeBurgages(){ return this.buildings.filter(b=>b.done && b.def==="burgage" && !this.families.some(f=>f.home===b.id)).length; }
   season(){ return seasonOf(this.time.month); }
   mode(){ return MODE_BY_ID[this.modeId] || MODE_BY_ID.prosperity; }
@@ -1209,21 +1210,23 @@ class GameState {
     if(this.hasManor()) this.influence += 1;
     // approbation
     let a=50;
-    if(varietyVillage>=3) a+=10; else if(varietyVillage===2) a+=4; else if(varietyVillage===1) a-=8; else a-=20;
+    if(varietyVillage>=3) a+=12; else if(varietyVillage===2) a+=6; else if(varietyVillage===1) a-=2; else a-=8;
     if(fuelRatio>=1) a+=4; else if(fuelRatio>=0.5) a-=5; else a-=15;
     if(clothRatio>=1) a+=4; else if(clothRatio>=0.5) a-=3; else a-=8;
     if(winter){ if(aleRatio>=1) a+=3; else if(aleRatio<0.5) a-=6; }
     if(this.hasChurch()) a+=6 + this.churchBonus().approval;
     if(this.buildings.some(b=>b.done&&b.def==="tower")) a+=4;
-    if(this.buildings.some(b=>b.done&&b.def==="market")) a+=2; else a-=4;
+    if(this.buildings.some(b=>b.done&&b.def==="market")) a+=4; else a-=4;
     const homeless=this.families.filter(f=>f.home<0).length;
     a-=Math.min(24, homeless*12);
     a-=(this.taxRate-0.1)*40;
     if(this.policies.tithe) a-=4;
     if(this.policies.freeMarket) a+=3;
     if(this.policies.militiaService) a-=3;
-    if(starved>0) a-=25;
+    if(starved>0) a-=8;
     this.approval=Math.max(0,Math.min(100,Math.round(a)));
+    if(this.approval<=5 && this.families.length>0){ this.lowApprovalStreak++; } else { this.lowApprovalStreak=0; }
+    if(this.lowApprovalStreak>=6){ this.defeat=true; this.endReason="approbation à 0 (6 mois)"; this.toast("💀 La seigneurie sombre dans le chaos…","bad"); }
     if(this.approval>=50) this.objectives.happyStreak=(this.objectives.happyStreak||0)+1; else this.objectives.happyStreak=0;
     if(this.approval>=50 && (this.objectives.happyStreak||0)>=3) this.objectives.happy=true;
     // impôts
@@ -1254,6 +1257,25 @@ class GameState {
       // sans comptoir, la richesse régionale vient des impôts locaux
       this.wealth = Math.max(0, this.wealth*0.98);
     }
+    // cueilleurs : récolte passive de baies en saison, même sans ouvrier assigné
+    if(this.berrySeason()){
+      let anyBerry=false;
+      for(let i=0;i<W*H;i++) if(this.tiles[i]===T_BERRY && this.berryY[i]>2){ anyBerry=true; break; }
+      for(const b of this.buildings){
+        if(b.done && b.def==="forager" && (this.findBerryNear(b)>=0 || anyBerry))
+          this.stock.berries=Math.min(this.capFor("berries"), this.stock.berries+1.0);
+      }
+    }
+    // chasseurs : un peu de viande passive si gibier proche
+    for(const b of this.buildings){
+      if(b.done && b.def==="hunter" && this.deer.length>0)
+        this.stock.meat=Math.min(this.capFor("meat"), this.stock.meat+0.5);
+    }
+    // production passive de bois de chauffe par les camps de bûcherons (même sans ouvrier assigné)
+    for(const b of this.buildings){
+      if(b.done && b.def==="woodcutter" && this.findForestNear(b)>=0)
+        this.stock.firewood=Math.min(this.capFor("firewood"), this.stock.firewood+0.6);
+    }
     // pillage des camps de brigands
     if(this.camps.length){
       const lost=this.pillageCamps();
@@ -1279,12 +1301,12 @@ class GameState {
       }
     }
     // migration (personne ne s'installe dans un village au bord de la famine)
-    if(this.approval>=55){
+    if(this.approval>=40){
       const free=this.freeBurgages();
       const foodTotal=FOOD_TYPES.reduce((s,k)=>s+this.stock[k],0);
       const n=(this.approval>=75)?2:1;
       for(let i=0;i<n && i<free;i++){
-        if(foodTotal < (this.families.length+i+1)*2.5) break;
+        if(foodTotal < (this.families.length+i+1)*0.8) break;
         const fb=this.buildings.find(bd=>bd.done&&bd.def==="burgage"&&!this.families.some(f=>f.home===bd.id));
         if(!fb) break;
         const f=this.makeFamily();
@@ -1312,8 +1334,8 @@ class GameState {
       this.toast(f.name+" quitte la seigneurie, déçue…","bad");
     }
     // objectifs
-    this.objectives.wood=this.objectives.wood||this.buildings.some(b=>b.done&&b.def==="woodcutter"&&b.families.length>0);
-    this.objectives.pop=this.objectives.pop||this.families.length>=10;
+    this.objectives.wood=this.objectives.wood||this.buildings.some(b=>b.done&&b.def==="woodcutter");
+    this.objectives.pop=this.objectives.pop||this.families.length>=8;
     this.objectives.manor=this.objectives.manor||this.hasManor();
     if(!this.victory && !this.defeat){
       const mode=this.mode();
@@ -1328,7 +1350,7 @@ class GameState {
         win = this.regions.every(r=>r.owned) && this.baron.power===0 && this.time.year>=1180;
       }
       if(win){ this.victory=true; this.endReason="victoire"; this.toast("🏆 Victoire ! "+mode.name+" accomplie !","good"); }
-      if(this.approval<=0 && this.families.length>0){ this.defeat=true; this.endReason="approbation à 0"; this.toast("💀 La seigneurie sombre dans le chaos…","bad"); }
+
       if(this.families.length===0 && this.time.year>1176){ this.defeat=true; this.endReason="plus aucune famille"; this.toast("💀 Toute la population a disparu…","bad"); }
     }
     // avertissement hiver
@@ -1455,6 +1477,7 @@ class GameState {
       seed:this.seed,
       modeId:this.modeId,
       weather:this.weather,
+      lowApprovalStreak:this.lowApprovalStreak,
       diffId:this.diffId,
       tiles:Array.from(this.tiles),
       treeWood:Array.from(this.treeWood),
@@ -1531,6 +1554,7 @@ class GameState {
     g.defeat = !!data.defeat;
     g.endReason = data.endReason || null;
     if(typeof data.weather==="string") g.weather = data.weather;
+    g.lowApprovalStreak = typeof data.lowApprovalStreak==="number" ? data.lowApprovalStreak : 0;
     if(typeof data.modeId==="string" && MODE_BY_ID[data.modeId]) g.modeId = data.modeId;
     if(typeof data.diffId==="string" && DIFF_BY_ID[data.diffId]) g.diffId = data.diffId;
     g.pendingEvent = data.pendingEvent || null;

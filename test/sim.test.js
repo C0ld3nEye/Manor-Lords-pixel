@@ -685,13 +685,22 @@ test("phase 6 : mode 'duel' = victoire si toutes les régions à nous, sans camp
   assert.strictEqual(g.victory, true);
 });
 
-test("phase 6 : défaite si plus aucune famille après 1176", () => {
+test("phase 6 : défaite après 6 mois à approbation très basse (famine)", () => {
   const g = new GameState(1176, "peace", "hard");
-  g.families = [];
   g.time.year = 1178;
-  for(let i=0;i<200 && !g.defeat;i++) g.step();
+  g.stock.berries=0; g.stock.meat=0; g.stock.bread=0; g.stock.firewood=0; g.stock.clothes=0;
+  for(let m=0;m<8 && !g.defeat;m++) g.onMonth();
   assert.strictEqual(g.defeat, true);
-  assert.strictEqual(g.endReason, "plus aucune famille");
+  assert.ok(/approbation/.test(g.endReason));
+  // le compteur retombe si l'approbation remonte
+  const g2 = new GameState(1176, "peace", "hard");
+  g2.time.year = 1178;
+  g2.stock.berries=0; g2.stock.meat=0; g2.stock.bread=0; g2.stock.firewood=0; g2.stock.clothes=0;
+  for(let m=0;m<3;m++) g2.onMonth();
+  assert.ok(g2.lowApprovalStreak >= 3);
+  g2.stock.berries=100; g2.stock.meat=100; g2.stock.bread=100; g2.stock.firewood=100; g2.stock.clothes=100;
+  g2.onMonth();
+  assert.strictEqual(g2.lowApprovalStreak, 0, "compteur remis à zéro");
 });
 
 test("phase 6 : difficulté modère les raids du baron", () => {
