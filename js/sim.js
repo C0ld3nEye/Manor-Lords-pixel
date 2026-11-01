@@ -86,6 +86,13 @@ const REGION_DEFS = [
   { id:2, name:"Hautes Terres",    bonus:{stone:1},    desc:"Réclamez-la (à l'est) : +1 pierre par mois." },
 ];
 const REGION_COST = { treasury:30, wealth:15 };
+
+const POLICY_DEFS = {
+  tithe:         { id:"tithe",         name:"" + "Dîme ecclésiastique", desc:"+8 influence/mois, -4 approbation/mois." },
+  freeMarket:    { id:"freeMarket",    name:"Marchés libres",        desc:"+6 richesse/mois, +3 approbation/mois, -5 deniers d'impôt." },
+  militiaService:{ id:"militiaService",name:"Service militaire",    desc:"+1 soldat de milice en plus, -3 approbation/mois." },
+};
+const POLICY_ORDER = ["tithe","freeMarket","militiaService"];
 const RES_ICONS                        = { timber:"🪵", firewood:"🔥", stone:"🪨", grain:"🌾", bread:"🍞", berries:"🍒", meat:"🍗", eggs:"🥚", veg:"🥕", apples:"🍎", honey:"🍯", clothes:"👕", ale:"🍺", barley:"🌾", ox:"🐂" };
 
 const SURNAMES = ["Aldéric","Baptiste","Colin","Eudes","Garlin","Hersende","Mahaut","Odon","Perrot","Raoulin","Sanceline","Thomasse","Ysoré","Gaultier","Béatrice","Manessier","Ferrant","Alips","Jourdaine","Nicaise"];
@@ -148,6 +155,8 @@ class GameState {
     this.wealth = 0;
     this.regions = REGION_DEFS.map(r=>({ id:r.id, owned:r.id===0 }));
     this.baron = { name:"Baron von Graufeld", regions:[], power:0, nextClaim:6, nextRaid:10 };
+    this.influence = 0;
+    this.policies = { tithe:false, freeMarket:false, militiaService:false };
     this.prices = { bread:2, clothes:3, ale:2, apples:1, honey:4, meat:1, berries:1 };
     this.occupied = new Int32Array(W*H).fill(-1);
     this.buildings = []; this.nextB = 1;
@@ -448,10 +457,21 @@ class GameState {
     }
     this.treasury -= REGION_COST.treasury; this.wealth -= REGION_COST.wealth;
     r.owned = true;
+    this.influence += 10;
     this.toast("🗺️ "+REGION_DEFS[rid].name+" est désormais vôtre !","good");
     this.uiVersion++;
     return true;
   }
+
+  /* ---------- influence & politiques ---------- */
+  gainInfluence(n       ){ this.influence += n; }
+  setPolicy(pid       , on       ){
+    if(!POLICY_DEFS[pid]) return;
+    this.policies[pid] = !!on;
+    this.toast("Décret : "+(on?"activé":"abrogé")+" — "+POLICY_DEFS[pid].name, "info");
+    this.uiVersion++;
+  }
+  militiaBonus(){ return this.policies.militiaService ? 1 : 0; }
 
   /* ---------- routes ---------- */
   toggleRoad(x       , y       ){
@@ -886,7 +906,7 @@ class GameState {
       // les brigands pillent un peu de nourriture chaque mois (géré dans onMonth)
     }
   }
-  militiaCount(){ return Math.floor(this.families.length/2); } // 1 soldat pour 2 familles
+  militiaCount(){ return Math.floor(this.families.length/2) + this.militiaBonus(); }
   raiseMilitia(){
     const want = this.militiaCount();
     const have = this.units.length;
@@ -1085,6 +1105,13 @@ class GameState {
     // pourrissement
     const spoil=this.buildings.some(b=>b.done&&b.def==="granary")?0.03:0.10;
     for(const k of FOOD_TYPES) this.stock[k]=Math.max(0,this.stock[k]*(1-spoil));
+    // effets des décrets actifs
+    if(this.policies.tithe){ this.influence += 8; }
+    if(this.policies.freeMarket){ this.wealth += 6; }
+    if(this.policies.militiaService){ /* milice déjà comptée dans militiaCount */ }
+    // influence passive : église + manoir
+    if(this.hasChurch()) this.influence += 1;
+    if(this.hasManor()) this.influence += 1;
     // approbation
     let a=50;
     if(varietyVillage>=3) a+=10; else if(varietyVillage===2) a+=4; else if(varietyVillage===1) a-=8; else a-=20;
@@ -1097,6 +1124,9 @@ class GameState {
     const homeless=this.families.filter(f=>f.home<0).length;
     a-=Math.min(24, homeless*12);
     a-=(this.taxRate-0.1)*40;
+    if(this.policies.tithe) a-=4;
+    if(this.policies.freeMarket) a+=3;
+    if(this.policies.militiaService) a-=3;
     if(starved>0) a-=25;
     this.approval=Math.max(0,Math.min(100,Math.round(a)));
     if(this.approval>=50) this.objectives.happyStreak=(this.objectives.happyStreak||0)+1; else this.objectives.happyStreak=0;
@@ -1105,7 +1135,7 @@ class GameState {
     if(this.hasManor()){
       let levels=0;
       for(const b of this.buildings) if(b.done&&b.def==="burgage"&&this.families.some(f=>f.home===b.id)) levels+=[0,1,3,6][b.lvl];
-      this.treasury+=levels*this.taxRate;
+      this.treasury+=levels*this.taxRate*(this.policies.freeMarket?0.9:1);
     }
     // ----- commerce régional : comptoir vend les surplus, prix fluctuants -----
     const tradeActive = this.buildings.some(b=>b.done && b.def==="trade" && b.families.length>0);
@@ -1332,6 +1362,8 @@ class GameState {
       roads:Array.from(this.roads),
       regions:this.regions,
       baron:this.baron,
+      influence:this.influence,
+      policies:this.policies,
       camps:this.camps,
       units:this.units,
       wealth:this.wealth,
@@ -1372,6 +1404,8 @@ class GameState {
     g.log = Array.isArray(data.log) ? data.log : [];
     if(Array.isArray(data.roads) && data.roads.length===W*H) g.roads = Uint8Array.from(data.roads);
     if(data.baron && typeof data.baron==="object") g.baron = Object.assign(g.baron, data.baron);
+    g.influence = typeof data.influence==="number" ? data.influence : 0;
+    if(data.policies && typeof data.policies==="object") g.policies = Object.assign(g.policies, data.policies);
     g.camps = Array.isArray(data.camps) ? data.camps : [];
     g.units = Array.isArray(data.units) ? data.units : [];
     g.nextC = Math.max(0, ...g.camps.map(c=>typeof c.id==="number"?c.id:0)) + 1;
@@ -1402,5 +1436,5 @@ class GameState {
 
 if(typeof module!=="undefined" && module.exports){
   module.exports = { GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
-    T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf, REGION_DEFS, REGION_COST };
+    T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf, REGION_DEFS, REGION_COST, POLICY_DEFS, POLICY_ORDER };
 }

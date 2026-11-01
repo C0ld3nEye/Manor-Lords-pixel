@@ -2,7 +2,7 @@
 /* Tests de la simulation (Phase 0 du plan docs/PLAN.md).
    Lancer avec : node test/sim.test.js */
 const assert = require("assert");
-const { GameState, BUILD_DEFS, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, REGION_DEFS, REGION_COST, W, H, T_GRASS, T_FOREST, T_STONE, MONTHS, seasonOf } = require("../js/sim.js");
+const { GameState, BUILD_DEFS, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, REGION_DEFS, REGION_COST, POLICY_DEFS, POLICY_ORDER, W, H, T_GRASS, T_FOREST, T_STONE, MONTHS, seasonOf } = require("../js/sim.js");
 
 let passed = 0;
 function test(name, fn){
@@ -555,6 +555,42 @@ test("jalon 4 : tour et rempart dans BUILD_ORDER et sauvegardés", () => {
   g.place("tower", s2.x, s2.y);
   const g2 = GameState.load(JSON.parse(JSON.stringify(g.serialize())));
   assert.ok(g2.buildings.some(b=>b.def==="tower"));
+});
+
+test("phase 5 jalon 1 : 3 décrets activables, effets mensuels", () => {
+  const g = fresh();
+  assert.strictEqual(POLICY_ORDER.length, 3);
+  g.setPolicy("tithe", true);
+  assert.strictEqual(g.policies.tithe, true);
+  const i0 = g.influence, a0 = 100;
+  g.approval = 100;
+  for(let i=0;i<200;i++) g.step(); // 1 mois
+  assert.ok(g.influence > i0, "d\u00eeme rapporte de l'influence");
+  g.setPolicy("tithe", false);
+  assert.strictEqual(g.policies.tithe, false, "abrogeable");
+});
+
+test("phase 5 jalon 1 : service militaire ajoute un soldat", () => {
+  const g = fresh();
+  const base = g.militiaCount();
+  g.setPolicy("militiaService", true);
+  assert.strictEqual(g.militiaCount(), base + 1);
+});
+
+test("phase 5 jalon 1 : influence gagnée en réclamant une région", () => {
+  const g = fresh();
+  g.treasury = 100; g.wealth = 100;
+  const i0 = g.influence;
+  g.claimRegion(1);
+  assert.ok(g.influence >= i0 + 10);
+});
+
+test("phase 5 jalon 1 : sauvegarde persiste influence et décrets", () => {
+  const g = fresh();
+  g.influence = 42; g.setPolicy("freeMarket", true);
+  const g2 = GameState.load(JSON.parse(JSON.stringify(g.serialize())));
+  assert.strictEqual(g2.influence, 42);
+  assert.strictEqual(g2.policies.freeMarket, true);
 });
 
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));

@@ -213,6 +213,7 @@ document.addEventListener("click", function(e){
   else if(act==="fieldsize"){ game.setFieldSize(Number(arg)); }
   else if(act==="layer"){ ui.layers[arg] = !ui.layers[arg]; }
   else if(act==="militia"){ game.raiseMilitia(); }
+  else if(act==="policy"){ game.setPolicy(arg, !game.policies[arg]); }
   else if(act==="regions"){ ui.regionsOpen = true; }
   else if(act==="regionsclose"){ ui.regionsOpen = false; }
   else if(act==="claim"){ game.claimRegion(Number(arg)); }
@@ -286,6 +287,7 @@ function renderUI(){
   h += "<button class='btn"+(ui.layers.soil?" on":"")+"' data-act='layer' data-arg='soil' title='Fertilit\u00e9 du sol'>\ud83c\udf3e</button>";
   h += "<button class='btn"+(ui.roadMode?" on":"")+"' data-act='road' title='Tracer des routes'>≡</button>";
   if(game.time.year >= 1177) h += "<span class='chip small' style='color:#e86a5a' title='Puissance du Baron rival'>⚔️ "+game.baron.power+"</span>";
+  h += "<span class='chip small' title='Influence (prestige du seigneur)'>⭐ "+Math.floor(g.influence)+"</span>";
   h += "<span class='chip small' title='Richesse régionale'>💵 "+Math.floor(g.wealth)+"</span>";
   h += "<button class='btn' data-act='buyox' title='Acheter un boeuf (20 deniers)'>🐂+</button>";
   h += "<button class='btn' data-act='militia' title='Lever la milice (1 soldat pour 2 familles)'>⚔️\ufe0f "+game.units.length+"/"+game.militiaCount()+"</button>";
@@ -353,6 +355,13 @@ function renderUI(){
     if(sel.def==="trade" && sel.done){
       o += "<div class='row'><span class='dim'>Prix du marché :</span></div>";
       for(var pk in g.prices) o += "<span class='chip small'>"+(RES_ICONS[pk]||pk)+" "+g.prices[pk]+"d</span> ";
+    }
+    if(sel.def==="manor" && sel.done){
+      o += "<div class='row'><b>Décrets :</b></div>";
+      for(var pi=0; pi<POLICY_ORDER.length; pi++){
+        var pd = POLICY_DEFS[POLICY_ORDER[pi]];
+        o += "<div class='row'><button class='btn"+(g.policies[pd.id]?" on":"")+"' data-act='policy' data-arg='"+pd.id+"' title='"+esc(pd.desc)+"'>"+esc(pd.name)+"</button></div>";
+      }
     }
     if(sel.def==="manor" && sel.done){
       o += "<div>Taux d'imposition : "+Math.round(g.taxRate*100)+" %</div>";
