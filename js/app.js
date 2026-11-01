@@ -306,7 +306,7 @@ document.addEventListener("input", function(e){
 
 /* ----- rendu de l'interface (toutes les ~300 ms) ----- */
 function renderUI(){
-  if(!game){ overlay.innerHTML = ""; hud.innerHTML = ""; buildbar.innerHTML = ""; return; }
+  if(!game){ hud.innerHTML = ""; buildbar.innerHTML = ""; } // le menu (uiMenu) s'affiche dans le overlay ci-dessous
   var g = game;
   var season = g.season();
   var seasonIcon = ["❄️","🌷","☀️","🍂"][season];
