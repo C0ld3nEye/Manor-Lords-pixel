@@ -306,7 +306,7 @@ document.addEventListener("input", function(e){
 
 /* ----- rendu de l'interface (toutes les ~300 ms) ----- */
 function renderUI(){
-  if(!game){ hud.innerHTML = ""; buildbar.innerHTML = ""; } // le menu (uiMenu) s'affiche dans le overlay ci-dessous
+  if(!game){ hud.innerHTML = ""; buildbar.innerHTML = ""; overlay.innerHTML = menuHtml(); return; }
   var g = game;
   var season = g.season();
   var seasonIcon = ["❄️","🌷","☀️","🍂"][season];
@@ -372,8 +372,10 @@ function renderUI(){
     o += "</div></div>";
   }
 
-  /* ----- menu de démarrage : modes, difficultés, slots ----- */
-  if(uiMenu){
+function menuHtml(){
+  if(!uiMenu) return "";
+  var o = "";
+  {
     o += "<div class='modalwrap'><div class='modal big'>";
     o += "<b>\ud83c\udff0 SEIGNEURIE</b>";
     o += "<p class='dim'>Choisissez un mode et une difficulté :</p>";
@@ -396,7 +398,8 @@ function renderUI(){
     if(game) o += "<button class='btn wide' data-act='menuclose'>Reprendre la partie en cours</button>";
     o += "</div></div>";
   }
-  o += "<div class='panel' id='objpanel'>";
+  return o;
+}  o += "<div class='panel' id='objpanel'>";
   o += "<b>📜 Objectifs</b>";
   o += "<div>"+(g.objectives.wood?"✅":"⬜")+" Bûcherons actifs</div>";
   o += "<div>"+(g.objectives.happy?"✅":"⬜")+" Approbation ≥ 50 % (3 mois)</div>";
