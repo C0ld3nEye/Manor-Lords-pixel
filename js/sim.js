@@ -439,18 +439,25 @@ class GameState {
   astar(sx       ,sy       ,tx       ,ty       )           {
     if(sx===tx && sy===ty) return [];
     const N=W*H;
-    const open         =[sy*W+sx];
+    // tas binaire min sur f=g+h : évite la recherche linéaire du meilleur nœud
+    const heap=[]; // [f, node]
+    const heapPush=(f,n)=>{ heap.push([f,n]); let i=heap.length-1;
+      while(i>0){ const p=(i-1)>>1; if(heap[p][0]<=heap[i][0]) break; const t=heap[p]; heap[p]=heap[i]; heap[i]=t; i=p; } };
+    const heapPop=()=>{ const top=heap[0]; const last=heap.pop();
+      if(heap.length>0){ heap[0]=last; let i=0;
+        for(;;){ const l=i*2+1, r=l+1; let m=i;
+          if(l<heap.length&&heap[l][0]<heap[m][0]) m=l;
+          if(r<heap.length&&heap[r][0]<heap[m][0]) m=r;
+          if(m===i) break; const t=heap[m]; heap[m]=heap[i]; heap[i]=t; i=m; } }
+      return top; };
     const gS=new Float32Array(N).fill(Infinity); gS[sy*W+sx]=0;
     const came=new Int32Array(N).fill(-1);
     const inO=new Uint8Array(N); inO[sy*W+sx]=1;
+    const h=(n)=>Math.abs((n%W)-tx)+Math.abs(((n/W)|0)-ty);
+    heapPush(h(sy*W+sx), sy*W+sx);
     let guard=0;
-    while(open.length>0 && guard++<2600){
-      let bi=0, bf=Infinity;
-      for(let i=0;i<open.length;i++){
-        const n=open[i]; const f=gS[n]+Math.abs((n%W)-tx)+Math.abs(((n/W)|0)-ty);
-        if(f<bf){ bf=f; bi=i; }
-      }
-      const cur=open[bi]; open[bi]=open[open.length-1]; open.pop(); inO[cur]=0;
+    while(heap.length>0 && guard++<4000){
+      const cur=heapPop()[1]; inO[cur]=0;
       const cxx=cur%W, cyy=(cur/W)|0;
       if(cxx===tx && cyy===ty){
         const path      =[]; let c=cur;
@@ -465,7 +472,10 @@ class GameState {
         if(nx<0||ny<0||nx>=W||ny>=H) continue;
         if(!this.passable(nx,ny)) continue;
         const ng=gS[cur]+this.passableCost(nx,ny);
-        if(ng<gS[n]){ gS[n]=ng; came[n]=cur; if(!inO[n]){ inO[n]=1; open.push(n); } }
+        if(ng<gS[n]){ gS[n]=ng; came[n]=cur;
+          if(!inO[n]){ inO[n]=1; heapPush(ng+h(n), n); }
+          else heapPush(ng+h(n), n); // doublon autorisé, le meilleur sortira en premier
+        }
       }
     }
     return null;
@@ -1138,7 +1148,9 @@ class GameState {
     };
   }
   static load(data    )          {
-    if(!data || typeof data.seed!=="number" || !data.tiles) throw new Error("sauvegarde invalide");
+    if(!data || typeof data.seed!=="number" || !Array.isArray(data.tiles)) throw new Error("sauvegarde invalide");
+    if(data.tiles.length!==W*H) throw new Error("sauvegarde invalide (taille de carte)");
+    const num = (v)=>typeof v==="number" && isFinite(v);
     const g = new GameState(data.seed);
     g.tiles = Uint8Array.from(data.tiles);
     g.treeWood = Float32Array.from(data.treeWood);
@@ -1152,29 +1164,38 @@ class GameState {
       if(!Array.isArray(b.exts)) b.exts=[];
       return b;
     });
-    g.families = data.families || [];
-    g.deer = data.deer || [];
-    if(data.stock) g.stock = data.stock;
-    if(data.time) g.time = data.time;
+    g.families = Array.isArray(data.families) ? data.families : [];
+    g.deer = Array.isArray(data.deer) ? data.deer : [];
+    if(data.stock && typeof data.stock==="object") g.stock = Object.assign(g.stock, data.stock);
+    if(data.time && num(data.time.tick) && num(data.time.day) && num(data.time.month) && num(data.time.year)){
+      g.time = { tick:Math.max(0,data.time.tick), day:Math.max(0,data.time.day),
+                 month:Math.max(0,Math.min(11,data.time.month)), year:Math.max(0,data.time.year) };
+    }
     if(typeof data.approval==="number") g.approval = data.approval;
     if(typeof data.treasury==="number") g.treasury = data.treasury;
     if(typeof data.taxRate==="number") g.taxRate = data.taxRate;
     if(data.objectives) g.objectives = data.objectives;
     g.log = Array.isArray(data.log) ? data.log : [];
-    if(data.roads) g.roads = Uint8Array.from(data.roads);
+    if(Array.isArray(data.roads) && data.roads.length===W*H) g.roads = Uint8Array.from(data.roads);
     g.wealth = typeof data.wealth==="number" ? data.wealth : 0;
-    if(data.prices) g.prices = data.prices;
+    if(data.prices && typeof data.prices==="object"){
+      for(const k of Object.keys(data.prices)) if(num(data.prices[k])) g.prices[k] = Math.max(1, data.prices[k]);
+    }
     g.victory = !!data.victory;
     g.pendingEvent = data.pendingEvent || null;
     g.winterWarned = !!data.winterWarned;
-    g.nextB = Math.max(0, ...g.buildings.map(b=>b.id)) + 1;
-    g.nextF = Math.max(0, ...g.families.map(f=>f.id)) + 1;
-    g.nextD = Math.max(0, ...g.deer.map(d=>d.id)) + 1;
-    // reconstruit l'occupation du sol à partir des bâtiments
+    g.nextB = Math.max(0, ...g.buildings.map(b=>num(b.id)?b.id:0)) + 1;
+    g.nextF = Math.max(0, ...g.families.map(f=>num(f.id)?f.id:0)) + 1;
+    g.nextD = Math.max(0, ...g.deer.map(d=>num(d.id)?d.id:0)) + 1;
+    // reconstruit l'occupation du sol à partir des bâtiments (bornes vérifiées)
     g.occupied = new Int32Array(W*H).fill(-1);
-    for(const b of g.buildings)
-      for(let yy=0;yy<b.h;yy++) for(let xx=0;xx<b.w;xx++)
-        g.occupied[(b.y+yy)*W+(b.x+xx)] = b.id;
+    for(const b of g.buildings){
+      if(!num(b.x)||!num(b.y)||!num(b.w)||!num(b.h)) continue;
+      for(let yy=0;yy<b.h;yy++) for(let xx=0;xx<b.w;xx++){
+        const bx=b.x+xx, by=b.y+yy;
+        if(bx>=0&&by>=0&&bx<W&&by<H) g.occupied[by*W+bx] = b.id;
+      }
+    }
     return g;
   }
 }

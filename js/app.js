@@ -22,6 +22,9 @@ centerCam();
 
 var ui = { buildSel:null, selId:null, helpOpen:false, flash:null, taxDrag:false, logOpen:false, roadMode:false,
   layers:{ forest:false, stone:false, berry:false, soil:false } };
+function esc(str){
+  return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+}
 function flash(msg){
   ui.flash = msg;
   if(ui._ft) clearTimeout(ui._ft);
@@ -313,7 +316,7 @@ function renderUI(){
     }
     if(sel.def==="burgage"){
       var fam = g.families.find(function(f){ return f.home===sel.id; });
-      o += "<div>"+(fam ? "Résidente : "+fam.name : "Vacante")+"</div>";
+      o += "<div>"+(fam ? "Résidente : "+esc(fam.name) : "Vacante")+"</div>";
       if(sel.monthsGood>0) o += "<div class='good'>Bilan positif : "+sel.monthsGood+" mois</div>";
       if(sel.done){
         var exts = sel.exts || [];
@@ -355,11 +358,11 @@ function renderUI(){
 
   if(g.pendingEvent){
     o += "<div class='modalwrap'><div class='modal'>";
-    o += "<b>"+g.pendingEvent.title+"</b>";
-    o += "<p>"+g.pendingEvent.text+"</p>";
+    o += "<b>"+esc(g.pendingEvent.title)+"</b>";
+    o += "<p>"+esc(g.pendingEvent.text)+"</p>";
     for(var ci=0;ci<g.pendingEvent.choices.length;ci++){
       var c = g.pendingEvent.choices[ci];
-      o += "<button class='btn wide"+(c.disabled?" dis":"")+"' data-act='resolve' data-arg='"+ci+"'"+(c.disabled?" disabled":"")+">"+c.label+"</button>";
+      o += "<button class='btn wide"+(c.disabled?" dis":"")+"' data-act='resolve' data-arg='"+ci+"'"+(c.disabled?" disabled":"")+">"+esc(c.label)+"</button>";
     }
     o += "</div></div>";
   }
@@ -371,7 +374,7 @@ function renderUI(){
     else {
       for(var li=g.log.length-1; li>=0; li--){
         var le = g.log[li];
-        o += "<div class='"+(le.kind==="bad"?"bad":le.kind==="good"?"good":"dim")+"'>["+MONTHS[le.month]+" "+le.year+"] "+le.text+"</div>";
+        o += "<div class='"+(le.kind==="bad"?"bad":le.kind==="good"?"good":"dim")+"'>["+MONTHS[le.month]+" "+le.year+"] "+esc(le.text)+"</div>";
       }
     }
     o += "<button class='btn wide' data-act='logclose'>Fermer</button>";
@@ -397,10 +400,10 @@ function renderUI(){
   var toasts = g.toasts.filter(function(t){ return now-t.t<6500; });
   if(toasts.length){
     o += "<div class='toasts'>";
-    for(var ti=0;ti<toasts.length;ti++) o += "<div class='toast "+toasts[ti].kind+"'>"+toasts[ti].text+"</div>";
+    for(var ti=0;ti<toasts.length;ti++) o += "<div class='toast "+toasts[ti].kind+"'>"+esc(toasts[ti].text)+"</div>";
     o += "</div>";
   }
-  if(ui.flash) o += "<div class='flash'>"+ui.flash+"</div>";
+  if(ui.flash) o += "<div class='flash'>"+esc(ui.flash)+"</div>";
   if(ui.roadMode) o += "<div class='hint'>\U0001f6e4 Mode route : touchez une case pour tracer/supprimer \u2014 les travailleurs empruntent les routes (plus rapides). Appui long ou \u00c9chap pour quitter.</div>";
   if(ui.buildSel){
     o += "<div class='hint'>Posez : "+BUILD_DEFS[ui.buildSel].name+" — appui long pour annuler";

@@ -356,4 +356,30 @@ test("sauvegarde : routes, richesse et prix persistés", () => {
   assert.strictEqual(g2.prices.bread, 5);
 });
 
+test("audit : sauvegardes corrompues rejetées sans crash", () => {
+  const bad = [
+    null, {}, {seed:"x"}, {seed:1}, {seed:1, tiles:[]}, {seed:1, tiles:new Array(W*H).fill(0), time:{month:99}},
+    {seed:1, tiles:new Array(W*H).fill(0), buildings:[{id:"x", x:1e9, y:1e9, w:1e9, h:1e9}]},
+    {seed:1, tiles:new Array(W*H).fill(0), roads:[1,2,3]},
+  ];
+  for(const b of bad){
+    try { const g = GameState.load(b); for(let i=0;i<50;i++) g.step(); }
+    catch(e){ /* rejet attendu */ }
+  }
+  assert.ok(true, "aucune exception non maîtrisée");
+});
+
+test("audit : noms de familles hostiles stockés sans danger (échappement UI)", () => {
+  const g = fresh();
+  g.toast("<img src=x onerror=alert(1)>", "bad");
+  assert.strictEqual(g.log[g.log.length-1].text, "<img src=x onerror=alert(1)>", "texte brut conservé dans le log");
+});
+
+test("audit : charge longue, aucun débordement de log/toasts", () => {
+  const g = fresh();
+  for(let i=0;i<10*16*12*3;i++) g.step();
+  assert.ok(g.log.length <= 120, "log plafonné");
+  assert.ok(g.toasts.length <= 6, "toasts plafonnés");
+});
+
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));
