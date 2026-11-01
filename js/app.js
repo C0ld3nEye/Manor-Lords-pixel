@@ -20,7 +20,7 @@ function centerCam(){
 }
 centerCam();
 
-var ui = { buildSel:null, selId:null, helpOpen:false, flash:null, taxDrag:false, logOpen:false, roadMode:false,
+var ui = { buildSel:null, selId:null, helpOpen:false, flash:null, taxDrag:false, logOpen:false, roadMode:false, regionsOpen:false,
   layers:{ forest:false, stone:false, berry:false, soil:false } };
 function esc(str){
   return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
@@ -212,6 +212,9 @@ document.addEventListener("click", function(e){
   else if(act==="crop"){ if(ui.selId!=null) game.setCrop(ui.selId, arg); }
   else if(act==="fieldsize"){ game.setFieldSize(Number(arg)); }
   else if(act==="layer"){ ui.layers[arg] = !ui.layers[arg]; }
+  else if(act==="regions"){ ui.regionsOpen = true; }
+  else if(act==="regionsclose"){ ui.regionsOpen = false; }
+  else if(act==="claim"){ game.claimRegion(Number(arg)); }
   else if(act==="log"){ ui.logOpen = true; }
   else if(act==="logclose"){ ui.logOpen = false; }
   else if(act==="noop"){ return; } /* clic à l'intérieur d'une modale : ne rien faire */
@@ -283,6 +286,7 @@ function renderUI(){
   h += "<button class='btn"+(ui.roadMode?" on":"")+"' data-act='road' title='Tracer des routes'>\U0001f6e4</button>";
   h += "<span class='chip small' title='Richesse régionale'>\U0001f4b0 "+Math.floor(g.wealth)+"</span>";
   h += "<button class='btn' data-act='buyox' title='Acheter un boeuf (20 deniers)'>🐂+</button>";
+  h += "<button class='btn' data-act='regions' title='Régions'>\U0001f5fa\ufe0f</button>";
   h += "<button class='btn' data-act='log' title='Journal des \u00e9v\u00e9nements'>\ud83d\udcdc</button>";
   h += "<button class='btn' data-act='saveCode' title='Code de sauvegarde'>💾</button>";
   h += "<button class='btn' data-act='loadCode' title='Charger un code'>📥</button>";
@@ -364,6 +368,21 @@ function renderUI(){
       var c = g.pendingEvent.choices[ci];
       o += "<button class='btn wide"+(c.disabled?" dis":"")+"' data-act='resolve' data-arg='"+ci+"'"+(c.disabled?" disabled":"")+">"+esc(c.label)+"</button>";
     }
+    o += "</div></div>";
+  }
+
+  if(ui.regionsOpen){
+    o += "<div class='modalwrap' data-act='regionsclose'><div class='modal big' data-act='noop'>";
+    o += "<b>\U0001f5fa\ufe0f Régions du domaine</b>";
+    for(var ri=0; ri<REGION_DEFS.length; ri++){
+      var rd = REGION_DEFS[ri], rr = g.regions[ri];
+      o += "<div class='row'><b>"+esc(rd.name)+"</b> "+(rr.owned?"<span class='good'>à vous</span>":"");
+      if(!rr.owned){
+        o += "<button class='btn' data-act='claim' data-arg='"+ri+"' title='Coût : 30 deniers + 15 richesse'>Réclamer (30\u00a0\U0001fa99 + 15\U0001f4b0)</button>";
+      }
+      o += "</div><div class='dim'>"+esc(rd.desc)+"</div>";
+    }
+    o += "<button class='btn wide' data-act='regionsclose'>Fermer</button>";
     o += "</div></div>";
   }
 

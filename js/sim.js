@@ -77,6 +77,13 @@ const CROP_DEFS = {
 };
 const CROP_ORDER = ["wheat","barley","fallow"];
 const FIELD_SIZES = [3,4,6];
+
+const REGION_DEFS = [
+  { id:0, name:"Vallée du Cœur",  bonus:null,          desc:"Votre terre natale. Déjà à vous." },
+  { id:1, name:"Marches de l'Est",bonus:{berries:2},  desc:"Réclamez-la : +2 baies par mois." },
+  { id:2, name:"Hautes Terres",   bonus:{stone:1},    desc:"Réclamez-la : +1 pierre par mois." },
+];
+const REGION_COST = { treasury:30, wealth:15 };
 const RES_ICONS                        = { timber:"🪵", firewood:"🔥", stone:"🪨", grain:"🌾", bread:"🍞", berries:"🍒", meat:"🍗", eggs:"🥚", veg:"🥕", apples:"🍎", honey:"🍯", clothes:"👕", ale:"🍺", barley:"🌾", ox:"🐂" };
 
 const SURNAMES = ["Aldéric","Baptiste","Colin","Eudes","Garlin","Hersende","Mahaut","Odon","Perrot","Raoulin","Sanceline","Thomasse","Ysoré","Gaultier","Béatrice","Manessier","Ferrant","Alips","Jourdaine","Nicaise"];
@@ -136,6 +143,7 @@ class GameState {
     this.soil = new Float32Array(W*H);
     this.roads = new Uint8Array(W*H);
     this.wealth = 0;
+    this.regions = REGION_DEFS.map(r=>({ id:r.id, owned:r.id===0 }));
     this.prices = { bread:2, clothes:3, ale:2, apples:1, honey:4, meat:1, berries:1 };
     this.occupied = new Int32Array(W*H).fill(-1);
     this.buildings = []; this.nextB = 1;
@@ -305,6 +313,7 @@ class GameState {
     const w = d.uiSize ? this.fieldSize() : d.w;
     const h = d.uiSize ? this.fieldSize() : d.h;
     if(x<0 || y<0 || x+w>W || y+h>H) return "Hors de la carte";
+    if(!this.regionOwned(x) || !this.regionOwned(x+w-1)) return "Région non réclamée";
     for(let yy=0;yy<h;yy++) for(let xx=0;xx<w;xx++){
       const i=(y+yy)*W+(x+xx);
       const t=this.tiles[i];
@@ -416,6 +425,22 @@ class GameState {
     this.uiVersion++;
   }
 
+  /* ---------- régions ---------- */
+  regionAt(x       ){ return x < W/3 ? 0 : (x < (2*W)/3 ? 1 : 2); }
+  regionOwned(x       ){ const r=this.regions[this.regionAt(x)]; return r ? r.owned : true; }
+  claimRegion(rid       ){
+    const r=this.regions[rid]; if(!r || r.owned) return false;
+    if(this.treasury < REGION_COST.treasury || this.wealth < REGION_COST.wealth){
+      this.toast("Réclamation impossible : il faut "+REGION_COST.treasury+" deniers et "+REGION_COST.wealth+" de richesse régionale.","bad");
+      return false;
+    }
+    this.treasury -= REGION_COST.treasury; this.wealth -= REGION_COST.wealth;
+    r.owned = true;
+    this.toast("🗺️ "+REGION_DEFS[rid].name+" est désormais vôtre !","good");
+    this.uiVersion++;
+    return true;
+  }
+
   /* ---------- routes ---------- */
   toggleRoad(x       , y       ){
     if(x<0||y<0||x>=W||y>=H) return false;
@@ -433,6 +458,7 @@ class GameState {
   /* ---------- pathfinding ---------- */
   passable(x       ,y       ){
     if(x<0||y<0||x>=W||y>=H) return false;
+    if(!this.regionOwned(x)) return false;
     const i=y*W+x;
     return this.tiles[i]!==T_WATER && this.occupied[i]<0;
   }
@@ -1007,6 +1033,13 @@ class GameState {
       // sans comptoir, la richesse régionale vient des impôts locaux
       this.wealth = Math.max(0, this.wealth*0.98);
     }
+    // bonus des régions réclamées
+    for(const r of this.regions){
+      if(!r.owned) continue;
+      const bd = REGION_DEFS[r.id].bonus;
+      if(!bd) continue;
+      for(const k of Object.keys(bd)) this.stock[k]=Math.min(this.capFor(k), (this.stock[k]||0)+bd[k]);
+    }
     // évolution des bourgages
     for(const b of this.buildings){
       if(b.def!=="burgage"||!b.done) continue;
@@ -1140,6 +1173,7 @@ class GameState {
       objectives:this.objectives,
       log:this.log,
       roads:Array.from(this.roads),
+      regions:this.regions,
       wealth:this.wealth,
       prices:this.prices,
       victory:this.victory,
@@ -1177,6 +1211,7 @@ class GameState {
     if(data.objectives) g.objectives = data.objectives;
     g.log = Array.isArray(data.log) ? data.log : [];
     if(Array.isArray(data.roads) && data.roads.length===W*H) g.roads = Uint8Array.from(data.roads);
+    if(Array.isArray(data.regions)) g.regions = REGION_DEFS.map(r=>({ id:r.id, owned: !!(data.regions[r.id] && data.regions[r.id].owned) || r.id===0 }));
     g.wealth = typeof data.wealth==="number" ? data.wealth : 0;
     if(data.prices && typeof data.prices==="object"){
       for(const k of Object.keys(data.prices)) if(num(data.prices[k])) g.prices[k] = Math.max(1, data.prices[k]);
@@ -1202,5 +1237,5 @@ class GameState {
 
 if(typeof module!=="undefined" && module.exports){
   module.exports = { GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
-    T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf };
+    T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf, REGION_DEFS, REGION_COST };
 }

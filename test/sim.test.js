@@ -2,7 +2,7 @@
 /* Tests de la simulation (Phase 0 du plan docs/PLAN.md).
    Lancer avec : node test/sim.test.js */
 const assert = require("assert");
-const { GameState, BUILD_DEFS, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, W, H, T_GRASS, T_FOREST, T_STONE, MONTHS, seasonOf } = require("../js/sim.js");
+const { GameState, BUILD_DEFS, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, REGION_DEFS, REGION_COST, W, H, T_GRASS, T_FOREST, T_STONE, MONTHS, seasonOf } = require("../js/sim.js");
 
 let passed = 0;
 function test(name, fn){
@@ -12,7 +12,7 @@ function test(name, fn){
 
 function fresh(){ return new GameState(1176); }
 function freeSpot(g){
-  for(let y=1;y<H-1;y++) for(let x=1;x<W-1;x++)
+  for(let y=1;y<H-1;y++) for(let x=1;x<W/3-1;x++) // région 0 uniquement (toujours réclamée)
     if(g.tiles[y*W+x]===T_GRASS && g.occupied[y*W+x]<0) return { x, y };
   throw new Error("aucune tuile libre");
 }
@@ -70,6 +70,8 @@ test("la carrières exige un gisement de pierre", () => {
   g.stock.timber = 50;
   const grass = freeSpot(g);
   assert.ok(g.place("quarry", grass.x, grass.y), "herbe refuse la carrière");
+  g.treasury = 100; g.wealth = 100;
+  g.claimRegion(1); g.claimRegion(2); // accès à toute la carte pour ce test
   let stone = -1;
   for(let i=0;i<W*H;i++) if(g.tiles[i]===T_STONE){ stone = i; break; }
   assert.strictEqual(g.place("quarry", stone%W, Math.floor(stone/W)), null);
@@ -304,8 +306,9 @@ test("route interdite sur bâtiment et eau", () => {
 test("A* emprunte les routes quand c'est plus court", () => {
   const g = fresh();
   // trace une route horizontale longue
-  for(let x=2;x<W-2;x++) g.toggleRoad(x, 17);
-  const pRoad = g.astar(2, 17, W-3, 17);
+  const xEnd = Math.floor(W/3)-2;
+  for(let x=2;x<=xEnd;x++) g.toggleRoad(x, 17);
+  const pRoad = g.astar(2, 17, xEnd, 17);
   assert.ok(pRoad, "chemin trouvé");
   // le coût total doit être réduit par la route
   let cost = 0;
@@ -380,6 +383,53 @@ test("audit : charge longue, aucun débordement de log/toasts", () => {
   for(let i=0;i<10*16*12*3;i++) g.step();
   assert.ok(g.log.length <= 120, "log plafonné");
   assert.ok(g.toasts.length <= 6, "toasts plafonnés");
+});
+
+test("jalon 1 : 3 régions, seule la 0 est possédée au départ", () => {
+  const g = fresh();
+  assert.strictEqual(REGION_DEFS.length, 3);
+  assert.strictEqual(g.regions[0].owned, true);
+  assert.strictEqual(g.regions[1].owned, false);
+  assert.strictEqual(g.regions[2].owned, false);
+  assert.strictEqual(g.regionOwned(1), true);
+  assert.strictEqual(g.regionOwned(W-1), false);
+});
+
+test("jalon 1 : région non réclamée infranchissable et non constructible", () => {
+  const g = fresh();
+  assert.strictEqual(g.passable(W-1, 5), false, "passable refuse la région 2");
+  const err = g.place("burgage", W-2, 5);
+  assert.strictEqual(err, "Région non réclamée");
+});
+
+test("jalon 1 : réclamation coûte trésorerie + richesse, puis débloque", () => {
+  const g = fresh();
+  g.treasury = 10; g.wealth = 100;
+  assert.strictEqual(g.claimRegion(1), false, "trésorerie insuffisante");
+  g.treasury = 100; g.wealth = 100;
+  assert.strictEqual(g.claimRegion(1), true);
+  assert.strictEqual(g.treasury, 100 - REGION_COST.treasury);
+  assert.strictEqual(g.wealth, 100 - REGION_COST.wealth);
+  assert.strictEqual(g.passable(Math.floor(W/3)+2, 5), true, "région 1 débloquée");
+  assert.strictEqual(g.claimRegion(1), false, "déjà possédée");
+});
+
+test("jalon 1 : bonus de région chaque mois", () => {
+  const g = fresh();
+  g.treasury = 100; g.wealth = 100;
+  g.claimRegion(1); g.claimRegion(2);
+  g.stock.berries = 0; g.stock.stone = 0;
+  for(let i=0;i<200;i++) g.step();
+  assert.ok(g.stock.berries >= 2, "+2 baies/mois de la région 1");
+  assert.ok(g.stock.stone >= 1, "+1 pierre/mois de la région 2");
+});
+
+test("jalon 1 : sauvegarde persiste les régions", () => {
+  const g = fresh();
+  g.treasury = 100; g.wealth = 100; g.claimRegion(2);
+  const g2 = GameState.load(JSON.parse(JSON.stringify(g.serialize())));
+  assert.strictEqual(g2.regions[2].owned, true);
+  assert.strictEqual(g2.regions[1].owned, false);
 });
 
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));
