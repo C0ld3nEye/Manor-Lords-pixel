@@ -394,7 +394,18 @@ function renderUI(){
   h += "<button class='btn' data-act='help'>?</button>";
   h += "<button class='btn danger' data-act='new' title='Nouvelle partie'>⟲</button>";
   hud.innerHTML = h;
+  renderOverlayUI();
+  renderMenuIfOpen();
+}
 
+function renderMenuIfOpen(){
+  if(uiMenu && !game) overlay.innerHTML = menuHtml();
+  else if(uiMenu && game) overlay.innerHTML = menuHtml() + overlay.innerHTML.replace(/<div class='modalwrap'>[\s\S]*?<\/div><\/div>/, '');
+}
+
+function renderOverlayUI(){
+  var g = game;
+  if(!g) return;
   /* calque par-dessus la carte */
   var o = "";
 

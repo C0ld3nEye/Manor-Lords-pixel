@@ -90,7 +90,10 @@ body {
 .modalwrap {
   position: absolute; inset: 0; background: rgba(0,0,0,.6);
   display: flex; align-items: center; justify-content: center; padding: 10px;
+  touch-action: pan-y; /* autorise le défilement tactile dans les modales */
+  overflow-y: auto;
 }
+.modal { touch-action: pan-y; -webkit-overflow-scrolling: touch; }
 .modal {
   background: #1b2434; border: 2px solid #4a5a3a; border-radius: 6px;
   padding: 14px; width: 340px; max-width: 95vw; max-height: 85%;
