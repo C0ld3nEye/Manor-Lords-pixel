@@ -207,6 +207,7 @@ function cancelAll(){
 canvas.addEventListener("pointerdown", function(e){
   try{ if(canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId); }catch(err){}
   pointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+  lastPtrType = e.pointerType;
   clearLongPress();
   if(pointers.size===2){
     var pts = [];
@@ -225,7 +226,8 @@ canvas.addEventListener("pointerdown", function(e){
   drag.down = true; drag.moved = false; camGoal = null;
   drag.sx = e.clientX; drag.sy = e.clientY;
   drag.cx = cam.x; drag.cy = cam.y;
-  if(e.pointerType!=="mouse"){
+  /* en traçant une zone, l'appui long n'efface rien (on annule avec la croix) */
+  if(e.pointerType!=="mouse" && !ui.zoneMode){
     longPress = setTimeout(function(){
       longPress = null;
       if(drag.down && !drag.moved && pointers.size===1){
@@ -353,6 +355,8 @@ canvas.addEventListener("wheel", function(e){
 }, { passive:false });
 canvas.addEventListener("contextmenu", function(e){
   e.preventDefault();
+  /* sur téléphone, un appui long déclenche aussi « contextmenu » : seul le clic droit annule */
+  if(lastPtrType!=="mouse") return;
   cancelAll();
   renderUI();
 });
@@ -1044,10 +1048,10 @@ renderUI();
 var _lastT = performance.now(), _acc = 0, _uiAcc = 0, _saveAcc = 0;
 /* étape 3 : outils de zone et de pose dans la cour */
 function clearTools(){ ui.zoneMode = false; ui.zonePts = []; ui.zoneClosed = false; ui.zoneN = null; ui.extPlace = null; zoneDrag = { i:-1 }; }
-var zoneDrag = { i:-1 };
+var zoneDrag = { i:-1 }, lastPtrType = "mouse";
 function snapPt(x, y){ return [Math.max(0, Math.min(W, Math.round(x*4)/4)), Math.max(0, Math.min(H, Math.round(y*4)/4))]; }
 function nearZonePt(x, y){
-  var r = Math.max(0.35, 22/(16*cam.zoom)), best = -1;
+  var r = Math.max(0.35, 30/(16*cam.zoom)), best = -1;
   for(var i=0; i<ui.zonePts.length; i++){ var d = Math.hypot(ui.zonePts[i][0]-x, ui.zonePts[i][1]-y); if(d<=r){ r = d; best = i; } }
   return best;
 }
