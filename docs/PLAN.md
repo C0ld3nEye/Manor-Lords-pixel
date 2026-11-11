@@ -160,3 +160,9 @@ Impact maximal / effort minimal d'abord :
 - `js/render.js` ne fait qu'afficher l'état de la sim.
 - `js/app.js` ne fait que brancher les entrées et l'UI.
 - **Aucune dépendance externe** : le « zéro build » est un atout du projet.
+
+## 6. Étape 3 — Maisons automatiques et chantiers visibles (en cours)
+
+- **3a — simulation ✅** : `planZone` / `traceZone` découpent une zone tracée le long d'une route en parcelles (maison en façade, cour derrière, 6 cases max, une façade sur deux), `plotFences` donne la clôture et le portail, les agrandissements se posent sur une case libre de la cour, `buildStage` donne l'étape du chantier (fondations, charpente, murs, toit). Les maisons tracées sont des chantiers bâtis par les journaliers. Sauvegarde v3 (champ `plot` optionnel, anciennes sauvegardes compatibles). 74 tests.
+- **3b — rendu** : maisons, jardins, clôtures et chantiers dessinés étape par étape.
+- **3c — interface** : outil de tracé de zone avec aperçu, choix de la case d'agrandissement, test 390×844, PR.

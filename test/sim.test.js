@@ -721,4 +721,154 @@ test("phase 6 : sauvegarde v2 persiste mode, difficulté, victoire, défaite", (
   assert.strictEqual(g1.modeId, "prosperity");
 });
 
+/* ---------- étape 3 : chantiers en étapes et parcelles de bourgage ---------- */
+const { BUILD_STAGES, buildStage, DIRS4, PLOT_MAX_CELLS } = require("../js/sim.js");
+
+// terrain dégagé dans la région centrale, route horizontale en y=4 (x 17 → 25)
+function zoneSetup(timber){
+  const g = fresh();
+  for(let y=4;y<=10;y++) for(let x=17;x<=25;x++){ const i=y*W+x; g.tiles[i]=T_GRASS; g.occupied[i]=-1; g.roads[i]=0; }
+  for(let x=17;x<=25;x++) g.roads[4*W+x]=1;
+  g.stock.timber = timber===undefined ? 50 : timber;
+  return g;
+}
+function plotsOf(g){ return g.buildings.filter(b=>b.plot); }
+function contiguous(cells){
+  const set=new Set(cells), seen=new Set([cells[0]]), q=[cells[0]];
+  while(q.length){ const i=q.pop(), x=i%W, y=(i/W)|0;
+    for(const [dx,dy] of DIRS4){ const j=(y+dy)*W+(x+dx); if(set.has(j)&&!seen.has(j)){ seen.add(j); q.push(j); } } }
+  return seen.size===set.size;
+}
+
+test("étape 3 : un chantier passe par fondations, charpente, murs, toit", () => {
+  const b = { done:false, progress:0 };
+  assert.strictEqual(BUILD_STAGES.length, 4);
+  assert.strictEqual(buildStage(b), 0);
+  b.progress = 0.3; assert.strictEqual(buildStage(b), 1);
+  b.progress = 0.6; assert.strictEqual(buildStage(b), 2);
+  b.progress = 0.99; assert.strictEqual(buildStage(b), 3);
+  b.done = true; b.progress = 1; assert.strictEqual(buildStage(b), 4);
+  const g = fresh();
+  assert.ok(g.workStatus({ def:"church", done:false, progress:0.3 }).includes("charpente"));
+});
+
+test("étape 3 : une zone sans route est refusée, l'aperçu ne modifie rien", () => {
+  const g = zoneSetup();
+  for(let x=17;x<=25;x++) g.roads[4*W+x]=0;
+  const plan = g.planZone(g.zoneRect(18,5,23,7));
+  assert.strictEqual(plan.err, "La zone doit longer une route");
+  assert.strictEqual(g.traceZone(g.zoneRect(18,5,23,7)), "La zone doit longer une route");
+  const g2 = zoneSetup();
+  const before = g2.buildings.length, timber = g2.stock.timber;
+  const p2 = g2.planZone(g2.zoneRect(18,5,23,7));
+  assert.strictEqual(p2.err, null);
+  assert.strictEqual(p2.plots.length, 3);
+  assert.strictEqual(g2.buildings.length, before);
+  assert.strictEqual(g2.stock.timber, timber);
+  assert.strictEqual(g2.occupied[5*W+18], -1);
+});
+
+test("étape 3 : la zone est découpée en parcelles, maison en façade sur la route", () => {
+  const g = zoneSetup();
+  assert.strictEqual(g.traceZone(g.zoneRect(18,5,23,7)), null);
+  const ps = plotsOf(g);
+  assert.strictEqual(ps.length, 3);
+  assert.strictEqual(g.stock.timber, 47, "1 bois par maison");
+  const all = new Set();
+  for(const b of ps){
+    assert.strictEqual(b.def, "burgage");
+    assert.strictEqual(b.done, false, "la maison commence en chantier");
+    assert.strictEqual(b.plot.cells[0], b.y*W+b.x, "la maison est la première case");
+    assert.strictEqual(b.y, 5); assert.strictEqual(b.plot.dir, 0, "porte au nord, vers la route");
+    assert.ok(b.plot.cells.length>=2 && b.plot.cells.length<=PLOT_MAX_CELLS);
+    assert.ok(contiguous(b.plot.cells), "parcelle d'un seul tenant");
+    for(const i of b.plot.cells){ assert.ok(!all.has(i), "parcelles disjointes"); all.add(i); assert.strictEqual(g.occupied[i], b.id); }
+  }
+  // deux maisons ne se touchent pas
+  const xs = ps.map(b=>b.x).sort((a,b)=>a-b);
+  for(let k=1;k<xs.length;k++) assert.ok(xs[k]-xs[k-1]>=2);
+  // on ne trace pas de route dans une cour
+  assert.strictEqual(g.toggleRoad(ps[0].plot.cells[1]%W, (ps[0].plot.cells[1]/W)|0), false);
+});
+
+test("étape 3 : la zone s'arrête au bois disponible", () => {
+  const g = zoneSetup(2);
+  const plan = g.planZone(g.zoneRect(18,5,23,7));
+  assert.strictEqual(plan.plots.length, 2);
+  assert.strictEqual(plan.limited, true);
+  assert.strictEqual(g.traceZone(g.zoneRect(18,5,23,7)), null);
+  assert.strictEqual(plotsOf(g).length, 2);
+  assert.strictEqual(g.stock.timber, 0);
+  assert.strictEqual(zoneSetup(0).traceZone(g.zoneRect(18,5,23,7)), "Ressources insuffisantes");
+});
+
+test("étape 3 : la clôture épouse la parcelle, portail côté route", () => {
+  const g = zoneSetup();
+  g.traceZone(g.zoneRect(18,5,23,7));
+  for(const b of plotsOf(g)){
+    const { edges, gate } = g.plotFences(b);
+    assert.deepStrictEqual(gate, { i:b.plot.cells[0], d:0 });
+    const set = new Set(b.plot.cells);
+    let perim = 0;
+    for(const i of b.plot.cells){ const x=i%W, y=(i/W)|0; for(const [dx,dy] of DIRS4) if(!set.has((y+dy)*W+(x+dx))) perim++; }
+    assert.strictEqual(edges.length, perim-1, "tout le pourtour sauf le portail");
+    assert.ok(!edges.some(e=>e.i===gate.i && e.d===gate.d));
+  }
+  assert.deepStrictEqual(g.plotFences(g.buildings[0]), { edges:[], gate:null }, "bourgage ancien : pas de clôture");
+});
+
+test("étape 3 : les journaliers bâtissent les maisons de la zone", () => {
+  const g = zoneSetup();
+  g.traceZone(g.zoneRect(18,5,23,6));
+  const ps = plotsOf(g);
+  let seen = new Set();
+  for(let t=0;t<12000 && ps.some(b=>!b.done);t++){ g.step(); for(const b of ps) if(!b.done) seen.add(buildStage(b)); g.pendingEvent=null; }
+  assert.ok(ps.every(b=>b.done), "maisons achevées");
+  assert.ok(seen.has(0) && seen.has(3), "le chantier est passé par plusieurs étapes");
+});
+
+test("étape 3 : les agrandissements se posent dans la cour, dans la limite de la place", () => {
+  const g = zoneSetup();
+  g.traceZone(g.zoneRect(18,5,23,5)); // façade seule : maison + 1 case de cour
+  const b = plotsOf(g)[0];
+  b.done = true; b.progress = 1;
+  assert.strictEqual(g.yardCells(b).length, 1);
+  g.buyExtension(b.id, "garden");
+  assert.deepStrictEqual(b.exts, ["garden"]);
+  assert.strictEqual(b.plot.extAt.garden, b.plot.cells[1]);
+  const timber = g.stock.timber;
+  g.buyExtension(b.id, "chicken");
+  assert.deepStrictEqual(b.exts, ["garden"], "cour pleine : refusé");
+  assert.strictEqual(g.stock.timber, timber, "rien n'est dépensé");
+  // case choisie par le joueur
+  const g2 = zoneSetup();
+  g2.traceZone(g2.zoneRect(18,5,23,7));
+  const b2 = plotsOf(g2)[0]; b2.done = true; b2.progress = 1;
+  const target = b2.plot.cells[2];
+  g2.buyExtension(b2.id, "orchard", target);
+  assert.strictEqual(b2.plot.extAt.orchard, target);
+  assert.ok(!g2.freeYardCells(b2).includes(target));
+});
+
+test("étape 3 : sauvegarde v3 des parcelles, démolition libère la cour", () => {
+  const g = zoneSetup();
+  g.traceZone(g.zoneRect(18,5,23,7));
+  const b = plotsOf(g)[0]; b.done = true; b.progress = 1;
+  g.buyExtension(b.id, "garden");
+  const data = JSON.parse(JSON.stringify(g.serialize()));
+  assert.strictEqual(data.v, 3);
+  const g2 = GameState.load(data);
+  const b2 = g2.buildings.find(x=>x.id===b.id);
+  assert.deepStrictEqual(b2.plot, b.plot);
+  for(const i of b2.plot.cells) assert.strictEqual(g2.occupied[i], b2.id);
+  // parcelle corrompue : ignorée sans planter
+  const bad = JSON.parse(JSON.stringify(g.serialize()));
+  bad.buildings.find(x=>x.id===b.id).plot = { cells:[0,1], dir:9 };
+  assert.strictEqual(GameState.load(bad).buildings.find(x=>x.id===b.id).plot, undefined);
+  // démolition
+  const cells = b2.plot.cells.slice();
+  g2.demolish(b2.id);
+  for(const i of cells) assert.strictEqual(g2.occupied[i], -1);
+});
+
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));
