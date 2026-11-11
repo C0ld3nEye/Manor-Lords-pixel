@@ -21,7 +21,7 @@ try{
 if(game){ SAVE_KEY = SAVE_SLOTS[activeSlot]; }
 else { uiMenu = true; game = null; }
 
-var cam = { x:0, y:0, zoom:1.6 };
+var cam = { x:0, y:0, zoom:snapZoom(1.5) };
 function centerCam(){
   if(!game) return;
   var b = game.buildings[0];
@@ -53,12 +53,12 @@ var dpr = Math.min(2, window.devicePixelRatio || 1);
 function resize(){
   var r = wrap.getBoundingClientRect();
   if(r.width<10 || r.height<10) return;
-  canvas.width = Math.floor(r.width*dpr);
-  canvas.height = Math.floor(r.height*dpr);
-  canvas.style.width = r.width+"px";
-  canvas.style.height = r.height+"px";
+  var w = Math.floor(r.width*dpr), h = Math.floor(r.height*dpr);
+  if(canvas.width!==w || canvas.height!==h){ canvas.width = w; canvas.height = h; }
 }
 window.addEventListener("resize", resize);
+/* la hauteur du HUD varie : on suit la taille réelle de la zone de carte */
+if(window.ResizeObserver) new ResizeObserver(resize).observe(wrap);
 resize();
 
 /* ----- entrées : pointeurs (drag / pinch / clic / minimap) ----- */
@@ -100,7 +100,7 @@ canvas.addEventListener("pointermove", function(e){
     var pts2 = [];
     pointers.forEach(function(p){ pts2.push(p); });
     var dist2 = Math.hypot(pts2[0].x-pts2[1].x, pts2[0].y-pts2[1].y);
-    var z = Math.max(0.7, Math.min(4, pinch.zoom * dist2/Math.max(20, pinch.dist)));
+    var z = snapZoom(pinch.zoom * dist2/Math.max(20, pinch.dist));   /* paliers entiers : pixels nets */
     cam.zoom = z;
     var r = canvas.getBoundingClientRect();
     var mx = (pts2[0].x+pts2[1].x)/2, my = (pts2[0].y+pts2[1].y)/2;
@@ -173,8 +173,7 @@ canvas.addEventListener("pointerup", function(e){
 canvas.addEventListener("pointercancel", endPointer);
 canvas.addEventListener("wheel", function(e){
   e.preventDefault();
-  var z = cam.zoom * (e.deltaY>0 ? 0.88 : 1.14);
-  cam.zoom = Math.max(0.7, Math.min(4, z));
+  cam.zoom = stepZoom(cam.zoom, e.deltaY>0 ? -1 : 1);
 }, { passive:false });
 canvas.addEventListener("contextmenu", function(e){
   e.preventDefault();
@@ -205,7 +204,7 @@ window.addEventListener("keydown", function(e){
 window.addEventListener("keyup", function(e){ keys.delete(e.key.toLowerCase()); });
 
 function zoomStep(f){
-  cam.zoom = Math.max(0.7, Math.min(4, cam.zoom*f));
+  cam.zoom = stepZoom(cam.zoom, f>1 ? 1 : -1);
 }
 var _txtSize = 0;
 function cycleTextSize(){
