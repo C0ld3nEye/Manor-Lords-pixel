@@ -7,6 +7,8 @@ Un jeu de gestion médiéval en pixel-art, inspiré de Manor Lords. **Zéro dép
 
 ✨ **Rendu pixel-art** (chaumières, maisons à colombages, église, moulin, forêts et champs qui changent avec les saisons), **météo dynamique** (pluie, neige, brouillard), fumées et drapeaux animés, **interface mobile** pensée pour une main (barre compacte, constructions par catégories, panneaux en feuille du bas), **sons procéduraux**, 3 tailles de texte.
 
+📍 L'objectif final et les prochaines étapes sont décrits dans [ROADMAP.md](ROADMAP.md).
+
 ## 🎮 Jouer
 
 - **En ligne (recommandé sur mobile)** : activez GitHub Pages (voir ci-dessous) puis ouvrez
