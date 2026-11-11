@@ -548,8 +548,47 @@ function drawFences(fe, a, rail, post){
   }
   bx.globalAlpha = 1;
 }
+/* tracé pixel par pixel (Bresenham) en pixels d'art */
+function pxLine(x0, y0, x1, y1, fn){
+  x0 = Math.round(x0); y0 = Math.round(y0); x1 = Math.round(x1); y1 = Math.round(y1);
+  var dx = Math.abs(x1-x0), dy = -Math.abs(y1-y0), sx = x0<x1 ? 1 : -1, sy = y0<y1 ? 1 : -1, err = dx+dy, s = 0;
+  for(;;){ fn(x0, y0, s++); if(x0===x1 && y0===y1) break; var e2 = 2*err; if(e2>=dy){ err += dy; x0 += sx; } if(e2<=dx){ err += dx; y0 += sy; } }
+}
+function fillPoly(poly, color){
+  bx.fillStyle = color; bx.beginPath();
+  for(var k=0; k<poly.length; k++){ var x = poly[k][0]*TS-OX, y = poly[k][1]*TS-OY; if(k===0) bx.moveTo(x, y); else bx.lineTo(x, y); }
+  bx.closePath(); bx.fill();
+}
+/* côté rue laissé ouvert : pas de clôture sur la route ni contre elle */
+function fenceSkip(g, px, py, dir){
+  var tx = Math.floor(px/TS), ty = Math.floor(py/TS), ox = px - tx*TS, oy = py - ty*TS;
+  if(g.roadAt(tx, ty)) return true;
+  if(dir===0) return oy<=2 && g.roadAt(tx, ty-1);
+  if(dir===2) return oy>=TS-3 && g.roadAt(tx, ty+1);
+  if(dir===1) return ox>=TS-3 && g.roadAt(tx+1, ty);
+  return ox<=2 && g.roadAt(tx-1, ty);
+}
+/* clôture qui suit exactement le contour tracé, à n'importe quel angle */
+function drawPolyFence(g, poly, dir, a, rail, post){
+  bx.globalAlpha = a;
+  for(var k=0; k<poly.length; k++){
+    var A = poly[k], B = poly[(k+1)%poly.length];
+    pxLine(Math.min(A[0]*TS, W*TS-1), Math.min(A[1]*TS, H*TS-1), Math.min(B[0]*TS, W*TS-1), Math.min(B[1]*TS, H*TS-1), function(x, y, st){
+      if(fenceSkip(g, x, y, dir)) return;
+      rect(x, y, 1, 1, rail);
+      if(st%5===0) rect(x, y-2, 1, 3, post);
+    });
+  }
+  bx.globalAlpha = 1;
+}
 function drawPlotGround(g, b, season, winter){
   var cells = b.plot.cells, ea = b.plot.extAt || {};
+  if(b.plot.poly){
+    fillPoly(b.plot.poly, winter ? "rgba(255,255,255,0.10)" : "rgba(70,96,34,0.18)");
+    if(b.done && ea.garden!==undefined) spr("veg_"+season, cellX(ea.garden)+8, cellY(ea.garden)+12);
+    drawPolyFence(g, b.plot.poly, b.plot.dir, b.done ? 1 : 0.4, WOOD_A, WOOD_B);
+    return;
+  }
   bx.fillStyle = winter ? "rgba(255,255,255,0.10)" : "rgba(70,96,34,0.18)";
   for(var k=1; k<cells.length; k++) bx.fillRect(cellX(cells[k])-OX, cellY(cells[k])-OY, TS, TS);
   if(b.done && ea.garden!==undefined) spr("veg_"+season, cellX(ea.garden)+8, cellY(ea.garden)+12);
@@ -577,22 +616,20 @@ var OV = null;
 var PLOT_TINTS = ["rgba(90,224,110,0.30)", "rgba(110,190,255,0.30)"];
 function drawOverlay(g, now){
   var k, j;
-  if(OV.rect){
-    var r = OV.rect;
-    bx.fillStyle = "rgba(255,240,200,0.10)";
-    bx.fillRect(r.x0*TS-OX, r.y0*TS-OY, (r.x1-r.x0+1)*TS, (r.y1-r.y0+1)*TS);
-    corners(r.x0*TS, r.y0*TS, (r.x1-r.x0+1)*TS, (r.y1-r.y0+1)*TS, OV.err ? "#e05a3a" : "#f2e6c8");
-  }
-  var plots = OV.plots || [];
-  for(k=0; k<plots.length; k++){
-    var p = plots[k];
-    bx.fillStyle = PLOT_TINTS[k&1];
-    for(j=0; j<p.cells.length; j++) bx.fillRect(cellX(p.cells[j])-OX, cellY(p.cells[j])-OY, TS, TS);
-    drawFences(g.plotFences({ plot:p }), 0.9, "#f2e6c8", "#c9a45a");
-  }
-  for(k=0; k<plots.length; k++){
-    var h = plots[k].cells[0];
-    bx.globalAlpha = 0.7; spr("burgage1_"+(k%3), cellX(h), cellY(h)+TS); bx.globalAlpha = 1;
+  if(OV.pts){
+    var pl = OV.plan, plots = (pl && !pl.err) ? pl.plots : [];
+    for(k=0; k<plots.length; k++){ fillPoly(plots[k].poly, PLOT_TINTS[k&1]); drawPolyFence(g, plots[k].poly, plots[k].dir, 0.95, "#f2e6c8", "#c9a45a"); }
+    for(k=0; k<plots.length; k++){ var hc = plots[k].cells[0]; bx.globalAlpha = 0.7; spr("burgage1_"+(k%3), cellX(hc), cellY(hc)+TS); bx.globalAlpha = 1; }
+    var P = OV.pts, col = (pl && pl.err) ? "#e05a3a" : "#fff4d6", nSeg = OV.closed ? P.length : P.length-1;
+    for(k=0; k<nSeg; k++){
+      var A = P[k], B = P[(k+1)%P.length];
+      pxLine(A[0]*TS, A[1]*TS, B[0]*TS, B[1]*TS, function(x, y){ rect(x, y+1, 1, 1, "rgba(0,0,0,0.45)"); rect(x, y, 1, 1, col); });
+    }
+    for(k=0; k<P.length; k++){
+      var big = k===0 && !OV.closed && P.length>=3, sz = big ? 5 : 3;
+      rect(Math.round(P[k][0]*TS)-(sz>>1)-1, Math.round(P[k][1]*TS)-(sz>>1)-1, sz+2, sz+2, "#1a140e");
+      rect(Math.round(P[k][0]*TS)-(sz>>1), Math.round(P[k][1]*TS)-(sz>>1), sz, sz, big ? "#e8c35a" : col);
+    }
   }
   if(OV.free){
     var pulse = 0.22 + 0.14*Math.sin(now/220);

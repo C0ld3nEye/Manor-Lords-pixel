@@ -163,6 +163,7 @@ Impact maximal / effort minimal d'abord :
 
 ## 6. Étape 3 — Maisons automatiques et chantiers visibles ✅ (PR à valider)
 
-- **3a — simulation ✅** : `planZone` / `traceZone` découpent une zone tracée le long d'une route en parcelles (maison en façade, cour derrière, 6 cases max, une façade sur deux), `plotFences` donne la clôture et le portail, les agrandissements se posent sur une case libre de la cour, `buildStage` donne l'étape du chantier (fondations, charpente, murs, toit). Les maisons tracées sont des chantiers bâtis par les journaliers. Sauvegarde v3 (champ `plot` optionnel, anciennes sauvegardes compatibles). 74 tests.
-- **3b — rendu ✅** : cour teintée, clôture (pâle tant que la maison est en chantier), potager, verger, ruche, poules… posés sur leur case ; chantiers dessinés en quatre étapes (pierres de fondation, charpente qui monte, murs puis toit révélés, échafaudage).
-- **3c — interface ✅** : « Tracer une zone » dans le tiroir Maisons (deux touchers = deux coins, aperçu des parcelles et du coût, bouton Tracer) ; pour un agrandissement, choix de la case verte dans la cour ou « Auto ». Vérifié en Chrome mobile émulé 390×844, pas encore sur un vrai téléphone.
+- **Tracé libre, point par point (façon Manor Lords)** : le joueur pose les points du contour le long d'une route (calés au quart de case), touche le premier point pour fermer, glisse un point pour ajuster. `planZone(points, n)` repère la façade, propose une maison toutes les 2 cases (réglable avec − / +), coupe la zone perpendiculairement à la route ; chaque parcelle garde son contour (`plot.poly`) et sa cour = ses cases hors maison, donc la forme décide de la taille des jardins et du nombre d'agrandissements.
+- **Chantiers** : `buildStage` (fondations, charpente, murs, toit), dessinés étape par étape ; les journaliers bâtissent.
+- **Rendu** : clôtures en lignes pixel qui suivent le contour exact (côté rue ouvert), cour teintée, agrandissements posés sur leur case (choix de la case verte ou « Auto »).
+- **Sauvegarde v3** : champ `plot` optionnel, anciennes sauvegardes compatibles. 76 tests. Vérifié en Chrome mobile émulé 390×844, pas encore sur un vrai téléphone.

@@ -47,7 +47,7 @@ centerCam();
 
 var ui = {
   buildSel:null, selId:null, cat:null, sheet:null, modal:null, roadMode:false,
-  zoneMode:false, zoneA:null, zoneB:null, extPlace:null,
+  zoneMode:false, zonePts:[], zoneClosed:false, zoneN:null, extPlace:null,
   flash:null, objOpen:false, layersOpen:false, tip:null, tipT:0, hoverTip:null,
   demolishArm:0, delArm:null, taxDrag:false, lastSpeed:1, endSeen:false,
   newMode:"prosperity", newDiff:"normal", newSlot:activeSlot,
@@ -214,8 +214,13 @@ canvas.addEventListener("pointerdown", function(e){
     var dist = Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y);
     var w = toWorld((pts[0].x+pts[1].x)/2, (pts[0].y+pts[1].y)/2);
     pinch = { dist:dist, zoom:cam.zoom, wx:w.wx, wy:w.wy };
-    drag.down = false; drag.moved = true;
+    drag.down = false; drag.moved = true; zoneDrag = { i:-1 };
     return;
+  }
+  /* outil de zone : toucher un point existant = le déplacer (ou fermer le contour sur le premier) */
+  if(game && ui.zoneMode && ui.zonePts.length){
+    var zw0 = toWorld(e.clientX, e.clientY), zi = nearZonePt(zw0.wx, zw0.wy);
+    if(zi>=0){ zoneDrag = { i:zi, sx:e.clientX, sy:e.clientY, moved:false }; drag.down = false; drag.moved = true; return; }
   }
   drag.down = true; drag.moved = false; camGoal = null;
   drag.sx = e.clientX; drag.sy = e.clientY;
@@ -244,6 +249,11 @@ canvas.addEventListener("pointermove", function(e){
     var mx = (pts2[0].x+pts2[1].x)/2, my = (pts2[0].y+pts2[1].y)/2;
     cam.x = Math.max(-4, Math.min(W+4, pinch.wx - (mx - r.left - r.width/2)/(16*z)));
     cam.y = Math.max(-4, Math.min(H+4, pinch.wy - (my - r.top - r.height/2)/(16*z)));
+    return;
+  }
+  if(zoneDrag.i>=0){
+    if(Math.abs(e.clientX-zoneDrag.sx)+Math.abs(e.clientY-zoneDrag.sy)>6) zoneDrag.moved = true;
+    if(zoneDrag.moved){ var zw = toWorld(e.clientX, e.clientY); ui.zonePts[zoneDrag.i] = snapPt(zw.wx, zw.wy); }
     return;
   }
   var w = toWorld(e.clientX, e.clientY);
@@ -277,6 +287,11 @@ function endPointer(e){
 
 canvas.addEventListener("pointerup", function(e){
   if(!game) return;
+  if(zoneDrag.i>=0){
+    var zd = zoneDrag; zoneDrag = { i:-1 }; endPointer(e);
+    if(!zd.moved && zd.i===0 && !ui.zoneClosed && ui.zonePts.length>=3){ ui.zoneClosed = true; ui.zoneN = null; buzz(8); }
+    renderUI(); return;
+  }
   var wasMoved = drag.moved;
   endPointer(e);
   if(wasMoved) return;
@@ -302,9 +317,8 @@ canvas.addEventListener("pointerup", function(e){
     } else flash("Touchez une case verte de la cour.");
   }
   else if(ui.zoneMode){
-    if(!ui.zoneA || ui.zoneB){ ui.zoneA = { tx:w.tx, ty:w.ty }; ui.zoneB = null; }
-    else ui.zoneB = { tx:w.tx, ty:w.ty };
-    buzz(5);
+    if(ui.zoneClosed) flash("Glissez un point pour ajuster le contour, ou ↶ pour le rouvrir.");
+    else { ui.zonePts.push(snapPt(w.wx, w.wy)); buzz(5); }
   }
   else if(ui.roadMode){
     if(!game.toggleRoad(w.tx, w.ty)) flash("Impossible de tracer une route ici.");
@@ -331,7 +345,7 @@ canvas.addEventListener("pointerup", function(e){
   }
   renderUI();
 });
-canvas.addEventListener("pointercancel", endPointer);
+canvas.addEventListener("pointercancel", function(e){ zoneDrag = { i:-1 }; endPointer(e); });
 canvas.addEventListener("pointerleave", function(e){ if(e.pointerType==="mouse"){ ui.hoverTip = null; renderTip(); } });
 canvas.addEventListener("wheel", function(e){
   e.preventDefault();
@@ -417,10 +431,17 @@ document.addEventListener("click", function(e){
     case "zone":
       clearTools(); ui.zoneMode = true; ui.cat = null; ui.buildSel = null; ui.roadMode = false; ui.selId = null; ui.sheet = null;
       break;
+    case "zoneundo": if(ui.zoneClosed) ui.zoneClosed = false; else ui.zonePts.pop(); ui.zoneN = null; break;
+    case "zoneclose": if(ui.zonePts.length>=3){ ui.zoneClosed = true; ui.zoneN = null; } break;
+    case "zoneminus": case "zoneplus": {
+      var zo2 = zoneOverlay(g), zpl = zo2 && zo2.plan;
+      if(zpl && !zpl.err) ui.zoneN = Math.max(zpl.nMin, Math.min(zpl.nMax, zpl.n + (arg==="1" ? 1 : -1)));
+      break;
+    }
     case "zoneok":
-      if(ui.zoneA && ui.zoneB){
-        var zerr = g.traceZone(g.zoneRect(ui.zoneA.tx, ui.zoneA.ty, ui.zoneB.tx, ui.zoneB.ty));
-        if(zerr) flash(zerr); else { AudioFX.build(); buzz(8); ui.zoneA = null; ui.zoneB = null; }
+      if(ui.zoneClosed){
+        var zerr = g.traceZone(ui.zonePts, ui.zoneN==null ? undefined : ui.zoneN);
+        if(zerr) flash(zerr); else { AudioFX.build(); buzz(8); ui.zonePts = []; ui.zoneClosed = false; ui.zoneN = null; }
       }
       break;
     case "extauto":
@@ -675,13 +696,21 @@ function renderHud(g){
     h += "<div class='frame place'><div class='t'><b>"+esc(xd.name)+" "+costHtml(xd.cost, g)+"</b><span>Touchez une case verte de la cour.</span></div>"
        + "<button class='b' data-act='extauto'>Auto</button><button class='b sq' data-act='cancel' aria-label='Annuler'>"+ic("close")+"</button></div>";
   } else if(ui.zoneMode){
-    var zo = zoneOverlay(g), zn = zo && zo.plots ? zo.plots.length : 0;
-    var ztxt = !ui.zoneA ? "Touchez un premier coin de la zone, le long d'une route."
-      : !ui.zoneB ? "Touchez le coin opposé."
-      : (zo.err ? zo.err : zn+" maison"+(zn>1?"s":"")+" avec cour et clôture"+(zo.limited ? " (bois insuffisant pour toute la zone)" : "")+".");
-    h += "<div class='frame place'>"+ic("house","l")+"<div class='t'><b>Zone de bourgages"+(ui.zoneB && zn ? " "+costHtml({ timber:zn*(BUILD_DEFS.burgage.cost.timber||0) }, g) : "")+"</b><span>"+esc(ztxt)+"</span></div>"
-       + (ui.zoneB && zn ? "<button class='b gold' data-act='zoneok'>Tracer</button>" : "")
-       + "<button class='b sq' data-act='cancel' aria-label='Annuler'>"+ic("close")+"</button></div>";
+    var zo = zoneOverlay(g), zp = ui.zonePts.length, zpl2 = zo && zo.plan, ztxt, ztitle = "Zone de bourgages", zok = ui.zoneClosed && zpl2 && !zpl2.err;
+    if(!ui.zoneClosed) ztxt = zp===0 ? "Touchez la carte pour poser les points du contour, le long d'une route."
+      : zp<3 ? zp+" point"+(zp>1?"s":"")+" posé"+(zp>1?"s":"")+". Continuez le contour."
+      : zp+" points. Touchez le premier point (doré) ou « Fermer ».";
+    else if(!zok) ztxt = zpl2 ? zpl2.err : "";
+    else {
+      var zs = zpl2.plots.map(function(p){ return p.cells.length-1; }), zmn = Math.min.apply(null, zs), zmx = Math.max.apply(null, zs);
+      ztitle = zpl2.plots.length+" maison"+(zpl2.plots.length>1?"s":"")+" "+costHtml({ timber:zpl2.plots.length*(BUILD_DEFS.burgage.cost.timber||0) }, g);
+      ztxt = "Jardins de "+(zmn===zmx ? zmn : zmn+" à "+zmx)+" case"+(zmx>1?"s":"")+(zpl2.limited ? " · bois insuffisant pour plus" : "")+". Glissez un point pour ajuster.";
+    }
+    h += "<div class='frame place wrap'>"+ic("house","l")+"<div class='t'><b>"+ztitle+"</b><span>"+esc(ztxt)+"</span></div><div class='sizes'>";
+    if(zp>0) h += "<button class='b' data-act='zoneundo' aria-label='Annuler le dernier point'>↶</button>";
+    if(!ui.zoneClosed && zp>=3) h += "<button class='b' data-act='zoneclose'>Fermer</button>";
+    if(zok) h += "<button class='b' data-act='zoneminus' data-arg='-1' aria-label='Une maison de moins'>−</button><button class='b' data-act='zoneplus' data-arg='1' aria-label='Une maison de plus'>+</button><button class='b gold' data-act='zoneok'>Tracer</button>";
+    h += "</div><button class='b sq' data-act='cancel' aria-label='Annuler'>"+ic("close")+"</button></div>";
   } else if(ui.roadMode){
     h += "<div class='frame place'>"+ic("road","l")+"<div class='t'><b>Routes</b><span>Touchez une case pour tracer ou effacer. Les villageois y marchent plus vite.</span></div>"
        + "<button class='b gold' data-act='cancel'>Terminer</button></div>";
@@ -1014,21 +1043,25 @@ renderUI();
 /* ----- boucle principale ----- */
 var _lastT = performance.now(), _acc = 0, _uiAcc = 0, _saveAcc = 0;
 /* étape 3 : outils de zone et de pose dans la cour */
-function clearTools(){ ui.zoneMode = false; ui.zoneA = null; ui.zoneB = null; ui.extPlace = null; }
+function clearTools(){ ui.zoneMode = false; ui.zonePts = []; ui.zoneClosed = false; ui.zoneN = null; ui.extPlace = null; zoneDrag = { i:-1 }; }
+var zoneDrag = { i:-1 };
+function snapPt(x, y){ return [Math.max(0, Math.min(W, Math.round(x*4)/4)), Math.max(0, Math.min(H, Math.round(y*4)/4))]; }
+function nearZonePt(x, y){
+  var r = Math.max(0.35, 22/(16*cam.zoom)), best = -1;
+  for(var i=0; i<ui.zonePts.length; i++){ var d = Math.hypot(ui.zonePts[i][0]-x, ui.zonePts[i][1]-y); if(d<=r){ r = d; best = i; } }
+  return best;
+}
 var _zoneKey = "", _zoneOv = null;
 function zoneOverlay(g){
   if(ui.extPlace){
     var eb = g.buildings.filter(function(b){ return b.id===ui.extPlace.bid; })[0];
     return eb ? { free:g.freeYardCells(eb) } : null;
   }
-  if(!ui.zoneMode || !ui.zoneA) return null;
-  var B = ui.zoneB || (hover.inside ? { tx:hover.tx, ty:hover.ty } : ui.zoneA), A = ui.zoneA;
-  var key = A.tx+","+A.ty+","+B.tx+","+B.ty+","+g.uiVersion+","+g.buildings.length+","+Math.floor(g.stock.timber);
+  if(!ui.zoneMode || ui.zonePts.length===0) return null;
+  var key = JSON.stringify(ui.zonePts)+"|"+ui.zoneClosed+"|"+ui.zoneN+"|"+g.uiVersion+"|"+g.buildings.length+"|"+Math.floor(g.stock.timber);
   if(key===_zoneKey) return _zoneOv;
-  var plan = g.planZone(g.zoneRect(A.tx, A.ty, B.tx, B.ty));
   _zoneKey = key;
-  _zoneOv = { rect:{ x0:Math.min(A.tx,B.tx), y0:Math.min(A.ty,B.ty), x1:Math.max(A.tx,B.tx), y1:Math.max(A.ty,B.ty) },
-              plots:plan.plots, err:plan.err, limited:plan.limited };
+  _zoneOv = { pts:ui.zonePts.slice(), closed:ui.zoneClosed, plan: ui.zoneClosed ? g.planZone(ui.zonePts, ui.zoneN==null ? undefined : ui.zoneN) : null };
   return _zoneOv;
 }
 
