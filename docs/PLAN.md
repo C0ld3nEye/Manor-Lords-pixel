@@ -14,7 +14,7 @@ Constat après la première version : le jeu était fonctionnel en simulation ma
 | 1 | **Moteur de rendu pixel-art** : sprites dessinés par le code (`js/sprites.js`), atlas unique, vue 3/4, 4 saisons, neige sur les toits, sol peint en cache (berges, routes à ornières, prairies, lisières), ombres, chantiers avec échafaudage, villageois animés avec outils et charges, fumées, drapeaux, météo, minimap ; rendu basse résolution agrandi par paliers entiers (pixels nets, léger sur mobile) | ✅ |
 | 2 | **Interface mobile** : barre du haut sur 2 lignes (la carte passe d'environ 60 % à 84 % de l'écran), icônes pixel-art à la place des emojis (`js/icons.js`), dock de construction par catégories avec tiroir de cartes, panneaux en feuille du bas (bâtiment, réserves avec capacité, seigneurie, menu), objectifs repliables, notifications discrètes, minimap et calques en haut à droite, appui long pour annuler, mise à jour de l'interface sur place (un toucher n'est plus perdu quand un chiffre change), nouvel écran d'accueil (mode, difficulté, emplacement) ; correctif : le choix de taille des champs n'était jamais proposé | ✅ |
 | 3 | **Parcelles de bourgage** en bandes le long des routes (maison sur rue, cour à l'arrière avec extensions visibles) | à faire |
-| 4 | Ensuite selon les priorités : routes et logistique, commerce, guerre | à faire |
+| 4+ | Suite détaillée dans [`ROADMAP.md`](../ROADMAP.md) : logistique visible, chaînes de production, équilibrage, guerre, rejouabilité, PWA puis APK | à faire |
 
 Note : l'audit ci-dessous (sections 1 à 3) décrit l'état **avant** les phases 1 à 7 ; il est conservé comme historique.
 
