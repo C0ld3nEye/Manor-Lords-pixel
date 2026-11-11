@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Seigneurie — planche de sprites</title>
+<style>
+  body { margin:0; background:#1b2434; color:#e8e4d8; font:12px ui-monospace, monospace; }
+  header { padding:10px 14px; background:#141a26; position:sticky; top:0; z-index:1; }
+  header input { margin-left:10px; }
+  #grid { display:flex; flex-wrap:wrap; gap:8px; padding:12px; }
+  .it { background:#5c8e39; border-radius:4px; padding:6px; display:flex; flex-direction:column; align-items:center; gap:4px; }
+  .it.w { background:#c3d0dc; } .it.dark { background:#2c3a52; }
+  .it span { color:#141a26; font-size:10px; background:#e8e4d8cc; padding:0 3px; border-radius:2px; }
+  canvas { image-rendering: pixelated; }
+</style>
+</head>
+<body>
+<header>Planche de sprites (générés par <code>js/sprites.js</code>) — <span id="info"></span>
+  <label>filtre <input id="q" placeholder="ex. burgage, oak_2, p_0_farm"/></label>
+  <label>zoom <input id="z" type="range" min="1" max="8" value="3"/></label></header>
+<div id="grid"></div>
+<script src="../js/sprites.js"></script>
+<script>
+SPR.build();
+var grid = document.getElementById("grid"), q = document.getElementById("q"), z = document.getElementById("z");
+document.getElementById("info").textContent = SPR.count+" sprites, atlas "+SPR.atlas.width+"×"+SPR.atlas.height+", généré en "+SPR.buildMs+" ms";
+function render(){
+  grid.innerHTML = "";
+  var Z = +z.value, f = q.value.trim();
+  Object.keys(SPR.frames).sort().forEach(function(n){
+    if(f && n.indexOf(f) < 0) return;
+    if(!f && /_l$/.test(n)) return;                 // versions retournées : seulement sur filtre
+    if(!f && /^p_[1-5]_/.test(n)) return;           // une seule apparence de villageois par défaut
+    var fr = SPR.frames[n], d = document.createElement("div");
+    d.className = "it" + (/_w$|^.*_0_\d$|snow/.test(n) && /_w$|snow|^(oak|pine|birch|sap|bush|rock)_0_/.test(n) ? " w" : "") + (/^sh_/.test(n) ? " dark" : "");
+    var c = document.createElement("canvas"); c.width = fr.w*Z; c.height = fr.h*Z;
+    var x = c.getContext("2d"); x.imageSmoothingEnabled = false;
+    if(/^sh_/.test(n)){ x.fillStyle = "#ccc"; x.fillRect(0,0,c.width,c.height); }
+    x.drawImage(SPR.atlas, fr.x, fr.y, fr.w, fr.h, 0, 0, fr.w*Z, fr.h*Z);
+    var s = document.createElement("span"); s.textContent = n;
+    d.appendChild(c); d.appendChild(s); grid.appendChild(d);
+  });
+}
+q.oninput = render; z.oninput = render; render();
+</script>
+</body>
+</html>

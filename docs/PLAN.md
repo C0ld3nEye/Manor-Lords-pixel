@@ -5,6 +5,21 @@
 
 ---
 
+## 0. Refonte (novembre 2026)
+
+Constat après la première version : le jeu était fonctionnel en simulation mais **visuellement trop pauvre** (bâtiments en rectangles, sol uni) et la page ne démarrait plus (frontmatter YAML dans `index.html`, fonction `menuHtml` mal placée). La refonte garde la simulation testée et refait ce que le joueur voit, par étapes.
+
+| Étape | Contenu | État |
+|---|---|---|
+| 1 | **Moteur de rendu pixel-art** : sprites dessinés par le code (`js/sprites.js`), atlas unique, vue 3/4, 4 saisons, neige sur les toits, sol peint en cache (berges, routes à ornières, prairies, lisières), ombres, chantiers avec échafaudage, villageois animés avec outils et charges, fumées, drapeaux, météo, minimap ; rendu basse résolution agrandi par paliers entiers (pixels nets, léger sur mobile) | ✅ |
+| 2 | **Interface mobile** : HUD compact (il occupe aujourd'hui ~40 % de l'écran), icônes cassées à remplacer, notifications qui recouvrent la carte, panneau d'objectifs repliable | à faire |
+| 3 | **Parcelles de bourgage** en bandes le long des routes (maison sur rue, cour à l'arrière avec extensions visibles) | à faire |
+| 4 | Ensuite selon les priorités : routes et logistique, commerce, guerre | à faire |
+
+Note : l'audit ci-dessous (sections 1 à 3) décrit l'état **avant** les phases 1 à 7 ; il est conservé comme historique.
+
+---
+
 ## 1. Audit de l'application actuelle
 
 ### Architecture (~1 817 lignes, zéro dépendance)
