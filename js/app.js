@@ -47,6 +47,7 @@ centerCam();
 
 var ui = {
   buildSel:null, selId:null, cat:null, sheet:null, modal:null, roadMode:false,
+  zoneMode:false, zoneA:null, zoneB:null, extPlace:null,
   flash:null, objOpen:false, layersOpen:false, tip:null, tipT:0, hoverTip:null,
   demolishArm:0, delArm:null, taxDrag:false, lastSpeed:1, endSeen:false,
   newMode:"prosperity", newDiff:"normal", newSlot:activeSlot,
@@ -55,8 +56,8 @@ var ui = {
 
 /* ----- catégories de construction (dock du bas) ----- */
 var CATS = [
-  { id:"home",  name:"Maisons",    icon:"house",  items:["burgage"],
-    hint:"Chaque bourgage loge une famille. Placez-les le long des routes." },
+  { id:"home",  name:"Maisons",    icon:"house",  items:["burgage"], actions:["zone"],
+    hint:"Tracez une zone le long d'une route : maisons, cours et clôtures se placent seules." },
   { id:"res",   name:"Récolte",    icon:"axe",    items:["woodcutter","forager","hunter","quarry"],
     hint:"Bois, baies, gibier et pierre : posez-les près de la ressource." },
   { id:"farm",  name:"Champs",     icon:"grain",  items:["field","farm","windmill"], actions:["buyox"],
@@ -197,7 +198,8 @@ function revealAboveSheet(b){
 function clearLongPress(){ if(longPress){ clearTimeout(longPress); longPress = null; } }
 /* appui long : annule la pose / le tracé / la sélection */
 function cancelAll(){
-  var any = ui.buildSel || ui.roadMode || ui.selId!=null || ui.cat || ui.sheet;
+  var any = ui.buildSel || ui.roadMode || ui.zoneMode || ui.extPlace || ui.selId!=null || ui.cat || ui.sheet;
+  clearTools();
   ui.buildSel = null; ui.roadMode = false; ui.selId = null; ui.cat = null; ui.sheet = null; ui.layersOpen = false;
   return any;
 }
@@ -293,7 +295,18 @@ canvas.addEventListener("pointerup", function(e){
   var w = toWorld(e.clientX, e.clientY);
   ui.objOpen = false; ui.layersOpen = false;
   if(w.tx<0||w.ty<0||w.tx>=W||w.ty>=H){ renderUI(); return; }
-  if(ui.roadMode){
+  if(ui.extPlace){
+    var ep = ui.extPlace, eb = game.buildings.filter(function(b){ return b.id===ep.bid; })[0], eti = w.ty*W+w.tx;
+    if(eb && game.freeYardCells(eb).indexOf(eti)>=0){
+      game.buyExtension(ep.bid, ep.ext, eti); ui.extPlace = null; ui.selId = ep.bid; AudioFX.build(); buzz(8);
+    } else flash("Touchez une case verte de la cour.");
+  }
+  else if(ui.zoneMode){
+    if(!ui.zoneA || ui.zoneB){ ui.zoneA = { tx:w.tx, ty:w.ty }; ui.zoneB = null; }
+    else ui.zoneB = { tx:w.tx, ty:w.ty };
+    buzz(5);
+  }
+  else if(ui.roadMode){
     if(!game.toggleRoad(w.tx, w.ty)) flash("Impossible de tracer une route ici.");
   }
   else if(ui.buildSel){
@@ -399,15 +412,29 @@ document.addEventListener("click", function(e){
       } else {
         ui.cat = (ui.cat===arg ? null : arg); ui.buildSel = null; ui.roadMode = false; ui.selId = null; ui.sheet = null;
       }
-      ui.layersOpen = false;
+      ui.layersOpen = false; clearTools();
+      break;
+    case "zone":
+      clearTools(); ui.zoneMode = true; ui.cat = null; ui.buildSel = null; ui.roadMode = false; ui.selId = null; ui.sheet = null;
+      break;
+    case "zoneok":
+      if(ui.zoneA && ui.zoneB){
+        var zerr = g.traceZone(g.zoneRect(ui.zoneA.tx, ui.zoneA.ty, ui.zoneB.tx, ui.zoneB.ty));
+        if(zerr) flash(zerr); else { AudioFX.build(); buzz(8); ui.zoneA = null; ui.zoneB = null; }
+      }
+      break;
+    case "extauto":
+      if(ui.extPlace){ g.buyExtension(ui.extPlace.bid, ui.extPlace.ext); ui.selId = ui.extPlace.bid; ui.extPlace = null; }
       break;
     case "build":
       if(!g.canAfford(arg)){ flash(missingText(arg, g)); break; }
-      ui.buildSel = arg; ui.cat = null; ui.selId = null; ui.sheet = null;
+      clearTools(); ui.buildSel = arg; ui.cat = null; ui.selId = null; ui.sheet = null;
       break;
-    case "cancel": ui.buildSel = null; ui.roadMode = false; break;
+    case "cancel":
+      if(ui.extPlace){ ui.selId = ui.extPlace.bid; }
+      ui.buildSel = null; ui.roadMode = false; clearTools(); break;
     case "sheet":
-      ui.sheet = (ui.sheet===arg ? null : arg); ui.cat = null; ui.selId = null; ui.buildSel = null; ui.roadMode = false; ui.layersOpen = false;
+      ui.sheet = (ui.sheet===arg ? null : arg); ui.cat = null; ui.selId = null; ui.buildSel = null; ui.roadMode = false; ui.layersOpen = false; clearTools();
       break;
     case "closesheet": ui.sheet = null; ui.cat = null; ui.selId = null; break;
     case "obj": ui.objOpen = !ui.objOpen; break;
@@ -418,7 +445,14 @@ document.addEventListener("click", function(e){
     case "selclose": ui.selId = null; break;
     case "assign": if(ui.selId!=null) g.assign(ui.selId); break;
     case "unassign": if(ui.selId!=null) g.unassign(ui.selId); break;
-    case "ext": if(ui.selId!=null) g.buyExtension(ui.selId, arg); break;
+    case "ext":
+      if(ui.selId!=null){
+        var xb = g.buildings.filter(function(b){ return b.id===ui.selId; })[0];
+        /* parcelle tracée avec plusieurs cases libres : le joueur choisit la case sur la carte */
+        if(xb && xb.plot && g.freeYardCells(xb).length>1){ ui.extPlace = { bid:xb.id, ext:arg }; ui.selId = null; }
+        else g.buyExtension(ui.selId, arg);
+      }
+      break;
     case "crop": if(ui.selId!=null) g.setCrop(ui.selId, arg); break;
     case "churchup": if(ui.selId!=null) g.churchUp(ui.selId, arg); break;
     case "policy": g.setPolicy(arg, !g.policies[arg]); break;
@@ -636,7 +670,19 @@ function renderHud(g){
   /* aide à la pose (bas de l'écran) */
   var h = "";
   if(ui.flash) h += "<div class='flash'>"+esc(ui.flash)+"</div>";
-  if(ui.roadMode){
+  if(ui.extPlace){
+    var xd = EXT_DEFS[ui.extPlace.ext];
+    h += "<div class='frame place'><div class='t'><b>"+esc(xd.name)+" "+costHtml(xd.cost, g)+"</b><span>Touchez une case verte de la cour.</span></div>"
+       + "<button class='b' data-act='extauto'>Auto</button><button class='b sq' data-act='cancel' aria-label='Annuler'>"+ic("close")+"</button></div>";
+  } else if(ui.zoneMode){
+    var zo = zoneOverlay(g), zn = zo && zo.plots ? zo.plots.length : 0;
+    var ztxt = !ui.zoneA ? "Touchez un premier coin de la zone, le long d'une route."
+      : !ui.zoneB ? "Touchez le coin opposé."
+      : (zo.err ? zo.err : zn+" maison"+(zn>1?"s":"")+" avec cour et clôture"+(zo.limited ? " (bois insuffisant pour toute la zone)" : "")+".");
+    h += "<div class='frame place'>"+ic("house","l")+"<div class='t'><b>Zone de bourgages"+(ui.zoneB && zn ? " "+costHtml({ timber:zn*(BUILD_DEFS.burgage.cost.timber||0) }, g) : "")+"</b><span>"+esc(ztxt)+"</span></div>"
+       + (ui.zoneB && zn ? "<button class='b gold' data-act='zoneok'>Tracer</button>" : "")
+       + "<button class='b sq' data-act='cancel' aria-label='Annuler'>"+ic("close")+"</button></div>";
+  } else if(ui.roadMode){
     h += "<div class='frame place'>"+ic("road","l")+"<div class='t'><b>Routes</b><span>Touchez une case pour tracer ou effacer. Les villageois y marchent plus vite.</span></div>"
        + "<button class='b gold' data-act='cancel'>Terminer</button></div>";
   } else if(ui.buildSel){
@@ -695,6 +741,7 @@ function sheetBuild(g, catId){
   }
   var acts = cat.actions || [];
   for(var a=0;a<acts.length;a++){
+    if(acts[a]==="zone") h += actionCard("zone", ic("house","l"), "Tracer une zone", costHtml(BUILD_DEFS.burgage.cost, g)+"<span class='dim'> / maison</span>", "Parcelles le long d'une route");
     if(acts[a]==="buyox") h += actionCard("buyox", ic("ox","l"), "Acheter un bœuf", "<span class='cost"+(g.treasury<20?" no":"")+"'>20"+ic("coin","s")+"</span>", "Labour et transport plus rapides");
     if(acts[a]==="militia") h += actionCard("militia", ic("sword","l"), "Lever la milice", "<span class='cost'>"+g.units.length+" / "+g.militiaCount()+"</span>", "1 soldat pour 2 familles");
     if(acts[a]==="merc") h += actionCard("merc", ic("shield","l"), "Mercenaire", "<span class='cost"+(g.treasury<25?" no":"")+"'>25"+ic("coin","s")+"</span>", "Loué pour 6 mois");
@@ -730,7 +777,7 @@ function sheetSelection(g){
     h += "<div class='kv'><span class='k'>"+ic("family","s")+(fam ? esc(fam.name) : "Logement vacant")+"</span>"
        + (sel.monthsGood>0 ? "<span class='v good'>Bien loti : "+sel.monthsGood+" mois</span>" : "")+"</div>";
     if(sel.done){
-      h += "<div class='sec'>Arrière-cour</div>";
+      h += "<div class='sec'>Arrière-cour"+(sel.plot ? " · "+(g.yardCells(sel).length-g.freeYardCells(sel).length)+"/"+g.yardCells(sel).length+" cases" : "")+"</div>";
       var exts = sel.exts || [];
       for(var ei=0; ei<EXT_ORDER.length; ei++){
         var ed = EXT_DEFS[EXT_ORDER[ei]];
@@ -849,7 +896,7 @@ function renderDock(g){
   var h = "";
   for(var i=0;i<CATS.length;i++){
     var c = CATS[i];
-    var on = c.tool ? ui.roadMode : (ui.cat===c.id || (ui.buildSel && c.items.indexOf(ui.buildSel)>=0));
+    var on = c.tool ? ui.roadMode : (ui.cat===c.id || (ui.buildSel && c.items.indexOf(ui.buildSel)>=0) || (c.id==="home" && (ui.zoneMode || ui.extPlace)));
     h += "<button class='cat"+(on?" on":"")+"' data-act='cat' data-arg='"+c.id+"'>"+ic(c.icon)+"<span>"+c.name+"</span></button>";
   }
   setHTML(elDock, h);
@@ -966,6 +1013,25 @@ renderUI();
 
 /* ----- boucle principale ----- */
 var _lastT = performance.now(), _acc = 0, _uiAcc = 0, _saveAcc = 0;
+/* étape 3 : outils de zone et de pose dans la cour */
+function clearTools(){ ui.zoneMode = false; ui.zoneA = null; ui.zoneB = null; ui.extPlace = null; }
+var _zoneKey = "", _zoneOv = null;
+function zoneOverlay(g){
+  if(ui.extPlace){
+    var eb = g.buildings.filter(function(b){ return b.id===ui.extPlace.bid; })[0];
+    return eb ? { free:g.freeYardCells(eb) } : null;
+  }
+  if(!ui.zoneMode || !ui.zoneA) return null;
+  var B = ui.zoneB || (hover.inside ? { tx:hover.tx, ty:hover.ty } : ui.zoneA), A = ui.zoneA;
+  var key = A.tx+","+A.ty+","+B.tx+","+B.ty+","+g.uiVersion+","+g.buildings.length+","+Math.floor(g.stock.timber);
+  if(key===_zoneKey) return _zoneOv;
+  var plan = g.planZone(g.zoneRect(A.tx, A.ty, B.tx, B.ty));
+  _zoneKey = key;
+  _zoneOv = { rect:{ x0:Math.min(A.tx,B.tx), y0:Math.min(A.ty,B.ty), x1:Math.max(A.tx,B.tx), y1:Math.max(A.ty,B.ty) },
+              plots:plan.plots, err:plan.err, limited:plan.limited };
+  return _zoneOv;
+}
+
 function loop(now){
   var dt = Math.min(200, now-_lastT); _lastT = now;
   if(game && game.speed>0 && !game.pendingEvent && !uiMenu){
@@ -992,7 +1058,7 @@ function loop(now){
   if(game) soundForToasts(game);
   _uiAcc += dt;
   if(_uiAcc>300){ _uiAcc = 0; renderUI(); }
-  if(game) drawGame(ctx, game, cam, canvas, hover, ui.buildSel, ui.selId, ui.layers, now);
+  if(game){ RENDER.setOverlay(zoneOverlay(game)); drawGame(ctx, game, cam, canvas, hover, ui.buildSel, ui.selId, ui.layers, now); }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);

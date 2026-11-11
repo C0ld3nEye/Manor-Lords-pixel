@@ -161,8 +161,8 @@ Impact maximal / effort minimal d'abord :
 - `js/app.js` ne fait que brancher les entrées et l'UI.
 - **Aucune dépendance externe** : le « zéro build » est un atout du projet.
 
-## 6. Étape 3 — Maisons automatiques et chantiers visibles (en cours)
+## 6. Étape 3 — Maisons automatiques et chantiers visibles ✅ (PR à valider)
 
 - **3a — simulation ✅** : `planZone` / `traceZone` découpent une zone tracée le long d'une route en parcelles (maison en façade, cour derrière, 6 cases max, une façade sur deux), `plotFences` donne la clôture et le portail, les agrandissements se posent sur une case libre de la cour, `buildStage` donne l'étape du chantier (fondations, charpente, murs, toit). Les maisons tracées sont des chantiers bâtis par les journaliers. Sauvegarde v3 (champ `plot` optionnel, anciennes sauvegardes compatibles). 74 tests.
-- **3b — rendu** : maisons, jardins, clôtures et chantiers dessinés étape par étape.
-- **3c — interface** : outil de tracé de zone avec aperçu, choix de la case d'agrandissement, test 390×844, PR.
+- **3b — rendu ✅** : cour teintée, clôture (pâle tant que la maison est en chantier), potager, verger, ruche, poules… posés sur leur case ; chantiers dessinés en quatre étapes (pierres de fondation, charpente qui monte, murs puis toit révélés, échafaudage).
+- **3c — interface ✅** : « Tracer une zone » dans le tiroir Maisons (deux touchers = deux coins, aperçu des parcelles et du coût, bouton Tracer) ; pour un agrandissement, choix de la case verte dans la cour ou « Auto ». Vérifié en Chrome mobile émulé 390×844, pas encore sur un vrai téléphone.
