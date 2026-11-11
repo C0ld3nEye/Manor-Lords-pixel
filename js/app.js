@@ -403,26 +403,6 @@ function renderMenuIfOpen(){
   else if(uiMenu && game) overlay.innerHTML = menuHtml() + overlay.innerHTML.replace(/<div class='modalwrap'>[\s\S]*?<\/div><\/div>/, '');
 }
 
-function renderOverlayUI(){
-  var g = game;
-  if(!g) return;
-  /* calque par-dessus la carte */
-  var o = "";
-
-  /* ----- écran de fin (victoire/défaite) ----- */
-  if(g.victory || g.defeat){
-    var win = g.victory;
-    o += "<div class='modalwrap'><div class='modal big'>";
-    o += "<b>"+(win?"\ud83c\udfc6 VICTOIRE !":"\ud83d\udc80 DÉFAITE")+"</b>";
-    o += "<p>Mode : <b>"+esc(g.mode().name)+"</b> \u00b7 Difficulté : <b>"+esc(g.diff().name)+"</b></p>";
-    o += "<p>"+esc(g.time.month)+" "+g.time.year+" \u2014 "+esc(g.settlementName())+" de "+g.families.length+" familles</p>";
-    o += "<p>Trésorerie : "+Math.floor(g.treasury)+" deniers \u00b7 Influence : "+Math.floor(g.influence)+" \u00b7 Approbation : "+g.approval+"%</p>";
-    if(!win && g.endReason) o += "<p class='dim'>Cause : "+esc(g.endReason)+"</p>";
-    o += "<button class='btn wide' data-act='new'>Nouvelle partie</button>";
-    o += "<button class='btn wide' data-act='menuclose'>Continuer à jouer</button>";
-    o += "</div></div>";
-  }
-
 function menuHtml(){
   if(!uiMenu) return "";
   var o = "";
@@ -450,7 +430,29 @@ function menuHtml(){
     o += "</div></div>";
   }
   return o;
-}  o += "<div class='panel' id='objpanel'>";
+}
+
+function renderOverlayUI(){
+  var g = game;
+  if(!g) return;
+  /* calque par-dessus la carte */
+  var o = "";
+
+  /* ----- écran de fin (victoire/défaite) ----- */
+  if(g.victory || g.defeat){
+    var win = g.victory;
+    o += "<div class='modalwrap'><div class='modal big'>";
+    o += "<b>"+(win?"\ud83c\udfc6 VICTOIRE !":"\ud83d\udc80 DÉFAITE")+"</b>";
+    o += "<p>Mode : <b>"+esc(g.mode().name)+"</b> \u00b7 Difficulté : <b>"+esc(g.diff().name)+"</b></p>";
+    o += "<p>"+esc(g.time.month)+" "+g.time.year+" \u2014 "+esc(g.settlementName())+" de "+g.families.length+" familles</p>";
+    o += "<p>Trésorerie : "+Math.floor(g.treasury)+" deniers \u00b7 Influence : "+Math.floor(g.influence)+" \u00b7 Approbation : "+g.approval+"%</p>";
+    if(!win && g.endReason) o += "<p class='dim'>Cause : "+esc(g.endReason)+"</p>";
+    o += "<button class='btn wide' data-act='new'>Nouvelle partie</button>";
+    o += "<button class='btn wide' data-act='menuclose'>Continuer à jouer</button>";
+    o += "</div></div>";
+  }
+
+ o += "<div class='panel' id='objpanel'>";
   o += "<b>📜 Objectifs</b>";
   o += "<div>"+(g.objectives.wood?"✅":"⬜")+" Bûcherons actifs</div>";
   o += "<div>"+(g.objectives.happy?"✅":"⬜")+" Approbation ≥ 50 % (3 mois)</div>";
