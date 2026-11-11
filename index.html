@@ -91,6 +91,8 @@ button { font:inherit; color:inherit; touch-action:manipulation; }
 .place .t b { font-size:13px; }
 .place .t span { font-size:11px; color:var(--dim); white-space:normal; }
 .sizes { display:flex; gap:4px; }
+.frame.place.wrap { flex-wrap:wrap; }
+.frame.place.wrap .sizes { order:3; flex-basis:100%; justify-content:flex-end; }
 .sizes .b { min-height:32px; padding:2px 8px; font-size:12px; }
 .flash { background:#5a2a22; border:2px solid var(--line); color:#ffd2c6; padding:5px 10px; font-size:12px; }
 #tip { position:absolute; left:8px; bottom:8px; padding:4px 8px; font-size:12px; pointer-events:none; max-width:60%; }

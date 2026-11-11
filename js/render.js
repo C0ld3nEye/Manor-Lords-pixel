@@ -479,16 +479,7 @@ var TALL = { tower:1, windmill:1, manor:1 };
 
 function drawBuilding(g, b, info){
   var name = info.name, bxp = b.x*TS, byp = (b.y+b.h)*TS;
-  if(!b.done){
-    bx.globalAlpha = 0.32; spr(name, bxp, byp); bx.globalAlpha = 1;
-    SPR.drawBottom(bx, name, bxp - OX, byp - OY, b.progress||0);
-    spr("scaffold_"+(b.w>1 ? 2 : 1), bxp, byp);
-    spr("materials", bxp - 3, byp + 2);
-    var bw = b.w*TS - 4, top = byp - SPR.frames[name].ay - 3;
-    rect(bxp+2, top, bw, 2, "#1a140e");
-    rect(bxp+2, top, Math.max(1, Math.round(bw*(b.progress||0))), 2, "#7bd88f");
-    return;
-  }
+  if(!b.done){ drawSite(b, name); return; }
   spr(name, bxp, byp);
   if(b.def==="windmill"){
     var f = SPR.frames[name];
@@ -497,7 +488,158 @@ function drawBuilding(g, b, info){
     var fr = turning ? Math.floor(info.now/110) % 8 : 0;
     spr("sails_"+fr, hubX - 19.5, hubY - 19.5);
   }
-  if(b.def==="burgage") drawExtensionsFront(g, b, info);
+  if(b.def==="burgage" && !b.plot) drawExtensionsFront(g, b, info);
+}
+
+/* étape 3 : chantier en quatre étapes (fondations, charpente, murs, toit) */
+var STONE_A = "#d4cec0", STONE_B = "#9a9384", STONE_D = "#4a443b", WOOD_A = "#b07a44", WOOD_B = "#5e3b1f";
+function drawSite(b, name){
+  var fr = SPR.frames[name], bxp = b.x*TS, byp = (b.y+b.h)*TS, fw = b.w*TS;
+  var st = buildStage(b), loc = Math.max(0, Math.min(1, (b.progress||0)*BUILD_STAGES.length - st));
+  bx.globalAlpha = 0.18; spr(name, bxp, byp); bx.globalAlpha = 1; // silhouette du bâtiment final
+  // fondations : pierres posées une à une sur le pourtour de l'emprise
+  var x0 = bxp+2, x1 = bxp+fw-4, y0 = byp-b.h*TS+6, y1 = byp-4, pts = [], k;
+  for(k=x0; k<x1; k+=3) pts.push([k, y1]);
+  for(k=y1; k>y0; k-=3) pts.push([x1, k]);
+  for(k=x1; k>x0; k-=3) pts.push([k, y0]);
+  for(k=y0; k<y1; k+=3) pts.push([x0, k]);
+  var n = st===0 ? Math.max(1, Math.round(pts.length*(0.15+0.85*loc))) : pts.length;
+  for(k=0; k<n; k++){ rect(pts[k][0], pts[k][1]+2, 3, 1, STONE_D); rect(pts[k][0], pts[k][1], 3, 2, (k&1) ? STONE_B : STONE_A); }
+  // charpente : poteaux qui montent, sablière, puis chevrons
+  var ph = Math.max(10, Math.round((fr.ay-2)*0.7));
+  if(st>=1){
+    var grow = st===1 ? 0.35+0.65*loc : 1, hh = Math.round(ph*grow);
+    for(k=x0; k<=x1; k+=Math.max(5, Math.round((x1-x0)/Math.max(2, b.w*2)))) { rect(k, y1-hh, 2, hh, WOOD_A); rect(k+2, y1-hh, 1, hh, WOOD_B); }
+    rect(x1, y1-hh, 2, hh, WOOD_B);
+    if(st>1 || loc>0.55){
+      rect(x0, y1-ph, x1-x0+2, 2, WOOD_A);
+      if(st>1 || loc>0.8){
+        var rh = Math.round((x1-x0)/2.4), mid = (x0+x1+2)/2;
+        for(k=0; k<rh; k++){ var dx = Math.round((x1-x0)/2*(1-k/rh)); rect(Math.round(mid-dx), y1-ph-k, 1, 1, WOOD_B); rect(Math.round(mid+dx)-1, y1-ph-k, 1, 1, WOOD_B); }
+      }
+    }
+  }
+  // murs puis toit : le vrai bâtiment se révèle depuis le bas
+  if(st===2) SPR.drawBottom(bx, name, bxp - OX, byp - OY, 0.12 + 0.48*loc);
+  if(st===3) SPR.drawBottom(bx, name, bxp - OX, byp - OY, 0.6 + 0.4*loc);
+  if(st>=2) spr("scaffold_"+(b.w>1 ? 2 : 1), bxp, byp);
+  if(st<3) spr("materials", bxp - 3, byp + 2);
+  var bw = fw - 4, top = byp - fr.ay - 3;
+  rect(bxp+2, top, bw, 2, "#1a140e");
+  rect(bxp+2, top, Math.max(1, Math.round(bw*(b.progress||0))), 2, "#7bd88f");
+}
+
+/* étape 3 : parcelle (cour teintée, potager, clôture) */
+function cellX(i){ return (i%W)*TS; }
+function cellY(i){ return Math.floor(i/W)*TS; }
+function drawFences(fe, a, rail, post){
+  bx.globalAlpha = a;
+  for(var k=0; k<fe.edges.length; k++){
+    var e = fe.edges[k], x = cellX(e.i), y = cellY(e.i), p;
+    if(e.d===0 || e.d===2){
+      var yy = e.d===0 ? y+1 : y+TS-2;
+      rect(x, yy, TS, 1, rail);
+      for(p=x+(e.d===0?0:2); p<x+TS; p+=5) rect(p, yy-2, 1, 4, post);
+    } else {
+      var xx = e.d===3 ? x+1 : x+TS-2;
+      rect(xx, y, 1, TS, rail);
+      for(p=y+2; p<y+TS; p+=5) rect(xx-1, p, 3, 2, post);
+    }
+  }
+  bx.globalAlpha = 1;
+}
+/* tracé pixel par pixel (Bresenham) en pixels d'art */
+function pxLine(x0, y0, x1, y1, fn){
+  x0 = Math.round(x0); y0 = Math.round(y0); x1 = Math.round(x1); y1 = Math.round(y1);
+  var dx = Math.abs(x1-x0), dy = -Math.abs(y1-y0), sx = x0<x1 ? 1 : -1, sy = y0<y1 ? 1 : -1, err = dx+dy, s = 0;
+  for(;;){ fn(x0, y0, s++); if(x0===x1 && y0===y1) break; var e2 = 2*err; if(e2>=dy){ err += dy; x0 += sx; } if(e2<=dx){ err += dx; y0 += sy; } }
+}
+function fillPoly(poly, color){
+  bx.fillStyle = color; bx.beginPath();
+  for(var k=0; k<poly.length; k++){ var x = poly[k][0]*TS-OX, y = poly[k][1]*TS-OY; if(k===0) bx.moveTo(x, y); else bx.lineTo(x, y); }
+  bx.closePath(); bx.fill();
+}
+/* côté rue laissé ouvert : pas de clôture sur la route ni contre elle */
+function fenceSkip(g, px, py, dir){
+  var tx = Math.floor(px/TS), ty = Math.floor(py/TS), ox = px - tx*TS, oy = py - ty*TS;
+  if(g.roadAt(tx, ty)) return true;
+  if(dir===0) return oy<=2 && g.roadAt(tx, ty-1);
+  if(dir===2) return oy>=TS-3 && g.roadAt(tx, ty+1);
+  if(dir===1) return ox>=TS-3 && g.roadAt(tx+1, ty);
+  return ox<=2 && g.roadAt(tx-1, ty);
+}
+/* clôture qui suit exactement le contour tracé, à n'importe quel angle */
+function drawPolyFence(g, poly, dir, a, rail, post){
+  bx.globalAlpha = a;
+  for(var k=0; k<poly.length; k++){
+    var A = poly[k], B = poly[(k+1)%poly.length];
+    pxLine(Math.min(A[0]*TS, W*TS-1), Math.min(A[1]*TS, H*TS-1), Math.min(B[0]*TS, W*TS-1), Math.min(B[1]*TS, H*TS-1), function(x, y, st){
+      if(fenceSkip(g, x, y, dir)) return;
+      rect(x, y, 1, 1, rail);
+      if(st%5===0) rect(x, y-2, 1, 3, post);
+    });
+  }
+  bx.globalAlpha = 1;
+}
+function drawPlotGround(g, b, season, winter){
+  var cells = b.plot.cells, ea = b.plot.extAt || {};
+  if(b.plot.poly){
+    fillPoly(b.plot.poly, winter ? "rgba(255,255,255,0.10)" : "rgba(70,96,34,0.18)");
+    if(b.done && ea.garden!==undefined) spr("veg_"+season, cellX(ea.garden)+8, cellY(ea.garden)+12);
+    drawPolyFence(g, b.plot.poly, b.plot.dir, b.done ? 1 : 0.4, WOOD_A, WOOD_B);
+    return;
+  }
+  bx.fillStyle = winter ? "rgba(255,255,255,0.10)" : "rgba(70,96,34,0.18)";
+  for(var k=1; k<cells.length; k++) bx.fillRect(cellX(cells[k])-OX, cellY(cells[k])-OY, TS, TS);
+  if(b.done && ea.garden!==undefined) spr("veg_"+season, cellX(ea.garden)+8, cellY(ea.garden)+12);
+  drawFences(g.plotFences(b), b.done ? 1 : 0.4, WOOD_A, WOOD_B);
+}
+/* agrandissements posés sur leur case de cour */
+function drawYard(B, season, winter, t, now){
+  var ea = B.plot.extAt || {}, i, x, y;
+  if((i = ea.orchard)!==undefined){ x = cellX(i)+8; y = cellY(i)+13; sh("sh_sap", x, y); obj(y, drawSprite, "fruit_"+season, x, y); }
+  if((i = ea.beehive)!==undefined){ x = cellX(i)+5; y = cellY(i)+12; obj(y, drawSprite, "skep", x, y); }
+  if((i = ea.brewer)!==undefined){ x = cellX(i)+5; y = cellY(i)+12; obj(y, drawSprite, "barrel", x, y); }
+  if((i = ea.tailor)!==undefined){ x = cellX(i)+3; y = cellY(i)+11; obj(y, drawSprite, "cloth", x, y); }
+  if((i = ea.chicken)!==undefined && !winter){
+    for(var c=0;c<2;c++){
+      var ph = t*0.7 + B.id + c*2;
+      var cx2 = cellX(i) + 4 + c*5 + Math.round(Math.sin(ph)*2), cy2 = cellY(i) + 9 + c*3;
+      var pk = (Math.floor(now/400) + c + B.id) % 3 === 0 ? 1 : 0;
+      obj(cy2, drawSprite, "chick_"+(c&1)+"_"+pk+((Math.sin(ph+0.2) - Math.sin(ph))<0 ? "_l" : ""), cx2, cy2);
+    }
+  }
+}
+
+/* étape 3 : aperçu du tracé de zone et des cases libres de cour (fourni par app.js) */
+var OV = null;
+var PLOT_TINTS = ["rgba(90,224,110,0.30)", "rgba(110,190,255,0.30)"];
+function drawOverlay(g, now){
+  var k, j;
+  if(OV.pts){
+    var pl = OV.plan, plots = (pl && !pl.err) ? pl.plots : [];
+    for(k=0; k<plots.length; k++){ fillPoly(plots[k].poly, PLOT_TINTS[k&1]); drawPolyFence(g, plots[k].poly, plots[k].dir, 0.95, "#f2e6c8", "#c9a45a"); }
+    for(k=0; k<plots.length; k++){ var hc = plots[k].cells[0]; bx.globalAlpha = 0.7; spr("burgage1_"+(k%3), cellX(hc), cellY(hc)+TS); bx.globalAlpha = 1; }
+    var P = OV.pts, col = (pl && pl.err) ? "#e05a3a" : "#fff4d6", nSeg = OV.closed ? P.length : P.length-1;
+    for(k=0; k<nSeg; k++){
+      var A = P[k], B = P[(k+1)%P.length];
+      pxLine(A[0]*TS, A[1]*TS, B[0]*TS, B[1]*TS, function(x, y){ rect(x, y+1, 1, 1, "rgba(0,0,0,0.45)"); rect(x, y, 1, 1, col); });
+    }
+    for(k=0; k<P.length; k++){
+      var big = k===0 && !OV.closed && P.length>=3, sz = big ? 5 : 3;
+      rect(Math.round(P[k][0]*TS)-(sz>>1)-1, Math.round(P[k][1]*TS)-(sz>>1)-1, sz+2, sz+2, "#1a140e");
+      rect(Math.round(P[k][0]*TS)-(sz>>1), Math.round(P[k][1]*TS)-(sz>>1), sz, sz, big ? "#e8c35a" : col);
+    }
+  }
+  if(OV.free){
+    var pulse = 0.22 + 0.14*Math.sin(now/220);
+    for(k=0; k<OV.free.length; k++){
+      var fi = OV.free[k];
+      bx.fillStyle = "rgba(90,224,110,"+pulse.toFixed(3)+")";
+      bx.fillRect(cellX(fi)-OX, cellY(fi)-OY, TS, TS);
+      corners(cellX(fi), cellY(fi), TS, TS, "#5ae06e");
+    }
+  }
 }
 
 /* accessoires de cour devant / autour de la maison */
@@ -672,6 +814,7 @@ function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
   for(var bi=0; bi<g.buildings.length; bi++){
     var b = g.buildings[bi];
     var bx0 = b.x*TS, by0 = b.y*TS, bx1 = bx0 + b.w*TS, by1 = by0 + b.h*TS;
+    if(b.plot && bx1 > OX-80 && bx0 < OX+bw+80 && by1 > OY-80 && by0 < OY+bh+80) drawPlotGround(g, b, season, winter);
     if(bx1 < OX-16 || bx0 > OX+bw+16 || by1 < OY-16 || by0 > OY+bh+16) continue;
     if(b.def==="field"){ drawField(g, b, season); continue; }
     if(!b.done || b.def==="market" || b.def==="trade" || b.def==="farm"){
@@ -682,7 +825,7 @@ function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
         spr(tile+((xx+yy+b.id)&1), bx0+xx*TS, by0+(yy+1)*TS);
       }
     }
-    if(b.def==="burgage" && b.done && b.exts && b.exts.indexOf("garden")>=0) spr("veg_"+season, bx0+8, by1+4);
+    if(b.def==="burgage" && b.done && !b.plot && b.exts && b.exts.indexOf("garden")>=0) spr("veg_"+season, bx0+8, by1+4);
   }
 
   /* grille en mode construction */
@@ -740,7 +883,8 @@ function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
     if(bxp - fr.ax + fr.w < OX - 4 || bxp - fr.ax > OX + bw + 4 || byp - fr.ay > OY + bh + 4 || byp - fr.ay + fr.h < OY - 30) continue;
     if(B.done) sh(name, bxp + (TALL[B.def] ? 4 : 3), byp + 2);
     obj(byp - 0.5, drawBuilding, g, B, { name:name, now:now });
-    if(B.done && B.def==="burgage"){
+    if(B.done && B.def==="burgage" && B.plot) drawYard(B, season, winter, t, now);
+    else if(B.done && B.def==="burgage"){
       var ex = B.exts || [];
       if(ex.indexOf("orchard")>=0){ var ox = bxp+14, oy = byp-9; sh("sh_sap", ox, oy); obj(oy, drawSprite, "fruit_"+season, ox, oy); }
       if(ex.indexOf("chicken")>=0 && !winter){
@@ -889,6 +1033,8 @@ function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
     if(bd.radius) dottedCircle(gx0 + bd.w*TS/2, gy0 + bd.h*TS/2, bd.radius*TS, "rgba(232,195,90,0.8)");
   }
 
+  if(OV) drawOverlay(g, now);
+
   /* météo et lumière de saison */
   weather(g, t, bw, bh);
   var grade = winter ? "#dfe7f2" : season===3 ? "#fbefdc" : null;
@@ -938,7 +1084,7 @@ function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
   if(Math.random() < 0.01) mem.forEach(function(v, k){ if(now - v.seen > 5000) mem.delete(k); });
 }
 
-return { drawGame:drawGame, snapZoom:snapZoom, stepZoom:stepZoom, stats:function(){ return { terrainPaintMs: T ? T.paintMs : null, sprites: SPR.count, atlasMs: SPR.buildMs }; } };
+return { drawGame:drawGame, setOverlay:function(o){ OV = o || null; }, snapZoom:snapZoom, stepZoom:stepZoom, stats:function(){ return { terrainPaintMs: T ? T.paintMs : null, sprites: SPR.count, atlasMs: SPR.buildMs }; } };
 })();
 
 /* points d'entrée utilisés par app.js */

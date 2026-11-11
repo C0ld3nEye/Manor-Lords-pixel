@@ -41,7 +41,7 @@ function hash2(x        , y        ){ return ((x * 73856093) ^ (y * 19349663)) >
  
 
 const BUILD_DEFS                              = {
-  burgage:   { id:"burgage",   name:"Bourgage",       icon:"🏠", w:1,h:1, cost:{timber:1}, fam:0, instant:true,  desc:"Loge une famille. Évolue si ses besoins sont satisfaits." },
+  burgage:   { id:"burgage",   name:"Bourgage",       icon:"🏠", w:1,h:1, cost:{timber:1}, fam:0, instant:true, buildRate:2, desc:"Loge une famille. Évolue si ses besoins sont satisfaits." },
   woodcutter:{ id:"woodcutter",name:"Camp de bûcherons",icon:"🪓", w:1,h:1, cost:{timber:2}, fam:2, radius:6, instant:false, desc:"Abat les arbres à proximité : bois d'œuvre + bois de chauffe." },
   forager:   { id:"forager",   name:"Cabane de cueilleuses", icon:"🍒", w:1,h:1, cost:{timber:2}, fam:2, radius:6, instant:false, desc:"Cueille des baies (mars → novembre)." },
   hunter:    { id:"hunter",    name:"Camp de chasse",  icon:"🏹", w:1,h:1, cost:{timber:2}, fam:2, radius:10, instant:false, desc:"Chasse le gibier des forêts : viande, toute l'année." },
@@ -71,6 +71,64 @@ const EXT_DEFS = {
   brewer:  { id:"brewer",  name:"Brasserie",          cost:{timber:2,stone:1},   lvl:2, desc:"Produit 1 chope d'ale par mois. Requiert le niveau 2." },
 };
 const EXT_ORDER = ["garden","chicken","orchard","beehive","tailor","brewer"];
+
+/* ---------- étape 3 : chantiers en étapes et parcelles de bourgage ---------- */
+const BUILD_STAGES = [
+  { id:"foundations", name:"Fondations" },
+  { id:"frame",       name:"Charpente" },
+  { id:"walls",       name:"Murs" },
+  { id:"roof",        name:"Toit" },
+];
+// 0..3 = étape du chantier en cours, 4 = bâtiment achevé
+function buildStage(b){
+  if(b.done) return BUILD_STAGES.length;
+  const p = typeof b.progress==="number" && isFinite(b.progress) ? b.progress : 0;
+  return Math.max(0, Math.min(BUILD_STAGES.length-1, Math.floor(p*BUILD_STAGES.length)));
+}
+const DIRS4 = [[0,-1],[1,0],[0,1],[-1,0]]; // N, E, S, O
+const PLOT_FRONT = 2;      // largeur visée d'une parcelle le long de la route (en cases)
+const SNAP = 4;            // points du contour calés au quart de case
+// géométrie des contours (coordonnées en cases)
+function polyArea(p){ let a=0; for(let i=0,j=p.length-1;i<p.length;j=i++) a += p[j][0]*p[i][1] - p[i][0]*p[j][1]; return Math.abs(a)/2; }
+function pointInPoly(x, y, p){
+  let ins=false;
+  for(let i=0,j=p.length-1;i<p.length;j=i++){
+    const xi=p[i][0], yi=p[i][1], xj=p[j][0], yj=p[j][1];
+    if((yi>y)!==(yj>y) && x < (xj-xi)*(y-yi)/(yj-yi)+xi) ins=!ins;
+  }
+  return ins;
+}
+function segCross(a, b, c, d){
+  const o=(p,q,r)=>Math.sign((q[0]-p[0])*(r[1]-p[1]) - (q[1]-p[1])*(r[0]-p[0]));
+  return o(a,b,c)*o(a,b,d)<0 && o(c,d,a)*o(c,d,b)<0;
+}
+function selfIntersects(p){
+  const n=p.length;
+  for(let i=0;i<n;i++) for(let j=i+2;j<n;j++){
+    if(i===0 && j===n-1) continue;
+    if(segCross(p[i], p[(i+1)%n], p[j], p[(j+1)%n])) return true;
+  }
+  return false;
+}
+// garde la partie du contour où sign*(coord - c) >= 0 (ax : 0 = x, 1 = y)
+function clipHalf(p, ax, c, sign){
+  const out=[];
+  for(let i=0;i<p.length;i++){
+    const A=p[i], B=p[(i+1)%p.length], da=sign*(A[ax]-c), db=sign*(B[ax]-c);
+    if(da>=0) out.push(A);
+    if((da>=0)!==(db>=0)){ const t=da/(da-db); out.push([A[0]+(B[0]-A[0])*t, A[1]+(B[1]-A[1])*t]); }
+  }
+  return out;
+}
+function cleanPoly(p){
+  const out=[];
+  for(const q of p){
+    const r=[Math.round(q[0]*16)/16, Math.round(q[1]*16)/16], l=out[out.length-1];
+    if(!l || l[0]!==r[0] || l[1]!==r[1]) out.push(r);
+  }
+  if(out.length>1 && out[0][0]===out[out.length-1][0] && out[0][1]===out[out.length-1][1]) out.pop();
+  return out;
+}
 
 const CROP_DEFS = {
   wheat:  { id:"wheat",  name:"Bl\u00e9",     icon:"\ud83c\udf3e", yield:"grain",  fertCost:0.20, desc:"Bl\u00e9 -> grain -> pain (moulin). \u00c9puise le sol." },
@@ -405,6 +463,7 @@ class GameState {
     this.stock.timber += Math.floor((d.cost.timber||0)/2);
     this.stock.stone += Math.floor((d.cost.stone||0)/2);
     for(let yy=0;yy<b.h;yy++) for(let xx=0;xx<b.w;xx++) this.occupied[(b.y+yy)*W+(b.x+xx)] = -1;
+    if(b.plot) for(const i of b.plot.cells) if(this.occupied[i]===b.id) this.occupied[i] = -1;
     for(const f of this.families){
       if(f.work===b.id){ f.work=-1; f.task=null; f.path=null; f.state="idle"; f.carry=null; }
       if(f.home===b.id) f.home = -1;
@@ -412,6 +471,130 @@ class GameState {
     for(const o of this.buildings){ o.families = o.families.filter(fid=>this.families.some(ff=>ff.id===fid)); }
     this.buildings.splice(idx,1);
     this.toast(d.name+" démoli (moitié du coût remboursée)");
+  }
+
+  /* ---------- étape 3 : zones de bourgage tracées point par point ---------- */
+  // Découpe un contour libre en parcelles SANS rien modifier (sert aussi d'aperçu à l'interface).
+  // pts : points du contour en cases (calés au quart de case). n : nombre de maisons voulu (sinon proposé).
+  planZone(pts        , n        ){
+    const fail = (err, extra)=>Object.assign({ plots:[], err, limited:false, n:0, nMin:0, nMax:0, suggested:0, poly:null }, extra||{});
+    if(!Array.isArray(pts) || pts.length<3) return fail("Posez au moins 3 points");
+    const poly = pts.map(q=>[Math.max(0, Math.min(W, Math.round(Number(q[0])*SNAP)/SNAP)),
+                             Math.max(0, Math.min(H, Math.round(Number(q[1])*SNAP)/SNAP))]);
+    if(poly.some(q=>!isFinite(q[0]) || !isFinite(q[1]))) return fail("Contour invalide");
+    if(selfIntersects(poly)) return fail("Le contour se croise", { poly });
+    // cases couvertes : celles dont le centre est dans le contour
+    let x0=W, y0=H, x1=0, y1=0;
+    for(const q of poly){ x0=Math.min(x0,q[0]); y0=Math.min(y0,q[1]); x1=Math.max(x1,q[0]); y1=Math.max(y1,q[1]); }
+    const inside = [];
+    for(let y=Math.max(0,Math.floor(y0)); y<Math.min(H,Math.ceil(y1)); y++) for(let x=Math.max(0,Math.floor(x0)); x<Math.min(W,Math.ceil(x1)); x++){
+      if(!pointInPoly(x+0.5, y+0.5, poly)) continue;
+      const i=y*W+x;
+      if(this.roads[i]) return fail("La zone empiète sur une route", { poly });
+      if(this.occupied[i]>=0) return fail("La zone empiète sur un bâtiment", { poly });
+      if(this.tiles[i]!==T_GRASS) return fail("Terrain impropre dans la zone (eau, forêt ou rocher)", { poly });
+      if(!this.regionOwned(x)) return fail("Région non réclamée", { poly });
+      inside.push(i);
+    }
+    if(inside.length<2) return fail("Zone trop petite", { poly });
+    // façade : cases de la zone qui touchent la route, du côté le plus représenté
+    const byDir=[[],[],[],[]];
+    for(const i of inside){
+      const x=i%W, y=(i/W)|0;
+      for(let d=0;d<4;d++) if(this.roadAt(x+DIRS4[d][0], y+DIRS4[d][1])){ byDir[d].push(i); break; }
+    }
+    let dir=0; for(let d=1;d<4;d++) if(byDir[d].length>byDir[dir].length) dir=d;
+    if(byDir[dir].length===0) return fail("La zone doit longer une route", { poly });
+    const ax = (dir===0 || dir===2) ? 0 : 1;           // route au nord/sud : façade le long de x
+    const axis = (i)=>ax===0 ? i%W : (i/W)|0;
+    const front = new Map();
+    for(const i of byDir[dir]){ const a=axis(i); if(!front.has(a)) front.set(a, i); }
+    const keys = Array.from(front.keys()).sort((a,b)=>a-b);
+    const runs = [];
+    for(const a of keys){ const r=runs[runs.length-1]; if(r && a===r.end) r.end++; else runs.push({ start:a, end:a+1 }); }
+    const nMin = runs.length, nMax = keys.length;
+    const suggested = runs.reduce((s,r)=>s + Math.max(1, Math.min(r.end-r.start, Math.round((r.end-r.start)/PLOT_FRONT))), 0);
+    let want = Number.isInteger(n) ? Math.max(nMin, Math.min(nMax, n)) : suggested;
+    const c = BUILD_DEFS.burgage.cost;
+    const afford = Math.min(c.timber ? Math.floor((this.stock.timber||0)/c.timber) : Infinity,
+                            c.stone ? Math.floor((this.stock.stone||0)/c.stone) : Infinity);
+    const info = { poly, nMin, nMax, suggested };
+    let limited = false;
+    if(want>afford){ want = Math.max(0, afford); limited = true; }
+    if(want<=0) return fail("Ressources insuffisantes", Object.assign({ limited:true }, info));
+    const use = want<runs.length ? runs.slice(0, want) : runs;
+    // une maison par façade, puis on en ajoute là où les parcelles sont les plus larges
+    const k = use.map(()=>1);
+    for(let left=want-use.length; left>0; left--){
+      let best=-1, bw=-1;
+      use.forEach((r,j)=>{ const L=r.end-r.start; if(k[j]<L && L/k[j]>bw){ bw=L/k[j]; best=j; } });
+      if(best<0) break; k[best]++;
+    }
+    // limites entre parcelles : perpendiculaires à la route, sur les bords de case
+    const cuts = [];
+    use.forEach((r,j)=>{
+      const L=r.end-r.start;
+      for(let q=1;q<k[j];q++) cuts.push(Math.round(r.start + q*L/k[j]));
+      if(j<use.length-1) cuts.push(Math.round((r.end + use[j+1].start)/2));
+    });
+    const plots = [];
+    for(let sI=0; sI<=cuts.length; sI++){
+      const lo = sI===0 ? -Infinity : cuts[sI-1], hi = sI===cuts.length ? Infinity : cuts[sI];
+      const fr = keys.filter(a=>a>=lo && a<hi);
+      if(fr.length===0) continue;
+      const house = front.get(fr[Math.floor((fr.length-1)/2)]);
+      const cells = [house].concat(inside.filter(i=>i!==house && axis(i)>=lo && axis(i)<hi));
+      let pp = poly;
+      if(isFinite(lo)) pp = clipHalf(pp, ax, lo, 1);
+      if(isFinite(hi)) pp = clipHalf(pp, ax, hi, -1);
+      plots.push({ cells, dir, poly:cleanPoly(pp) });
+    }
+    return { plots, err:null, limited, n:plots.length, nMin, nMax, suggested, poly };
+  }
+
+  // Trace la zone : une maison en chantier par parcelle, bâtie par les journaliers.
+  traceZone(pts        , n        )               {
+    const plan = this.planZone(pts, n);
+    if(plan.err) return plan.err;
+    const c = BUILD_DEFS.burgage.cost;
+    for(const p of plan.plots){
+      this.stock.timber -= (c.timber||0);
+      this.stock.stone -= (c.stone||0);
+      const h = p.cells[0];
+      const b = this.makeBuilding("burgage", h%W, (h/W)|0);
+      b.plot = { cells:p.cells.slice(), dir:p.dir, extAt:{}, poly:p.poly };
+      for(const i of p.cells) this.occupied[i] = b.id;
+    }
+    const nb = plan.plots.length;
+    this.toast(nb+" parcelle"+(nb>1?"s":"")+" tracée"+(nb>1?"s":"")+" : les journaliers bâtissent les maisons."
+      +(plan.limited?" (bois insuffisant pour toute la zone)":""), "good");
+    this.uiVersion++;
+    return null;
+  }
+
+  // cases de cour d'un bourgage tracé (hors maison) et celles encore libres
+  yardCells(b         )           { return b.plot ? b.plot.cells.slice(1) : []; }
+  freeYardCells(b         )           {
+    if(!b.plot) return [];
+    const used = new Set(Object.values(b.plot.extAt));
+    return this.yardCells(b).filter(i=>!used.has(i));
+  }
+
+  // Clôture : chaque bord de case qui donne hors de la parcelle, sauf le portail de la maison côté route.
+  plotFences(b         ){
+    if(!b.plot) return { edges:[], gate:null };
+    const set = new Set(b.plot.cells), edges = [];
+    const house = b.plot.cells[0], gate = { i:house, d:b.plot.dir };
+    for(const i of b.plot.cells){
+      const x=i%W, y=(i/W)|0;
+      for(let d=0;d<4;d++){
+        const nx=x+DIRS4[d][0], ny=y+DIRS4[d][1];
+        const inside = nx>=0&&ny>=0&&nx<W&&ny<H && set.has(ny*W+nx);
+        if(inside || (i===gate.i && d===gate.d)) continue;
+        edges.push({ i, d });
+      }
+    }
+    return { edges, gate };
   }
 
   assign(bid       ){
@@ -450,16 +633,24 @@ class GameState {
     b.f.crop = crop; this.uiVersion++; return true;
   }
 
-  buyExtension(bid       , ext       ){
+  buyExtension(bid       , ext       , cell        ){
     const b = this.buildings.find(x=>x.id===bid); if(!b || b.def!=="burgage" || !b.done) return;
     const d = EXT_DEFS[ext]; if(!d) return;
     if(b.exts.includes(ext)){ this.toast("Cet agrandissement existe d\u00e9j\u00e0.","bad"); return; }
     if(b.lvl < d.lvl){ this.toast("Il faut un bourgage de niveau "+d.lvl+" pour ceci.","bad"); return; }
+    // parcelle tracée : l'agrandissement prend une case libre de la cour
+    let slot = -1;
+    if(b.plot){
+      const free = this.freeYardCells(b);
+      if(free.length===0){ this.toast("Plus de place dans la cour de ce bourgage.","bad"); return; }
+      slot = (cell!==undefined && free.includes(cell)) ? cell : free[0];
+    }
     for(const k of Object.keys(d.cost)){
       if((this.stock[k]||0) < d.cost[k]){ this.toast("Il manque des ressources pour "+d.name+".","bad"); return; }
     }
     for(const k of Object.keys(d.cost)) this.stock[k] -= d.cost[k];
     b.exts.push(ext);
+    if(b.plot) b.plot.extAt[ext] = slot;
     this.toast("Agrandissement ajout\u00e9 : "+d.name);
     this.uiVersion++;
   }
@@ -852,7 +1043,7 @@ class GameState {
       case "build":{
         const site = t.bid!==undefined ? this.buildings.find(x=>x.id===t.bid) : null;
         if(!site || site.done){ f.task=null; f.state="idle"; f.cool=5; break; }
-        site.progress += 0.0045;
+        site.progress += 0.0045 * (BUILD_DEFS[site.def].buildRate || 1);
         if(site.progress>=1){
           site.done=true; site.progress=1;
           this.toast(BUILD_DEFS[site.def].name+" est achevé(e) !","good");
@@ -1445,7 +1636,7 @@ class GameState {
   }
   workStatus(b         )       {
     const d=BUILD_DEFS[b.def];
-    if(!b.done) return "En construction ("+Math.round(b.progress*100)+" %)";
+    if(!b.done) return "En construction : "+BUILD_STAGES[buildStage(b)].name.toLowerCase()+" ("+Math.round(b.progress*100)+" %)";
     if(d.fam>0 && b.families.length===0) return "Aucune famille affectée";
     switch(b.def){
       case "woodcutter": return this.findForestNear(b)<0 ? "Plus d'arbres à portée" : "Abattage en cours";
@@ -1473,7 +1664,7 @@ class GameState {
   /* ---------- sauvegarde ---------- */
   serialize(){
     return {
-      v:2,
+      v:3, // v3 : parcelles de bourgage (b.plot, contour b.plot.poly), champ optionnel ignoré par les versions précédentes
       seed:this.seed,
       modeId:this.modeId,
       weather:this.weather,
@@ -1523,6 +1714,19 @@ class GameState {
         delete b.ext;
       }
       if(!Array.isArray(b.exts)) b.exts=[];
+      if(b.plot!==undefined){
+        const p = b.plot;
+        const cells = p && Array.isArray(p.cells) ? p.cells.filter(i=>Number.isInteger(i) && i>=0 && i<W*H) : [];
+        if(cells.length===0 || cells[0]!==b.y*W+b.x) delete b.plot;
+        else {
+          const extAt = {};
+          if(p.extAt && typeof p.extAt==="object") for(const k of Object.keys(p.extAt))
+            if(EXT_DEFS[k] && b.exts.includes(k) && cells.indexOf(p.extAt[k])>0) extAt[k] = p.extAt[k];
+          b.plot = { cells, dir: Number.isInteger(p.dir) && p.dir>=0 && p.dir<4 ? p.dir : 2, extAt };
+          if(Array.isArray(p.poly) && p.poly.length>=3 && p.poly.every(q=>Array.isArray(q) && q.length===2 && q.every(v=>typeof v==="number" && isFinite(v)) && q[0]>=0 && q[0]<=W && q[1]>=0 && q[1]<=H))
+            b.plot.poly = p.poly.map(q=>[q[0], q[1]]);
+        }
+      }
       return b;
     });
     g.families = Array.isArray(data.families) ? data.families : [];
@@ -1570,12 +1774,13 @@ class GameState {
         const bx=b.x+xx, by=b.y+yy;
         if(bx>=0&&by>=0&&bx<W&&by<H) g.occupied[by*W+bx] = b.id;
       }
+      if(b.plot) for(const i of b.plot.cells) if(g.occupied[i]<0) g.occupied[i] = b.id;
     }
     return g;
   }
 }
 
 if(typeof module!=="undefined" && module.exports){
-  module.exports = { GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
+  module.exports = { BUILD_STAGES, buildStage, DIRS4, PLOT_FRONT, polyArea, pointInPoly, GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
     T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf, REGION_DEFS, REGION_COST, POLICY_DEFS, POLICY_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, MODE_BY_ID, DIFFICULTIES, DIFF_BY_ID };
 }

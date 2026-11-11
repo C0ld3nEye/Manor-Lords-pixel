@@ -160,3 +160,10 @@ Impact maximal / effort minimal d'abord :
 - `js/render.js` ne fait qu'afficher l'état de la sim.
 - `js/app.js` ne fait que brancher les entrées et l'UI.
 - **Aucune dépendance externe** : le « zéro build » est un atout du projet.
+
+## 6. Étape 3 — Maisons automatiques et chantiers visibles ✅ (PR à valider)
+
+- **Tracé libre, point par point (façon Manor Lords)** : le joueur pose les points du contour le long d'une route (calés au quart de case), touche le premier point pour fermer, glisse un point pour ajuster. `planZone(points, n)` repère la façade, propose une maison toutes les 2 cases (réglable avec − / +), coupe la zone perpendiculairement à la route ; chaque parcelle garde son contour (`plot.poly`) et sa cour = ses cases hors maison, donc la forme décide de la taille des jardins et du nombre d'agrandissements.
+- **Chantiers** : `buildStage` (fondations, charpente, murs, toit), dessinés étape par étape ; les journaliers bâtissent.
+- **Rendu** : clôtures en lignes pixel qui suivent le contour exact (côté rue ouvert), cour teintée, agrandissements posés sur leur case (choix de la case verte ou « Auto »).
+- **Sauvegarde v3** : champ `plot` optionnel, anciennes sauvegardes compatibles. 76 tests. Vérifié en Chrome mobile émulé 390×844, pas encore sur un vrai téléphone.

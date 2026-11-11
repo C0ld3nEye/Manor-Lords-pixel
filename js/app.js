@@ -47,6 +47,7 @@ centerCam();
 
 var ui = {
   buildSel:null, selId:null, cat:null, sheet:null, modal:null, roadMode:false,
+  zoneMode:false, zonePts:[], zoneClosed:false, zoneN:null, extPlace:null,
   flash:null, objOpen:false, layersOpen:false, tip:null, tipT:0, hoverTip:null,
   demolishArm:0, delArm:null, taxDrag:false, lastSpeed:1, endSeen:false,
   newMode:"prosperity", newDiff:"normal", newSlot:activeSlot,
@@ -55,8 +56,8 @@ var ui = {
 
 /* ----- catégories de construction (dock du bas) ----- */
 var CATS = [
-  { id:"home",  name:"Maisons",    icon:"house",  items:["burgage"],
-    hint:"Chaque bourgage loge une famille. Placez-les le long des routes." },
+  { id:"home",  name:"Maisons",    icon:"house",  items:["burgage"], actions:["zone"],
+    hint:"Tracez une zone le long d'une route : maisons, cours et clôtures se placent seules." },
   { id:"res",   name:"Récolte",    icon:"axe",    items:["woodcutter","forager","hunter","quarry"],
     hint:"Bois, baies, gibier et pierre : posez-les près de la ressource." },
   { id:"farm",  name:"Champs",     icon:"grain",  items:["field","farm","windmill"], actions:["buyox"],
@@ -197,7 +198,8 @@ function revealAboveSheet(b){
 function clearLongPress(){ if(longPress){ clearTimeout(longPress); longPress = null; } }
 /* appui long : annule la pose / le tracé / la sélection */
 function cancelAll(){
-  var any = ui.buildSel || ui.roadMode || ui.selId!=null || ui.cat || ui.sheet;
+  var any = ui.buildSel || ui.roadMode || ui.zoneMode || ui.extPlace || ui.selId!=null || ui.cat || ui.sheet;
+  clearTools();
   ui.buildSel = null; ui.roadMode = false; ui.selId = null; ui.cat = null; ui.sheet = null; ui.layersOpen = false;
   return any;
 }
@@ -212,8 +214,13 @@ canvas.addEventListener("pointerdown", function(e){
     var dist = Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y);
     var w = toWorld((pts[0].x+pts[1].x)/2, (pts[0].y+pts[1].y)/2);
     pinch = { dist:dist, zoom:cam.zoom, wx:w.wx, wy:w.wy };
-    drag.down = false; drag.moved = true;
+    drag.down = false; drag.moved = true; zoneDrag = { i:-1 };
     return;
+  }
+  /* outil de zone : toucher un point existant = le déplacer (ou fermer le contour sur le premier) */
+  if(game && ui.zoneMode && ui.zonePts.length){
+    var zw0 = toWorld(e.clientX, e.clientY), zi = nearZonePt(zw0.wx, zw0.wy);
+    if(zi>=0){ zoneDrag = { i:zi, sx:e.clientX, sy:e.clientY, moved:false }; drag.down = false; drag.moved = true; return; }
   }
   drag.down = true; drag.moved = false; camGoal = null;
   drag.sx = e.clientX; drag.sy = e.clientY;
@@ -242,6 +249,11 @@ canvas.addEventListener("pointermove", function(e){
     var mx = (pts2[0].x+pts2[1].x)/2, my = (pts2[0].y+pts2[1].y)/2;
     cam.x = Math.max(-4, Math.min(W+4, pinch.wx - (mx - r.left - r.width/2)/(16*z)));
     cam.y = Math.max(-4, Math.min(H+4, pinch.wy - (my - r.top - r.height/2)/(16*z)));
+    return;
+  }
+  if(zoneDrag.i>=0){
+    if(Math.abs(e.clientX-zoneDrag.sx)+Math.abs(e.clientY-zoneDrag.sy)>6) zoneDrag.moved = true;
+    if(zoneDrag.moved){ var zw = toWorld(e.clientX, e.clientY); ui.zonePts[zoneDrag.i] = snapPt(zw.wx, zw.wy); }
     return;
   }
   var w = toWorld(e.clientX, e.clientY);
@@ -275,6 +287,11 @@ function endPointer(e){
 
 canvas.addEventListener("pointerup", function(e){
   if(!game) return;
+  if(zoneDrag.i>=0){
+    var zd = zoneDrag; zoneDrag = { i:-1 }; endPointer(e);
+    if(!zd.moved && zd.i===0 && !ui.zoneClosed && ui.zonePts.length>=3){ ui.zoneClosed = true; ui.zoneN = null; buzz(8); }
+    renderUI(); return;
+  }
   var wasMoved = drag.moved;
   endPointer(e);
   if(wasMoved) return;
@@ -293,7 +310,17 @@ canvas.addEventListener("pointerup", function(e){
   var w = toWorld(e.clientX, e.clientY);
   ui.objOpen = false; ui.layersOpen = false;
   if(w.tx<0||w.ty<0||w.tx>=W||w.ty>=H){ renderUI(); return; }
-  if(ui.roadMode){
+  if(ui.extPlace){
+    var ep = ui.extPlace, eb = game.buildings.filter(function(b){ return b.id===ep.bid; })[0], eti = w.ty*W+w.tx;
+    if(eb && game.freeYardCells(eb).indexOf(eti)>=0){
+      game.buyExtension(ep.bid, ep.ext, eti); ui.extPlace = null; ui.selId = ep.bid; AudioFX.build(); buzz(8);
+    } else flash("Touchez une case verte de la cour.");
+  }
+  else if(ui.zoneMode){
+    if(ui.zoneClosed) flash("Glissez un point pour ajuster le contour, ou ↶ pour le rouvrir.");
+    else { ui.zonePts.push(snapPt(w.wx, w.wy)); buzz(5); }
+  }
+  else if(ui.roadMode){
     if(!game.toggleRoad(w.tx, w.ty)) flash("Impossible de tracer une route ici.");
   }
   else if(ui.buildSel){
@@ -318,7 +345,7 @@ canvas.addEventListener("pointerup", function(e){
   }
   renderUI();
 });
-canvas.addEventListener("pointercancel", endPointer);
+canvas.addEventListener("pointercancel", function(e){ zoneDrag = { i:-1 }; endPointer(e); });
 canvas.addEventListener("pointerleave", function(e){ if(e.pointerType==="mouse"){ ui.hoverTip = null; renderTip(); } });
 canvas.addEventListener("wheel", function(e){
   e.preventDefault();
@@ -399,15 +426,36 @@ document.addEventListener("click", function(e){
       } else {
         ui.cat = (ui.cat===arg ? null : arg); ui.buildSel = null; ui.roadMode = false; ui.selId = null; ui.sheet = null;
       }
-      ui.layersOpen = false;
+      ui.layersOpen = false; clearTools();
+      break;
+    case "zone":
+      clearTools(); ui.zoneMode = true; ui.cat = null; ui.buildSel = null; ui.roadMode = false; ui.selId = null; ui.sheet = null;
+      break;
+    case "zoneundo": if(ui.zoneClosed) ui.zoneClosed = false; else ui.zonePts.pop(); ui.zoneN = null; break;
+    case "zoneclose": if(ui.zonePts.length>=3){ ui.zoneClosed = true; ui.zoneN = null; } break;
+    case "zoneminus": case "zoneplus": {
+      var zo2 = zoneOverlay(g), zpl = zo2 && zo2.plan;
+      if(zpl && !zpl.err) ui.zoneN = Math.max(zpl.nMin, Math.min(zpl.nMax, zpl.n + (arg==="1" ? 1 : -1)));
+      break;
+    }
+    case "zoneok":
+      if(ui.zoneClosed){
+        var zerr = g.traceZone(ui.zonePts, ui.zoneN==null ? undefined : ui.zoneN);
+        if(zerr) flash(zerr); else { AudioFX.build(); buzz(8); ui.zonePts = []; ui.zoneClosed = false; ui.zoneN = null; }
+      }
+      break;
+    case "extauto":
+      if(ui.extPlace){ g.buyExtension(ui.extPlace.bid, ui.extPlace.ext); ui.selId = ui.extPlace.bid; ui.extPlace = null; }
       break;
     case "build":
       if(!g.canAfford(arg)){ flash(missingText(arg, g)); break; }
-      ui.buildSel = arg; ui.cat = null; ui.selId = null; ui.sheet = null;
+      clearTools(); ui.buildSel = arg; ui.cat = null; ui.selId = null; ui.sheet = null;
       break;
-    case "cancel": ui.buildSel = null; ui.roadMode = false; break;
+    case "cancel":
+      if(ui.extPlace){ ui.selId = ui.extPlace.bid; }
+      ui.buildSel = null; ui.roadMode = false; clearTools(); break;
     case "sheet":
-      ui.sheet = (ui.sheet===arg ? null : arg); ui.cat = null; ui.selId = null; ui.buildSel = null; ui.roadMode = false; ui.layersOpen = false;
+      ui.sheet = (ui.sheet===arg ? null : arg); ui.cat = null; ui.selId = null; ui.buildSel = null; ui.roadMode = false; ui.layersOpen = false; clearTools();
       break;
     case "closesheet": ui.sheet = null; ui.cat = null; ui.selId = null; break;
     case "obj": ui.objOpen = !ui.objOpen; break;
@@ -418,7 +466,14 @@ document.addEventListener("click", function(e){
     case "selclose": ui.selId = null; break;
     case "assign": if(ui.selId!=null) g.assign(ui.selId); break;
     case "unassign": if(ui.selId!=null) g.unassign(ui.selId); break;
-    case "ext": if(ui.selId!=null) g.buyExtension(ui.selId, arg); break;
+    case "ext":
+      if(ui.selId!=null){
+        var xb = g.buildings.filter(function(b){ return b.id===ui.selId; })[0];
+        /* parcelle tracée avec plusieurs cases libres : le joueur choisit la case sur la carte */
+        if(xb && xb.plot && g.freeYardCells(xb).length>1){ ui.extPlace = { bid:xb.id, ext:arg }; ui.selId = null; }
+        else g.buyExtension(ui.selId, arg);
+      }
+      break;
     case "crop": if(ui.selId!=null) g.setCrop(ui.selId, arg); break;
     case "churchup": if(ui.selId!=null) g.churchUp(ui.selId, arg); break;
     case "policy": g.setPolicy(arg, !g.policies[arg]); break;
@@ -636,7 +691,27 @@ function renderHud(g){
   /* aide à la pose (bas de l'écran) */
   var h = "";
   if(ui.flash) h += "<div class='flash'>"+esc(ui.flash)+"</div>";
-  if(ui.roadMode){
+  if(ui.extPlace){
+    var xd = EXT_DEFS[ui.extPlace.ext];
+    h += "<div class='frame place'><div class='t'><b>"+esc(xd.name)+" "+costHtml(xd.cost, g)+"</b><span>Touchez une case verte de la cour.</span></div>"
+       + "<button class='b' data-act='extauto'>Auto</button><button class='b sq' data-act='cancel' aria-label='Annuler'>"+ic("close")+"</button></div>";
+  } else if(ui.zoneMode){
+    var zo = zoneOverlay(g), zp = ui.zonePts.length, zpl2 = zo && zo.plan, ztxt, ztitle = "Zone de bourgages", zok = ui.zoneClosed && zpl2 && !zpl2.err;
+    if(!ui.zoneClosed) ztxt = zp===0 ? "Touchez la carte pour poser les points du contour, le long d'une route."
+      : zp<3 ? zp+" point"+(zp>1?"s":"")+" posé"+(zp>1?"s":"")+". Continuez le contour."
+      : zp+" points. Touchez le premier point (doré) ou « Fermer ».";
+    else if(!zok) ztxt = zpl2 ? zpl2.err : "";
+    else {
+      var zs = zpl2.plots.map(function(p){ return p.cells.length-1; }), zmn = Math.min.apply(null, zs), zmx = Math.max.apply(null, zs);
+      ztitle = zpl2.plots.length+" maison"+(zpl2.plots.length>1?"s":"")+" "+costHtml({ timber:zpl2.plots.length*(BUILD_DEFS.burgage.cost.timber||0) }, g);
+      ztxt = "Jardins de "+(zmn===zmx ? zmn : zmn+" à "+zmx)+" case"+(zmx>1?"s":"")+(zpl2.limited ? " · bois insuffisant pour plus" : "")+". Glissez un point pour ajuster.";
+    }
+    h += "<div class='frame place wrap'>"+ic("house","l")+"<div class='t'><b>"+ztitle+"</b><span>"+esc(ztxt)+"</span></div><div class='sizes'>";
+    if(zp>0) h += "<button class='b' data-act='zoneundo' aria-label='Annuler le dernier point'>↶</button>";
+    if(!ui.zoneClosed && zp>=3) h += "<button class='b' data-act='zoneclose'>Fermer</button>";
+    if(zok) h += "<button class='b' data-act='zoneminus' data-arg='-1' aria-label='Une maison de moins'>−</button><button class='b' data-act='zoneplus' data-arg='1' aria-label='Une maison de plus'>+</button><button class='b gold' data-act='zoneok'>Tracer</button>";
+    h += "</div><button class='b sq' data-act='cancel' aria-label='Annuler'>"+ic("close")+"</button></div>";
+  } else if(ui.roadMode){
     h += "<div class='frame place'>"+ic("road","l")+"<div class='t'><b>Routes</b><span>Touchez une case pour tracer ou effacer. Les villageois y marchent plus vite.</span></div>"
        + "<button class='b gold' data-act='cancel'>Terminer</button></div>";
   } else if(ui.buildSel){
@@ -695,6 +770,7 @@ function sheetBuild(g, catId){
   }
   var acts = cat.actions || [];
   for(var a=0;a<acts.length;a++){
+    if(acts[a]==="zone") h += actionCard("zone", ic("house","l"), "Tracer une zone", costHtml(BUILD_DEFS.burgage.cost, g)+"<span class='dim'> / maison</span>", "Parcelles le long d'une route");
     if(acts[a]==="buyox") h += actionCard("buyox", ic("ox","l"), "Acheter un bœuf", "<span class='cost"+(g.treasury<20?" no":"")+"'>20"+ic("coin","s")+"</span>", "Labour et transport plus rapides");
     if(acts[a]==="militia") h += actionCard("militia", ic("sword","l"), "Lever la milice", "<span class='cost'>"+g.units.length+" / "+g.militiaCount()+"</span>", "1 soldat pour 2 familles");
     if(acts[a]==="merc") h += actionCard("merc", ic("shield","l"), "Mercenaire", "<span class='cost"+(g.treasury<25?" no":"")+"'>25"+ic("coin","s")+"</span>", "Loué pour 6 mois");
@@ -730,7 +806,7 @@ function sheetSelection(g){
     h += "<div class='kv'><span class='k'>"+ic("family","s")+(fam ? esc(fam.name) : "Logement vacant")+"</span>"
        + (sel.monthsGood>0 ? "<span class='v good'>Bien loti : "+sel.monthsGood+" mois</span>" : "")+"</div>";
     if(sel.done){
-      h += "<div class='sec'>Arrière-cour</div>";
+      h += "<div class='sec'>Arrière-cour"+(sel.plot ? " · "+(g.yardCells(sel).length-g.freeYardCells(sel).length)+"/"+g.yardCells(sel).length+" cases" : "")+"</div>";
       var exts = sel.exts || [];
       for(var ei=0; ei<EXT_ORDER.length; ei++){
         var ed = EXT_DEFS[EXT_ORDER[ei]];
@@ -849,7 +925,7 @@ function renderDock(g){
   var h = "";
   for(var i=0;i<CATS.length;i++){
     var c = CATS[i];
-    var on = c.tool ? ui.roadMode : (ui.cat===c.id || (ui.buildSel && c.items.indexOf(ui.buildSel)>=0));
+    var on = c.tool ? ui.roadMode : (ui.cat===c.id || (ui.buildSel && c.items.indexOf(ui.buildSel)>=0) || (c.id==="home" && (ui.zoneMode || ui.extPlace)));
     h += "<button class='cat"+(on?" on":"")+"' data-act='cat' data-arg='"+c.id+"'>"+ic(c.icon)+"<span>"+c.name+"</span></button>";
   }
   setHTML(elDock, h);
@@ -966,6 +1042,29 @@ renderUI();
 
 /* ----- boucle principale ----- */
 var _lastT = performance.now(), _acc = 0, _uiAcc = 0, _saveAcc = 0;
+/* étape 3 : outils de zone et de pose dans la cour */
+function clearTools(){ ui.zoneMode = false; ui.zonePts = []; ui.zoneClosed = false; ui.zoneN = null; ui.extPlace = null; zoneDrag = { i:-1 }; }
+var zoneDrag = { i:-1 };
+function snapPt(x, y){ return [Math.max(0, Math.min(W, Math.round(x*4)/4)), Math.max(0, Math.min(H, Math.round(y*4)/4))]; }
+function nearZonePt(x, y){
+  var r = Math.max(0.35, 22/(16*cam.zoom)), best = -1;
+  for(var i=0; i<ui.zonePts.length; i++){ var d = Math.hypot(ui.zonePts[i][0]-x, ui.zonePts[i][1]-y); if(d<=r){ r = d; best = i; } }
+  return best;
+}
+var _zoneKey = "", _zoneOv = null;
+function zoneOverlay(g){
+  if(ui.extPlace){
+    var eb = g.buildings.filter(function(b){ return b.id===ui.extPlace.bid; })[0];
+    return eb ? { free:g.freeYardCells(eb) } : null;
+  }
+  if(!ui.zoneMode || ui.zonePts.length===0) return null;
+  var key = JSON.stringify(ui.zonePts)+"|"+ui.zoneClosed+"|"+ui.zoneN+"|"+g.uiVersion+"|"+g.buildings.length+"|"+Math.floor(g.stock.timber);
+  if(key===_zoneKey) return _zoneOv;
+  _zoneKey = key;
+  _zoneOv = { pts:ui.zonePts.slice(), closed:ui.zoneClosed, plan: ui.zoneClosed ? g.planZone(ui.zonePts, ui.zoneN==null ? undefined : ui.zoneN) : null };
+  return _zoneOv;
+}
+
 function loop(now){
   var dt = Math.min(200, now-_lastT); _lastT = now;
   if(game && game.speed>0 && !game.pendingEvent && !uiMenu){
@@ -992,7 +1091,7 @@ function loop(now){
   if(game) soundForToasts(game);
   _uiAcc += dt;
   if(_uiAcc>300){ _uiAcc = 0; renderUI(); }
-  if(game) drawGame(ctx, game, cam, canvas, hover, ui.buildSel, ui.selId, ui.layers, now);
+  if(game){ RENDER.setOverlay(zoneOverlay(game)); drawGame(ctx, game, cam, canvas, hover, ui.buildSel, ui.selId, ui.layers, now); }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
