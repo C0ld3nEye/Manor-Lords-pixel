@@ -909,8 +909,9 @@ function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
   /* minimap (en pixels CSS) */
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   var ppt = 2, mw = W*ppt, mh = H*ppt;
-  var mmx = (canvas.clientWidth||1) - 10 - mw, mmy = (canvas.clientHeight||1) - 10 - mh;
-  if(mmx > 40 && mmy > 40){
+  /* en haut à droite : le bas de l'écran est réservé aux panneaux et à l'aide de pose */
+  var mmx = (canvas.clientWidth||1) - 8 - mw, mmy = 8;
+  if(mmx > 120 && (canvas.clientHeight||1) > mh + 160){
     ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = "#3a2a1c"; ctx.fillRect(mmx-3, mmy-3, mw+6, mh+6);
     ctx.fillStyle = "#c9a45a"; ctx.fillRect(mmx-2, mmy-2, mw+4, mh+4);

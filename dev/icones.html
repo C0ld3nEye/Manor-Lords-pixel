@@ -1,0 +1,9 @@
+<!doctype html><html lang="fr"><head><meta charset="UTF-8"/><title>Icônes</title>
+<style>body{background:#2a2119;color:#f0e6cf;font:12px system-ui;margin:12px}
+.g{display:flex;flex-wrap:wrap;gap:10px}.c{display:flex;flex-direction:column;align-items:center;gap:4px;width:92px}
+.c .ic{width:72px;height:72px;background-color:#3d3024}.t{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-top:16px}
+.t div{display:flex;flex-direction:column;align-items:center;gap:4px}.t .th{transform:scale(2);transform-origin:bottom center;margin-top:40px}</style></head>
+<body><div class="g" id="g"></div><div class="t" id="t"></div>
+<script src="../js/sim.js"></script><script src="../js/sprites.js"></script><script src="../js/icons.js"></script>
+<script>ICONS.init();var h="";ICONS.names().forEach(function(n){h+="<div class='c'>"+ICONS.ic(n)+n+"</div>";});document.getElementById("g").innerHTML=h;
+var t="";BUILD_ORDER.forEach(function(d){t+="<div>"+ICONS.th(d)+d+"</div>";});document.getElementById("t").innerHTML=t;</script></body></html>

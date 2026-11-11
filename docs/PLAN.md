@@ -12,7 +12,7 @@ Constat après la première version : le jeu était fonctionnel en simulation ma
 | Étape | Contenu | État |
 |---|---|---|
 | 1 | **Moteur de rendu pixel-art** : sprites dessinés par le code (`js/sprites.js`), atlas unique, vue 3/4, 4 saisons, neige sur les toits, sol peint en cache (berges, routes à ornières, prairies, lisières), ombres, chantiers avec échafaudage, villageois animés avec outils et charges, fumées, drapeaux, météo, minimap ; rendu basse résolution agrandi par paliers entiers (pixels nets, léger sur mobile) | ✅ |
-| 2 | **Interface mobile** : HUD compact (il occupe aujourd'hui ~40 % de l'écran), icônes cassées à remplacer, notifications qui recouvrent la carte, panneau d'objectifs repliable | à faire |
+| 2 | **Interface mobile** : barre du haut sur 2 lignes (la carte passe d'environ 60 % à 84 % de l'écran), icônes pixel-art à la place des emojis (`js/icons.js`), dock de construction par catégories avec tiroir de cartes, panneaux en feuille du bas (bâtiment, réserves avec capacité, seigneurie, menu), objectifs repliables, notifications discrètes, minimap et calques en haut à droite, appui long pour annuler, mise à jour de l'interface sur place (un toucher n'est plus perdu quand un chiffre change), nouvel écran d'accueil (mode, difficulté, emplacement) ; correctif : le choix de taille des champs n'était jamais proposé | ✅ |
 | 3 | **Parcelles de bourgage** en bandes le long des routes (maison sur rue, cour à l'arrière avec extensions visibles) | à faire |
 | 4 | Ensuite selon les priorités : routes et logistique, commerce, guerre | à faire |
 

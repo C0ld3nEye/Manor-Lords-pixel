@@ -1,0 +1,632 @@
+/* ================= ICÔNES D'INTERFACE PIXEL-ART =================
+   Remplace les emojis (rendu variable selon le téléphone, certains cassés)
+   par des icônes 12 × 12 dessinées pixel par pixel, cohérentes avec le jeu.
+   - Chaque icône est une « carte de caractères » : 1 lettre = 1 pixel, '.' = transparent.
+   - Les miniatures de bâtiments sont tirées directement de l'atlas des sprites (SPR).
+   - Tout est converti une seule fois en images (data URL) et exposé en classes CSS :
+       <i class="ic ic-timber"></i>     <i class="th th-burgage"></i>
+   ================================================================ */
+var ICONS = (function(){
+"use strict";
+
+/* palette commune (les icônes peuvent la surcharger) */
+var PAL = {
+  k:"#1e1712", w:"#f4ecd8", s:"#c9b896", "0":"#3a3f47",
+  "1":"#4a3322", "2":"#6b4a30", "3":"#8c6642", "4":"#ad8758",
+  g:"#3f7238", G:"#80b150", d:"#1f3a22",
+  r:"#b83c34", R:"#e0624f", q:"#6e1e1c",
+  y:"#e8c35a", Y:"#fff2b0", o:"#c09030", O:"#7a5a1a",
+  b:"#4a78a0", B:"#a6d0e2", n:"#1f3550",
+  e:"#9aa2ab", E:"#c3c9cf", m:"#565d67",
+  f:"#e07a24", F:"#a83a1a", p:"#d9a17a", P:"#a8704e",
+  c:"#5e4520", C:"#c8a556", i:"#e88aa8", I:"#f6c0d0"
+};
+
+var MAPS = {
+  /* ---------- ressources ---------- */
+  timber: ["............",
+           "....kkkkkkk.",
+           "...k44k3333k",
+           "...k434k222k",
+           "...k44k1111k",
+           ".kkkkkkkkkkk",
+           "k44k3333333k",
+           "k434k222222k",
+           "k44k1111111k",
+           ".kkkkkkkkkk.",
+           "............",
+           "............"],
+  firewood:["......F.....",
+           ".....Ff.....",
+           "....Fff..F..",
+           "...Ffyf.Ff..",
+           "...FfyyFff..",
+           "..FfyYyfyfF.",
+           "..FfyYYyyfF.",
+           "..FfyYYYyfF.",
+           "...FfyYyfF..",
+           "..kkkkkkkk..",
+           ".k3223k3223k",
+           "..kkkkkkkk.."],
+  stone:  ["............",
+           "............",
+           "....kkkk....",
+           "...kEEEek...",
+           "..kEEeeekk..",
+           ".kEEEeeemkk.",
+           ".kEEeeeemmk.",
+           "kEEeeeemmmk.",
+           "keeeeemmmmkk",
+           "keemmmmmm00k",
+           ".kkkkkkkkkk.",
+           "............"],
+  grain:  ["...Y..Y..Y..",
+           "..yY.yYy.Yy.",
+           "..yYoyYyoYy.",
+           "...yoyYyoy..",
+           "....oyYyo...",
+           ".....oyo....",
+           "....22222...",
+           ".....oyo....",
+           "....oy.yo...",
+           "...oy...yo..",
+           "..oy.....yo.",
+           "............"],
+  bread:  ["............",
+           "............",
+           "............",
+           "...kkkkkk...",
+           "..kyyYYyyk..",
+           ".kyYYyyYYyk.",
+           "kyyyyyyyyyyk",
+           "kyyfyyyfyyyk",
+           "kffffffffffk",
+           ".kkkkkkkkkk.",
+           "............",
+           "............"],
+  berries:["........gG..",
+           ".......gGg..",
+           "......gk....",
+           "..kkk.kkk...",
+           ".kRrrkkRrrk.",
+           ".kRrrrkRrrk.",
+           ".krrrkkkrrk.",
+           "..kkkRrrkk..",
+           "....kRrrrk..",
+           "....krrrqk..",
+           ".....kqqk...",
+           "......kk...."],
+  meat:   ["......kkkk..",
+           ".....kMMmmk.",
+           "....kMMmmmmk",
+           "....kMmmmmmk",
+           "....kmmmmmdk",
+           ".....kmmmddk",
+           "....kkkkddk.",
+           "...kwwkkkk..",
+           "..kwwk......",
+           ".kwwk.......",
+           "kwwwk.......",
+           ".kwk........"],
+  eggs:   ["............",
+           "............",
+           "..kkkk......",
+           ".kwwwwk.....",
+           "kwWwwwwk....",
+           "kwWwwwwkkk..",
+           "kwwwwwkwwwk.",
+           "kwwwwkwWwwwk",
+           "kswwwkwwwwsk",
+           ".kssskwwwssk",
+           "..kkk.kssssk",
+           ".......kkkk."],
+  veg:    ["........gG..",
+           ".......gGg.g",
+           "......kgGgG.",
+           ".....kffkg..",
+           "....kfffFk..",
+           "...kfFffk...",
+           "..kffFfk....",
+           ".kfffFk.....",
+           ".kffFk......",
+           "kffk........",
+           "kfk.........",
+           ".k.........."],
+  apples: ["......2.....",
+           ".....2.gG...",
+           "...kkk2kk...",
+           "..kRRrkrrk..",
+           ".kRwrrrrrrk.",
+           ".kRrrrrrrrk.",
+           ".krrrrrrrqk.",
+           ".krrrrrrqqk.",
+           "..krrrrqqk..",
+           "...kqkkqk...",
+           "....k..k....",
+           "............"],
+  honey:  ["............",
+           "............",
+           "...kkkkkk...",
+           "...k2222k...",
+           "..kkkkkkkk..",
+           "..kyyYyyyk..",
+           ".kyYYyyyyyk.",
+           ".kyYyyyyyok.",
+           ".kyyyyyyyok.",
+           ".kyyyyyyook.",
+           "..kooooook..",
+           "...kkkkkk..."],
+  clothes:["............",
+           "..kk....kk..",
+           ".kkbbkkbbkk.",
+           "kbBbbbbbbbbk",
+           "kbbbbbbbbbbk",
+           "kkkbbbbbbkkk",
+           "..kbbbbbbk..",
+           "..kyyyyyyk..",
+           "..kbbbbbbk..",
+           "..kbbbbbnk..",
+           "..kkkkkkkk..",
+           "............"],
+  ale:    ["............",
+           "...kkkkk....",
+           "..kwwWwwk...",
+           ".kwwwwwwwk..",
+           ".k3443443kk.",
+           ".k3443443k.k",
+           ".k1111111k.k",
+           ".k3443443k.k",
+           ".k3443443kk.",
+           ".k1111111k..",
+           ".kkkkkkkkk..",
+           "............"],
+  ox:     ["s..........s",
+           "ws........ws",
+           ".wwkkkkkkww.",
+           "..k333333k..",
+           ".kk3k33k3kk.",
+           "..k333333k..",
+           "..k333333k..",
+           "...k3333k...",
+           "...kppppk...",
+           "...kpkkpk...",
+           "....kkkk....",
+           "............"],
+  /* ---------- statistiques ---------- */
+  coin:   ["............",
+           "....kkkk....",
+           "..kkyyyykk..",
+           ".kyYYyyyyok.",
+           ".kYyyOOyyok.",
+           "kyYyOyyOyyok",
+           "kyyyOyyOyyok",
+           "kyyyyOOyyyok",
+           ".kyyyyyyyok.",
+           ".kooyyyyook.",
+           "..kkookkkk..",
+           "....kkkk...."],
+  heart:  ["............",
+           "............",
+           ".kRRrkkrrrk.",
+           "kRwRrrrrrrrk",
+           "kRRrrrrrrrqk",
+           "krrrrrrrrrqk",
+           ".krrrrrrrqk.",
+           "..krrrrrqk..",
+           "...krrrqk...",
+           "....krqk....",
+           ".....kk.....",
+           "............"],
+  family: ["............",
+           "..kkk.......",
+           ".kpppk..kkk.",
+           ".kpppk.kpppk",
+           "..kkk..kpppk",
+           ".kbbbk..kkk.",
+           "kbbbbbkkrrrk",
+           "kbbbbbkkrrrk",
+           "kbbbbbkkrrrk",
+           ".kbbbk.krrrk",
+           ".kkkkk.kkkkk",
+           "............"],
+  crown:  ["............",
+           "............",
+           ".k...kk...k.",
+           ".kk.kyyk.kk.",
+           ".kykkyykkyk.",
+           ".kyyyyyyyyk.",
+           ".kyRyyyyByk.",
+           ".kyyyyyyyyk.",
+           ".kooooooook.",
+           ".kkkkkkkkkk.",
+           "............",
+           "............"],
+  bag:    ["....kkkk....",
+           "....kCCk....",
+           ".....kk.....",
+           "....kCCk....",
+           "...kCCCCk...",
+           "..kCCCCC3k..",
+           ".kCCCyyCC3k.",
+           ".kCCyCCCC3k.",
+           ".kCCCyyCC3k.",
+           ".kCCCCyC33k.",
+           "..kCyyC33k..",
+           "...kkkkkk..."],
+  sword:  ["..........kk",
+           ".........kEk",
+           "........kEk.",
+           ".......kEk..",
+           "......kEk...",
+           "..k..kEk....",
+           "..kkkEk.....",
+           "...kyk......",
+           "..kykkk.....",
+           ".k2k.k......",
+           "k2k.........",
+           "kk.........."],
+  /* ---------- saisons ---------- */
+  winter: ["............",
+           ".B...w...B..",
+           "..B..w..B...",
+           "...B.w.B....",
+           "....BwB.....",
+           ".wwwwwwwww..",
+           "....BwB.....",
+           "...B.w.B....",
+           "..B..w..B...",
+           ".B...w...B..",
+           "............",
+           "............"],
+  spring: ["............",
+           ".....ii.....",
+           "....iIIi....",
+           "..ii.ii.ii..",
+           ".iIIiyyiIIi.",
+           ".iiiiyyiiii.",
+           "..ii.ii.ii..",
+           "....iiii....",
+           ".....gg.....",
+           "..gg.g......",
+           "...ggg......",
+           ".....g......"],
+  summer: [".....yy.....",
+           ".y...yy...y.",
+           "..y.oooo.y..",
+           "...oYYYYo...",
+           "..oYYYYYYo..",
+           "yyoYYYYYYoyy",
+           "yyoYYYYYYoyy",
+           "..oYYYYYYo..",
+           "...oYYYYo...",
+           "..y.oooo.y..",
+           ".y...yy...y.",
+           ".....yy....."],
+  autumn: ["............",
+           "........kkk.",
+           "......kkfFk.",
+           ".....kffyFk.",
+           "....kffyfFk.",
+           "...kffyffFk.",
+           "...kfyfffk..",
+           "..kfyfffk...",
+           "..kyffkk....",
+           ".kykkk......",
+           "k2..........",
+           ".k.........."],
+  /* ---------- boutons ---------- */
+  pause:  ["............",
+           "..kkk..kkk..",
+           "..kwk..kwk..",
+           "..kwk..kwk..",
+           "..kwk..kwk..",
+           "..kwk..kwk..",
+           "..kwk..kwk..",
+           "..kwk..kwk..",
+           "..kwk..kwk..",
+           "..kwk..kwk..",
+           "..kkk..kkk..",
+           "............"],
+  play:   ["............",
+           "...kk.......",
+           "...kwk......",
+           "...kwwk.....",
+           "...kwwwk....",
+           "...kwwwwk...",
+           "...kwwwwk...",
+           "...kwwwk....",
+           "...kwwk.....",
+           "...kwk......",
+           "...kk.......",
+           "............"],
+  menu:   [".kkkkkkkkkk.",
+           ".kwwwwwwwwk.",
+           ".kkkkkkkkkk.",
+           "............",
+           ".kkkkkkkkkk.",
+           ".kwwwwwwwwk.",
+           ".kkkkkkkkkk.",
+           "............",
+           ".kkkkkkkkkk.",
+           ".kwwwwwwwwk.",
+           ".kkkkkkkkkk.",
+           "............"],
+  close:  ["............",
+           ".kk......kk.",
+           "kwwk....kwwk",
+           ".kwwk..kwwk.",
+           "..kwwkkwwk..",
+           "...kwwwwk...",
+           "...kwwwwk...",
+           "..kwwkkwwk..",
+           ".kwwk..kwwk.",
+           "kwwk....kwwk",
+           ".kk......kk.",
+           "............"],
+  layers: ["............",
+           "kkkkkkkkkkkk",
+           "kGGGswwwsBBk",
+           "kGgGswRwsBBk",
+           "kGGwsRwRswBk",
+           "kwwwswRwswwk",
+           "kwwRswwwsGGk",
+           "kwRwswwwsGgk",
+           "kRwwswwwsGGk",
+           "kkkkkkkkkkkk",
+           "............",
+           "............"],
+  scroll: [".kkkkkkkkkk.",
+           "kswwwwwwwwsk",
+           ".kkkkkkkkkk.",
+           "..kwwwwwwk..",
+           "..kw2222wk..",
+           "..kwwwwwwk..",
+           "..kw222wwk..",
+           "..kwwwwwwk..",
+           "..kw2222wk..",
+           ".kkkkkkkkkk.",
+           "kswwwwwwwwsk",
+           ".kkkkkkkkkk."],
+  flag:   ["kk..........",
+           "k2kkkkkkk...",
+           "k2kRRrrrrk..",
+           "k2kRrryrrrk.",
+           "k2krryyyrrk.",
+           "k2krrryrrk..",
+           "k2krrrrrrrk.",
+           "k2kkkkkkkkk.",
+           "k2k.........",
+           "k2k.........",
+           "k2k.........",
+           "kkk........."],
+  help:   ["....kkkkk...",
+           "...kwwwwwk..",
+           "..kwwkkkwwk.",
+           "..kkk..kwwk.",
+           ".....kkwwk..",
+           "....kwwwk...",
+           "....kwwk....",
+           "....kkkk....",
+           "....kwwk....",
+           "....kwwk....",
+           "....kkkk....",
+           "............"],
+  sound:  ["............",
+           "............",
+           ".....kk.....",
+           "....kwk.w...",
+           ".kkkwwk..w..",
+           ".kwwwwk.w.w.",
+           ".kwwwwk.w.w.",
+           ".kkkwwk..w..",
+           "....kwk.w...",
+           ".....kk.....",
+           "............",
+           "............"],
+  mute:   ["............",
+           "............",
+           ".....kk.....",
+           "....kwk.....",
+           ".kkkwwkR...R",
+           ".kwwwwk.R.R.",
+           ".kwwwwk..R..",
+           ".kkkwwk.R.R.",
+           "....kwkR...R",
+           ".....kk.....",
+           "............",
+           "............"],
+  /* ---------- catégories de construction ---------- */
+  house:  [".....kk.....",
+           "....kCCk....",
+           "...kCCcCk...",
+           "..kCCcCCCk..",
+           ".kCCCCCCcCk.",
+           "kcccccccccck",
+           ".kwwwwwwwwk.",
+           ".kwnwwk22wk.",
+           ".kwwwwk22wk.",
+           ".kwwwwk22wk.",
+           ".kkkkkkkkkk.",
+           "............"],
+  axe:    [".......kk...",
+           "......kEEk..",
+           ".....kEEEEk.",
+           "....kmEEEEEk",
+           "....kkmEEEEk",
+           "...k3kkmEEk.",
+           "..k3k..kkk..",
+           ".k3k........",
+           "k3k.........",
+           "kk..........",
+           "............",
+           "............"],
+  crate:  ["............",
+           ".kkkkkkkkkk.",
+           ".k43333334k.",
+           ".k3k3333k3k.",
+           ".k33k33k33k.",
+           ".k333kk333k.",
+           ".k333kk333k.",
+           ".k33k33k33k.",
+           ".k3k3333k3k.",
+           ".k43333334k.",
+           ".kkkkkkkkkk.",
+           "............"],
+  church: ["...k........",
+           "..kyk.......",
+           "...k........",
+           "..kmk.......",
+           ".kmmmk......",
+           "kmmmmmkkkkk.",
+           ".kEeEkmmmmmk",
+           ".kEnEkEEEEEk",
+           ".kEEEkEnEnEk",
+           ".kE2EkEEEEEk",
+           ".kkkkkkkkkkk",
+           "............"],
+  shield: [".kkkkkkkkkk.",
+           ".kbbbbyyyyk.",
+           ".kbBbbyYyyk.",
+           ".kbbbbyyyyk.",
+           ".kbbbbyyyyk.",
+           ".kyyyybbbbk.",
+           ".kyyyybbbbk.",
+           "..kyyybbbk..",
+           "..kyyybbbk..",
+           "...kyybbk...",
+           "....kybk....",
+           ".....kk....."],
+  tree:   ["....kkkk....",
+           "..kkGGGgkk..",
+           ".kGGGGgggdk.",
+           "kGGGgggggddk",
+           "kGGgggggggdk",
+           "kggggggggddk",
+           ".kggggggddk.",
+           "..kkdk3kkk..",
+           ".....k3k....",
+           ".....k3k....",
+           "....k332k...",
+           "....kkkkk..."]
+};
+
+/* couleurs propres à certaines icônes */
+var MAP_PAL = {
+  meat:  { M:"#e0925a", m:"#b4562e", d:"#7a321a" },
+  eggs:  { W:"#ffffff" },
+  bread: { Y:"#f2cf86", y:"#d8963c", f:"#9a5a24" }
+};
+
+/* variantes de couleur (même dessin, autre palette) */
+var VARIANTS = {
+  barley:  { map:"grain", pal:{ Y:"#eef0b0", y:"#c8c066", o:"#7f8a3a", "2":"#5a6a2a" } },
+  heart_g: { map:"heart", pal:{ R:"#a6e08a", r:"#5aa042", q:"#2f6a24", w:"#e6ffd8" } },
+  heart_y: { map:"heart", pal:{ R:"#f6dc7a", r:"#d6a83a", q:"#8a6a1a", w:"#fff6d0" } },
+  heart_r: { map:"heart" }
+};
+
+/* icônes dessinées par programme (formes difficiles en carte de caractères) */
+function drawRoad(set){
+  for(var y=0;y<12;y++){
+    var hw = 1.6 + y*0.38, cx = 6;
+    var x0 = Math.round(cx - hw), x1 = Math.round(cx + hw) - 1;
+    for(var x=0;x<12;x++){
+      if(x<x0-1 || x>x1+1) set(x, y, (x+y)%3===0 ? PAL.g : PAL.d);
+      else if(x===x0-1 || x===x1+1) set(x, y, PAL.k);
+      else set(x, y, (x===5||x===6) && (y%4<2) ? PAL["4"] : ((x+y*3)%5===0 ? PAL["2"] : PAL["3"]));
+    }
+  }
+}
+var FNS = { road: drawRoad };
+
+/* ---------- conversion en images ---------- */
+function canvasOf(w, h){ var c = document.createElement("canvas"); c.width = w; c.height = h; return c; }
+
+function fromMap(rows, pal){
+  var c = canvasOf(12, 12), x2 = c.getContext("2d");
+  for(var y=0;y<12;y++){
+    var row = rows[y] || "";
+    if(row.length!==12 && window.console) console.warn("icône : ligne "+y+" de "+row.length+" caractères");
+    for(var x=0;x<12;x++){
+      var ch = row.charAt(x);
+      if(!ch || ch===".") continue;
+      var col = (pal && pal[ch]) || PAL[ch];
+      if(!col) continue;
+      x2.fillStyle = col; x2.fillRect(x, y, 1, 1);
+    }
+  }
+  return c;
+}
+function fromFn(fn){
+  var c = canvasOf(12, 12), x2 = c.getContext("2d");
+  fn(function(x, y, col){ x2.fillStyle = col; x2.fillRect(x, y, 1, 1); });
+  return c;
+}
+
+/* miniatures de bâtiments : le vrai sprite du jeu, à l'échelle entière la plus proche */
+var THUMB = {
+  burgage:"burgage2_1", woodcutter:"woodcutter", forager:"forager", hunter:"hunter", quarry:"quarry",
+  farm:"farm", windmill:"windmill", granary:"granary", storehouse:"storehouse", market:"market_1",
+  trade:"trade", church:"church_11", tower:"tower", wall:"wall_10", manor:"manor"
+};
+function thumbCanvas(def){
+  var F = SPR.frames;
+  if(def==="field"){
+    /* morceau de champ de blé mûr (2 × 2 tuiles recadrées) */
+    var t = canvasOf(22, 20), tx = t.getContext("2d");
+    var n = F["field_wheat_5_0"] ? "field_wheat_5_0" : "field_wheat_4_0";
+    for(var j=0;j<2;j++) for(var i=0;i<2;i++){
+      var f0 = F[n]; if(!f0) continue;
+      tx.drawImage(SPR.atlas, f0.x, f0.y, f0.w, f0.h, i*16-5, j*16-6, f0.w, f0.h);
+    }
+    return t;
+  }
+  var name = THUMB[def] || def;
+  var f = F[name] || F[def];
+  if(!f) return null;
+  if(def==="windmill" && F["sails_1"]){
+    var s = F["sails_1"], c = canvasOf(40, f.h + 10), cx = c.getContext("2d");
+    cx.drawImage(SPR.atlas, f.x, f.y, f.w, f.h, 3, 10, f.w, f.h);
+    cx.drawImage(SPR.atlas, s.x, s.y, s.w, s.h, 1, 0, s.w, s.h);   /* moyeu à (17.5, 9.5) du corps, ailes centrées à 19.5 */
+    return c;
+  }
+  var c2 = canvasOf(f.w, f.h);
+  c2.getContext("2d").drawImage(SPR.atlas, f.x, f.y, f.w, f.h, 0, 0, f.w, f.h);
+  return c2;
+}
+
+var ready = false, urls = {}, sizes = {};
+function init(){
+  if(ready) return;
+  ready = true;
+  if(typeof SPR!=="undefined") SPR.build();
+  var css = ".ic,.th{display:inline-block;flex:0 0 auto;background-repeat:no-repeat;background-size:100% 100%;"
+          + "image-rendering:pixelated;image-rendering:crisp-edges;vertical-align:middle}\n";
+  var k;
+  for(k in MAPS) urls[k] = fromMap(MAPS[k], MAP_PAL[k]).toDataURL();
+  for(k in VARIANTS) urls[k] = fromMap(MAPS[VARIANTS[k].map], VARIANTS[k].pal).toDataURL();
+  for(k in FNS) urls[k] = fromFn(FNS[k]).toDataURL();
+  for(k in urls) css += ".ic-"+k+"{background-image:url("+urls[k]+")}\n";
+  /* miniatures */
+  if(typeof SPR!=="undefined" && SPR.atlas){
+    var defs = Object.keys(THUMB).concat(["field"]);
+    for(var i=0;i<defs.length;i++){
+      var cv = thumbCanvas(defs[i]);
+      if(!cv) continue;
+      var sc = cv.height<=26 ? 2 : 1;
+      sizes[defs[i]] = { w:cv.width*sc, h:cv.height*sc };
+      css += ".th-"+defs[i]+"{background-image:url("+cv.toDataURL()+");width:"+(cv.width*sc)+"px;height:"+(cv.height*sc)+"px}\n";
+    }
+  }
+  var st = document.createElement("style");
+  st.id = "icon-css";
+  st.textContent = css;
+  document.head.appendChild(st);
+}
+
+/* raccourcis HTML */
+function ic(name, cls){ return "<i class='ic ic-"+name+(cls?" "+cls:"")+"'></i>"; }
+function th(def){ return "<i class='th th-"+def+"'></i>"; }
+
+return { init:init, ic:ic, th:th, names:function(){ return Object.keys(urls); }, sizes:sizes, MAPS:MAPS };
+})();
