@@ -21,7 +21,8 @@ body {
   -webkit-user-select: none; user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
-#app { display: flex; flex-direction: column; height: 100dvh; }
+#app { display: flex; flex-direction: column; height: 100dvh; box-sizing: border-box;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
 #hud {
   display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px;
   background: #1b2434; border-bottom: 1px solid #2c3a52;
