@@ -1965,4 +1965,28 @@ test("étape 5 bis : une zone de maisons et un pâturage réclament aussi leur b
   assert.ok(/attend bois/.test(g2.workStatus(pa)), "le panneau dit ce que le chantier attend");
 });
 
+test("retirer un ouvrier (−) : il redevient journalier, sa fiche le dit tout de suite et il quitte son poste", () => {
+  const g = fresh();
+  g.stock.timber = 40;
+  const b = placeInCenter(g, "woodcutter"); b.done = true; b.progress = 1;
+  g.assign(b.id);
+  const v = g.workersOf(b)[0];
+  v.skills.wood = 60;
+  for(let i=0;i<MONTH_TICKS;i++){ g.step(); g.pendingEvent = null; }
+  assert.ok(v.why.some(w=>w[0]==="Aime son métier"), "au travail, il aime son métier");
+  const x0 = v.x, y0 = v.y;
+  g.unassign(b.id);
+  assert.strictEqual(v.work, -1);
+  assert.strictEqual(g.workersOf(b).length, 0);
+  assert.strictEqual(g.villagerStatus(v), v.sex==="f" ? "Journalière" : "Journalier");
+  assert.ok(!v.why.some(w=>/métier/.test(w[0])), "plus de « aime son métier » dans sa fiche");
+  for(let i=0;i<200;i++){ g.step(); g.pendingEvent = null; }
+  assert.ok(Math.hypot(v.x-x0, v.y-y0) > 0.5 || v.state!=="idle", "il ne reste pas planté à son ancien poste");
+  // un chantier en attente : il va y travailler
+  const s = placeInCenter(g, "granary");
+  g.assign(b.id); const w = g.workersOf(b)[0];
+  g.unassign(b.id);
+  assert.ok(w.task && (w.task.type==="haul" || w.task.type==="build") && w.task.bid===s.id, "il part aussitôt au chantier");
+});
+
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));
