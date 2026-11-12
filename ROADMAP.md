@@ -106,6 +106,9 @@ Chaque villageois a un nom, un âge, des compétences, une santé et une humeur.
 **Étape 5 — Agriculture et élevage approfondis**
 Nouvelles cultures, rotation, fumier, labour, battage, météo. Bétail avec reproduction, pâturages, enclos, fourrage d'hiver, maladies, produits animaux.
 
+**Étape 5 bis — Logistique et chantiers livrés**
+Les matériaux ne sortent plus du stock par magie : le chantier réclame son bois et sa pierre, des porteurs et l'attelage de bœufs les amènent depuis le camp ou l'entrepôt, et la construction ne progresse qu'une fois la livraison arrivée (troncs traînés sur la carte, tas déposés au pied du chantier). Entrepôts, trajets réels, priorité des livraisons. Placée ici parce que le bœuf et le bétail ont alors un vrai rôle (étape 5) et avant les chaînes de transformation (étape 6), qui se brancheront directement sur ces transports au lieu d'être reprises. Numéros des étapes suivantes inchangés.
+
 **Étape 6 — Nourriture et transformation**
 Moulin, boulangerie, laiterie, brasserie, fumoir. Conservation, pourrissement, variété des repas, disettes.
 
