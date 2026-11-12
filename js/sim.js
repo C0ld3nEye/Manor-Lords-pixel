@@ -466,6 +466,25 @@ const PETITION_DEFS = {
 };
 const FREEDOM_PRICE = 15, FINE = 5, LORD_DEBT = 6;
 
+/* ---------- étape 7e : les intrigues ----------
+   Les familles fâchées se regroupent autour d'un meneur et réclament quelque chose ; laissée grandir, la faction fait
+   grève de la corvée, pose un ultimatum, puis se soulève (jacquerie). Les conseillers (bailli, chapelain) servent
+   d'informateurs : ils démasquent les meneurs et apprennent les secrets des villageois, qui deviennent des leviers. */
+const FACTION_DEMANDS = {
+  taille:    { id:"taille",    name:"Baisser la taille à 15 %" },
+  corvee:    { id:"corvee",    name:"Alléger la corvée (2 jours au plus)" },
+  peage:     { id:"peage",     name:"Alléger les péages" },
+  mainmorte: { id:"mainmorte", name:"Abolir la mainmorte" },
+  feast:     { id:"feast",     name:"Une fête au village cette année" },
+};
+const FACTION_STRIKE = 40, FACTION_ULTIMATUM = 70, FACTION_REVOLT = 100;
+const SECRET_DEFS = {
+  theft: { id:"theft", name:"A volé au grenier" },
+  poach: { id:"poach", name:"Braconne dans vos bois" },
+  hoard: { id:"hoard", name:"Cache des deniers à la taille" },
+};
+const SECRET_ORDER = ["theft","poach","hoard"];
+
 const BOOK_ORDER = ["taille","peage","rights","fines","justice","trade","sales","loot","loan","recovered","wages","alms","king","tribute","livestock","food","mercs","regions","interest","repay","other"];
 
 const CHURCH_UPGRADES = {
@@ -608,6 +627,8 @@ class GameState {
     this.rep = { gen:0, sev:0, just:0 };
     // étape 7d : affaires en attente de jugement, pétitions, dernier degré de sévérité par type d'affaire
     this.cases = []; this.petitions = []; this.prec = {}; this.nextCase = 1;
+    // étape 7e : la faction des mécontents (une à la fois) et la chronique du domaine
+    this.faction = null; this.chronicle = [];
     this.feastY = 0;
     // étape 7c : le coutumier (option en vigueur, proclamations en attente, dernier changement)
     this.laws = {}; for(const id of LAW_ORDER) this.laws[id] = 0;
@@ -1504,7 +1525,7 @@ class GameState {
       if(!b.done || b.def!=="burgage") continue;
       const f = this.families.find(x=>x.home===b.id); if(!f) continue;
       // étape 7c : les nobles en sont exempts (sauf loi contraire), la charte du bourg allège celle des bourgeois
-      const k = f.exemptY===this.time.year ? 0 : f.ord==="noble" ? (this.law("nobleTax")===1 ? 1 : 0) : f.ord==="bourg" && this.charterOn() ? 0.7 : 1;
+      const k = (this.striking(f.id) ? 0.5 : 1) * (f.exemptY===this.time.year ? 0 : f.ord==="noble" ? (this.law("nobleTax")===1 ? 1 : 0) : f.ord==="bourg" && this.charterOn() ? 0.7 : 1);
       levels += ([0,1,3,6][b.lvl] || 0)*k;
     }
     return levels*this.taxRate*(this.policies.freeMarket ? 0.9 : 1);
@@ -1528,7 +1549,8 @@ class GameState {
   // l'ouvrier d'un poste répond à la corvée s'il y a un chantier à servir ; renvoie vrai s'il y part
   corveeCall(f){
     if(f.appr || !this.corveeToday() || this.ordOf(f)!=="serf") return false;
-    const fam = this.famOf(f); if(fam && fam.noCorvee>this.monthIdx()) return false;   // étape 7d : dispense accordée   // étape 7c : la corvée est due par les serfs
+    const fam = this.famOf(f); if(fam && fam.noCorvee>this.monthIdx()) return false;   // étape 7d : dispense accordée
+    if(this.striking(f.fam)) return false;   // étape 7e : la faction fait grève   // étape 7c : la corvée est due par les serfs
     const sites = this.buildings.filter(s=>!s.done);
     const job = sites.length ? this.siteJob(f, sites) : null;
     if(!job) return false;
@@ -1657,6 +1679,7 @@ class GameState {
     F.debt = Math.max(0, F.debt - got); F.missed = 0;
     this.influence = Math.max(0, this.influence - 10);
     this.approval = Math.max(0, this.approval - 5);
+    this.chron("Le changeur saisit des biens pour dette.","bad");
     this.toast("Le changeur saisit des biens pour "+Math.round(got)+" deniers de dette. Votre nom en sort sali (influence −10).","bad");
   }
   // ferme le livre du mois écoulé (m : le mois qui commence)
@@ -1784,6 +1807,7 @@ class GameState {
     for(const v of this.villagers){ v.joy = Math.max(v.joy||0, 1); v.joyFor = "Fête au village"; }
     this.rep.gen = Math.min(100, this.rep.gen + 8);
     this.toast("🎉 Fête au village ! Toutes les familles s'en souviendront.","good");
+    this.chron("Le seigneur donne une fête au village.","good");
     return null;
   }
 
@@ -1823,6 +1847,7 @@ class GameState {
     this.addMem(this.famOf(v), "seat", this.fullName(v)+" siège au conseil", 8, 0);
     this.resetWorker(v);
     this.toast(this.fullName(v)+" devient "+this.seatTitle(seat, v).toLowerCase()+".","good");
+    this.chron(this.fullName(v)+" entre au conseil comme "+this.seatTitle(seat, v).toLowerCase()+".");
     this.uiVersion++;
     return null;
   }
@@ -1867,6 +1892,7 @@ class GameState {
     if(back>0) this.money("recovered", back);
     this.rep.sev = Math.min(100, this.rep.sev + 8);
     this.toast(name+" rend gorge ("+back+" deniers) et quitte le conseil.","good");
+    this.chron(name+", intendant, est convaincu de vol et chassé du conseil.","bad");
     return null;
   }
   // détournement : ce que l'intendant cupide garde pour lui sur une recette
@@ -1948,6 +1974,7 @@ class GameState {
     }
     this.addMem(f, "ennobled", "Anoblie par le seigneur", 15, 24);
     this.toast("👑 La "+f.name.toLowerCase()+" est anoblie : elle sert désormais à votre cour.","good");
+    this.chron("La "+f.name.toLowerCase()+" est anoblie.","good");
     this.uiVersion++;
     return null;
   }
@@ -2006,6 +2033,7 @@ class GameState {
       this.laws[id] = p.opt; this.lawChanged[id] = this.monthIdx();
       delete this.lawPending[id];
       this.toast("📜 La loi est en vigueur : "+LAW_DEFS[id].name+" — "+LAW_DEFS[id].opts[p.opt].name.toLowerCase()+".","good");
+      this.chron("Proclamation : "+LAW_DEFS[id].name+" — "+LAW_DEFS[id].opts[p.opt].name.toLowerCase()+".");
     }
     // les nobles soumis à la taille gardent une rancune tant que la loi dure
     for(const f of this.families){
@@ -2075,7 +2103,7 @@ class GameState {
         else { R.just -= 6; this.addMem(fa, "wrong"+c.id, who+" condamné"+(acc.sex==="f"?"e":"")+" à tort", -15, 24); }
         if(vid==="fine"){ this.money("fines", FINE); this.verdictMem(fa, "case"+c.id, "Amende pour "+d.name.toLowerCase(), -4, 6); }
         if(vid==="pillory"){ R.sev += 2; this.verdictMem(fa, "case"+c.id, who+" mis"+(acc.sex==="f"?"e":"")+" au pilori", -6, 12); }
-        if(vid==="banish"){ R.sev += 5; this.verdictMem(fa, "case"+c.id, who+" banni"+(acc.sex==="f"?"e":""), -12, 24); this.dropVillager(acc); this.cleanFamilies(); }
+        if(vid==="banish"){ R.sev += 5; this.chron(who+" est banni"+(acc.sex==="f"?"e":"")+" pour "+d.name.toLowerCase()+(c.guilty ? "." : ", à tort."),"bad"); this.verdictMem(fa, "case"+c.id, who+" banni"+(acc.sex==="f"?"e":""), -12, 24); this.dropVillager(acc); this.cleanFamilies(); }
         if(fb && c.guilty) this.addMem(fb, "case"+c.id, "Justice lui a été rendue", 5, 8);
         txt = who+" : "+vd.name.toLowerCase()+".";
         // les précédents : un revirement brutal choque tout le village
@@ -2171,6 +2199,163 @@ class GameState {
       if(this.rnd() < 0.3) this.newPetition();
     }
     if(PLAID_MONTHS.includes(m) && this.cases.length) this.toast("⚖️ Les plaids sont ouverts : "+this.cases.length+" affaire"+(this.cases.length>1?"s":"")+" à juger ce mois-ci.");
+  }
+
+  /* ================= étape 7e : la chronique et les intrigues ================= */
+  chron(text, kind){
+    this.chronicle.push({ y:this.time.year, m:this.time.month, t:text, k:kind||"info" });
+    if(this.chronicle.length>200) this.chronicle.splice(0, this.chronicle.length-200);
+  }
+  // un informateur : le bailli ou le chapelain en place (leur compétence fait leur oreille)
+  informer(){ return Math.max(this.seatPower("bailiff"), this.seatPower("chaplain")); }
+  demandMet(id){
+    if(id==="taille") return !this.hasManor() || this.taxRate<=0.15+1e-9;
+    if(id==="corvee") return this.taxLevel("corvee")<=1;
+    if(id==="peage") return this.taxLevel("peage")<=1;
+    if(id==="mainmorte") return this.law("mainmorte")===1 || !!this.lawPending.mainmorte;
+    if(id==="feast") return this.feastY===this.time.year;
+    return true;
+  }
+  pickDemand(fams){
+    if(this.hasManor() && this.taxRate>0.2) return "taille";
+    if(this.taxLevel("corvee")>=2) return "corvee";
+    if(this.taxLevel("peage")>=3) return "peage";
+    if(this.law("mainmorte")===0 && this.hasManor() && fams.some(f=>f.ord==="serf")) return "mainmorte";
+    return "feast";
+  }
+  factionOf(fid){ return !!this.faction && this.faction.fams.includes(fid); }
+  striking(fid){ return this.factionOf(fid) && this.faction.power>=FACTION_STRIKE; }
+  discontented(){ return this.families.filter(f=>f.ord!=="noble" && this.famOpinion(f)<35); }
+  factionMonth(){
+    let F = this.faction;
+    if(!F){
+      const ds = this.discontented();
+      if(ds.length<2 || this.rnd()>=0.5) return;
+      ds.sort((a, b)=>this.famOpinion(a) - this.famOpinion(b));
+      const cands = this.membersOf(ds[0].id).filter(v=>this.isAdult(v) && !v.seat);
+      if(!cands.length) return;
+      cands.sort((a, b)=>(this.traitsOf(b).includes("brave") ? 1 : 0) - (this.traitsOf(a).includes("brave") ? 1 : 0) || a.id - b.id);
+      const demand = this.pickDemand(ds);
+      if(this.demandMet(demand)) return;
+      F = this.faction = { leader:cands[0].id, fams:ds.map(f=>f.id), demand, power:10, known:this.informer()>0, warned:0 };
+      this.toast("🗣️ "+(F.known ? this.fullName(cands[0])+" rassemble" : "On murmure : des familles se rassemblent")+" les mécontents ; ils réclament : "+FACTION_DEMANDS[demand].name.toLowerCase()+".","bad");
+      this.chron("Des familles mécontentes forment une faction : « "+FACTION_DEMANDS[demand].name+" ».","bad");
+      return;
+    }
+    // qui en est : les fâchées la rejoignent, les apaisées la quittent
+    const lead = this.villager(F.leader);
+    for(const f of this.discontented()) if(!F.fams.includes(f.id)) F.fams.push(f.id);
+    F.fams = F.fams.filter(id=>{ const f = this.famById(id); return f && (this.famOpinion(f)<50 || (lead && lead.fam===id)); });
+    if(!lead || F.fams.length<2 || this.demandMet(F.demand)){
+      const ok = this.demandMet(F.demand);
+      for(const id of F.fams) if(ok) this.addMem(this.famById(id), "faction", "Revendication satisfaite", 5, 8);
+      this.toast(ok ? "Satisfaits, les mécontents se dispersent." : "La faction des mécontents se disperse.", "good");
+      this.chron(ok ? "La faction obtient gain de cause et se disperse." : "La faction des mécontents se disperse.");
+      this.faction = null;
+      return;
+    }
+    const avg = F.fams.reduce((s, id)=>s + this.famOpinion(this.famById(id)), 0)/F.fams.length;
+    F.power += 4*F.fams.length + Math.max(0, 35-avg)/2 - 10*this.taskPower("bailiff", "patrol") - (this.feared() ? 5 : 0);
+    F.power = Math.max(0, Math.min(FACTION_REVOLT, F.power));
+    if(!F.known && this.informer()>0 && this.rnd()<0.5){ F.known = true; this.toast("Vos informateurs vous l'apprennent : "+this.fullName(lead)+" mène les mécontents.","bad"); }
+    if(F.power>=FACTION_STRIKE && F.warned<1){ F.warned = 1; this.toast("La faction fait grève : ses familles refusent la corvée et ne paient que la moitié de leur taille.","bad"); this.chron("La faction fait grève de la corvée et de la taille.","bad"); }
+    if(F.power>=FACTION_REVOLT){ this.jacquerie(); return; }
+    if(F.power>=FACTION_ULTIMATUM && !this.pendingEvent && F.warned<2){
+      F.warned = 2; F.known = true;
+      this.pendingEvent = { title:"Un ultimatum",
+        text:this.fullName(lead)+", au nom de "+F.fams.length+" familles, vient au manoir et réclame : "+FACTION_DEMANDS[F.demand].name.toLowerCase()+". Sinon, dit-on, le village se soulèvera.",
+        choices:[ { label:"Céder", act:"facYield" }, { label:"Faire arrêter le meneur", act:"facArrest" }, { label:"Refuser", act:"facRefuse" } ] };
+    }
+  }
+  // céder : la revendication est appliquée tout de suite
+  factionYield(){
+    const F = this.faction; if(!F) return "Aucune faction";
+    if(F.demand==="taille") this.taxRate = Math.min(this.taxRate, 0.15);
+    if(F.demand==="corvee") this.taxes.corvee = Math.min(this.taxes.corvee, 1);
+    if(F.demand==="peage") this.taxes.peage = Math.min(this.taxes.peage, 1);
+    if(F.demand==="mainmorte"){ this.laws.mainmorte = 1; this.lawChanged.mainmorte = this.monthIdx(); delete this.lawPending.mainmorte; }
+    if(F.demand==="feast"){ this.feastY = this.time.year; for(const f of this.families) this.addMem(f, "feast", "Fête au village", 6, 6); }
+    for(const id of F.fams) this.addMem(this.famById(id), "faction", "Le seigneur a cédé", 8, 12);
+    this.rep.sev = Math.max(0, this.rep.sev - 5); this.rep.gen = Math.min(100, this.rep.gen + 5);
+    this.toast("Vous cédez : « "+FACTION_DEMANDS[F.demand].name.toLowerCase()+" ». Les mécontents rentrent chez eux.","good");
+    this.chron("Le seigneur cède à la faction : « "+FACTION_DEMANDS[F.demand].name+" ».");
+    this.faction = null; this.uiVersion++;
+    return null;
+  }
+  // faire arrêter le meneur : il est banni, sa famille et ses alliés en gardent une rancune tenace
+  arrestLeader(){
+    const F = this.faction; if(!F) return "Aucune faction";
+    if(!F.known) return "Vous ne savez pas qui mène les mécontents : il faut un informateur (bailli ou chapelain)";
+    const v = this.villager(F.leader); if(!v) return "Le meneur n'est plus là";
+    const name = this.fullName(v);
+    for(const id of F.fams) this.addMem(this.famById(id), "arrest", name+" arrêté et banni", -10, 18);
+    this.rep.sev = Math.min(100, this.rep.sev + 10);
+    this.dropVillager(v); this.cleanFamilies();
+    F.power = Math.max(0, F.power - 40);
+    this.toast("⚔️ "+name+" est arrêté et banni. La faction est privée de son meneur.","bad");
+    this.chron(name+", meneur des mécontents, est arrêté et banni.","bad");
+    this.faction = F.power>=20 && F.fams.length>=2 ? F : null;
+    if(this.faction){
+      const nl = F.fams.map(id=>this.membersOf(id).find(x=>this.isAdult(x) && !x.seat)).find(Boolean);
+      if(nl){ F.leader = nl.id; F.known = this.informer()>0; F.warned = Math.min(F.warned, 1); } else this.faction = null;
+    }
+    this.uiVersion++;
+    return null;
+  }
+  // la jacquerie : matée si la milice est assez nombreuse, sinon pillage et familles en fuite
+  jacquerie(){
+    const F = this.faction; if(!F) return;
+    const lead = this.villager(F.leader);
+    if(this.units.length >= F.fams.length){
+      for(const id of F.fams) this.addMem(this.famById(id), "revolt", "Révolte matée dans le sang", -15, 24);
+      if(lead) this.dropVillager(lead);
+      this.rep.sev = Math.min(100, this.rep.sev + 10);
+      this.toast("🔥 Jacquerie ! La milice disperse les révoltés ; le meneur est banni.","bad");
+      this.chron("Jacquerie : la milice mate la révolte.","bad");
+    } else {
+      for(const k of FOOD_TYPES) this.stock[k] = Math.floor((this.stock[k]||0)*0.7);
+      this.stock.timber = Math.floor(this.stock.timber*0.8); this.stock.stone = Math.floor(this.stock.stone*0.8);
+      this.approval = Math.max(0, this.approval - 10);
+      let fled = 0;
+      for(const id of F.fams){ const f = this.famById(id); if(f && !f.founder && this.families.length>1 && this.rnd()<0.4){ this.removeFamily(id); fled++; } }
+      this.toast("🔥 Jacquerie ! Les révoltés pillent les réserves"+(fled ? " et "+fled+" famille"+(fled>1?"s s'enfuient":" s'enfuit") : "")+".","bad");
+      this.chron("Jacquerie : les révoltés pillent les réserves"+(fled ? ", "+fled+" famille"+(fled>1?"s":"")+" en fuite" : "")+".","bad");
+    }
+    this.cleanFamilies();
+    this.faction = null; this.uiVersion++;
+  }
+  // les secrets : un villageois sur sept environ en cache un ; un informateur peut l'apprendre
+  secretOf(v){
+    if(!v || !this.isAdult(v)) return null;
+    const h = hash2(v.id*17 + 3, (this.seed|0) + 202);
+    return h%100 < 15 ? SECRET_ORDER[(h>>>8)%SECRET_ORDER.length] : null;
+  }
+  spyMonth(){
+    const p = this.informer();
+    if(p<=0 || this.rnd()>=0.25*p) return;
+    const pool = this.villagers.filter(v=>!v.sk && !v.seat && this.secretOf(v));
+    if(!pool.length) return;
+    const v = pool[Math.floor(this.rnd()*pool.length)];
+    v.sk = 1;
+    this.toast("🤫 Un informateur vous glisse que "+this.fullName(v)+" "+SECRET_DEFS[this.secretOf(v)].name.toLowerCase()+".");
+  }
+  // ce qu'on fait d'un secret : pression (la famille vous doit une faveur), dénonciation, ou pardon
+  useSecret(vid, how){
+    const v = this.villager(vid); if(!v || v.sk!==1) return "Aucun secret connu";
+    const f = this.famOf(v), sec = this.secretOf(v);
+    if(how==="press"){ f.favor = (f.favor||0) + 1; this.addMem(f, "secret"+v.id, "Tenue par un secret", -4, 12); this.toast("Vous faites comprendre à "+this.fullName(v)+" que vous savez. Sa famille vous devra une faveur."); }
+    else if(how==="denounce"){
+      if(sec==="hoard"){ this.money("fines", FINE); this.addMem(f, "secret"+v.id, "Dénoncée pour fraude à la taille", -6, 12); this.toast(this.fullName(v)+" paie une amende pour fraude à la taille."); }
+      else {
+        const other = this.families.find(o=>o.id!==f.id);
+        this.cases.push({ id:this.nextCase++, type:sec==="poach" ? "poach" : "theft", a:f.id, b:sec==="poach" || !other ? -1 : other.id, v:v.id, guilty:true, proof:"solides", until:this.nextPlaid() });
+        this.toast("Vous dénoncez "+this.fullName(v)+" : l'affaire sera jugée aux plaids.");
+      }
+    }
+    else if(how==="forgive"){ this.addMem(f, "secret"+v.id, "Le seigneur a pardonné", 6, 12); this.rep.gen = Math.min(100, this.rep.gen + 2); this.toast("Vous pardonnez à "+this.fullName(v)+" sans rien dire."); }
+    else return "Choix inconnu";
+    v.sk = 2; this.uiVersion++;
+    return null;
   }
 
   /* ================= étape 5 : bœufs de trait ================= */
@@ -2970,6 +3155,9 @@ class GameState {
       if(q>0 && this.treasury>=cost){ this.money("food", -cost); this.stock.pulses = (this.stock.pulses||0) + q; this.toast("Le marchand de grain livre "+q+" mesures de pois et fèves secs 🫛 (−"+cost+" 💰).","good"); }
     }
     else if(c.act==="noFood") this.toast("Le marchand de grain reprend la route.");
+    else if(c.act==="facYield") this.factionYield();
+    else if(c.act==="facArrest"){ const e = this.arrestLeader(); if(e) this.toast(e,"bad"); }
+    else if(c.act==="facRefuse"){ if(this.faction){ this.faction.power = Math.min(FACTION_REVOLT, this.faction.power + 10); this.toast("Vous refusez. Les mécontents repartent en grondant.","bad"); } }
     else if(c.act==="hideBandits"){ for(const k of FOOD_TYPES) this.stock[k]=Math.floor(this.stock[k]*0.8);
       this.stock.timber=Math.floor(this.stock.timber*0.9); this.toast("Les brigands pillent la seigneurie et repartent.","bad"); }
     this.pendingEvent = null;
@@ -3029,6 +3217,7 @@ class GameState {
     r.owned = true;
     this.influence += 10;
     this.toast("🗺️ "+r.name+" est désormais vôtre !","good");
+    this.chron(r.name+" rejoint le domaine.","good");
     this.uiVersion++;
     return true;
   }
@@ -4515,6 +4704,8 @@ class GameState {
     this.fiscMonth(m, tradeSold);
     this.councilMonth();
     this.justiceMonth(m);   // étape 7d
+    this.factionMonth();    // étape 7e
+    this.spyMonth();
     // cueilleurs : récolte passive de baies en saison, même sans ouvrier assigné
     if(this.berrySeason()){
       let anyBerry=false;
@@ -4601,7 +4792,9 @@ class GameState {
       if((f.favor||0)>0){ f.favor--; f.sour = 0; this.toast("La "+f.name.toLowerCase()+" voulait partir, mais elle vous doit une faveur : elle reste."); }   // étape 7d
       else {
         this.removeFamily(f.id);
-        this.toast(f.name+(sour ? " quitte la seigneurie : elle ne vous pardonne pas." : " quitte la seigneurie, déçue…"),"bad");
+        const flee = f.ord==="serf";   // étape 7e : un serf n'a pas le droit de partir : il s'enfuit
+      this.toast(f.name+(flee ? " s'enfuit à la nuit tombée" : " quitte la seigneurie")+(sour ? " : elle ne vous pardonne pas." : ", déçue…"),"bad");
+      this.chron(f.name+(flee ? " s'enfuit de la seigneurie." : " quitte la seigneurie."),"bad");
       }
     }
     // postes voulus : on y place les adultes devenus libres
@@ -4622,7 +4815,7 @@ class GameState {
       } else if(mode.id==="fractured"){
         win = this.goalRegions().every(r=>r.owned) && this.baron.power===0 && this.time.year>=1180;
       }
-      if(win){ this.victory=true; this.endReason="victoire"; this.toast("🏆 Victoire ! "+mode.name+" accomplie !","good"); }
+      if(win){ this.victory=true; this.endReason="victoire"; this.toast("🏆 Victoire ! "+mode.name+" accomplie !","good"); this.chron("Victoire : "+mode.name+" accomplie.","good"); }
 
       if(this.families.length===0 && this.time.year>1176){ this.defeat=true; this.endReason="plus aucune famille"; this.toast("💀 Toute la population a disparu…","bad"); }
     }
@@ -5022,6 +5215,8 @@ class GameState {
       petitions:this.petitions,
       prec:this.prec,
       nextCase:this.nextCase,
+      faction:this.faction,
+      chronicle:this.chronicle,
     };
   }
   static load(data    )          {
@@ -5141,6 +5336,13 @@ class GameState {
     const fIds = new Set(g.families.map(f=>f.id));
     g.cases = Array.isArray(data.cases) ? data.cases.filter(c=>c && CASE_DEFS[c.type] && num(c.id) && num(c.until) && fIds.has(c.a)) : [];
     g.petitions = Array.isArray(data.petitions) ? data.petitions.filter(p=>p && PETITION_DEFS[p.type] && num(p.id) && num(p.until) && fIds.has(p.f)) : [];
+    // étape 7e : faction (son meneur et ses familles doivent exister), chronique
+    const fc = data.faction;
+    if(fc && typeof fc==="object" && FACTION_DEMANDS[fc.demand] && num(fc.leader) && g.villager(fc.leader) && Array.isArray(fc.fams)){
+      const fams = fc.fams.filter(id=>fIds.has(id));
+      if(fams.length>=2) g.faction = { leader:fc.leader, fams, demand:fc.demand, power:num(fc.power) ? Math.max(0, Math.min(FACTION_REVOLT, fc.power)) : 10, known:!!fc.known, warned:num(fc.warned) ? fc.warned : 0 };
+    }
+    g.chronicle = Array.isArray(data.chronicle) ? data.chronicle.filter(c=>c && num(c.y) && num(c.m) && typeof c.t==="string").slice(-200) : [];
     if(data.prec && typeof data.prec==="object") for(const k of Object.keys(data.prec)) if(CASE_DEFS[k] && num(data.prec[k])) g.prec[k] = data.prec[k];
     g.nextCase = Math.max(num(data.nextCase) ? data.nextCase : 1, 1 + Math.max(0, ...g.cases.map(c=>c.id), ...g.petitions.map(p=>p.id)));
     g.feastY = num(data.feastY) ? data.feastY : 0;
@@ -5227,6 +5429,7 @@ class GameState {
 if(typeof module!=="undefined" && module.exports){
   module.exports = { T_FORD, REGION_NAMES, START_REGION_NAME, REGION_COLS, REGION_ROWS, rleEncode, rleDecode, HOUSE_CAP, FOOD_DEFS, FOOD_GROUPS, FOOD_GROUP_ORDER, STORE_SPOIL, GRUEL, GRANARY_CAP, GRANARY_MUL, VARIETY_APPROVAL, RECIPES, SMOKE_KEEP, HOME_BAKE, MAT_RES, PORTER_LOAD, OX_LOAD, OX_SPEED, DRAG_SPEED, DEPOT_DEFS, TS, WORK_DIV, TICKS_PER_DAY, DAYS_PER_MONTH, FIELD_MIN, FIELD_MAX, PLOT_MIN, CROP_CAL, GROW_RATE, SHEAF_RES, LIVESTOCK, LIVESTOCK_ORDER, GRASS, PASTURE_MIN, PASTURE_MAX, monthsTxt, isWinterMonth, MONTHS_ABBR, SKILL_DEFS, SKILL_ORDER, SKILL_LEVELS, skillLevel, FOOD_NEED, AGE_TEEN, AGE_ADULT, AGE_ELDER, AGE_RETIRE, STAGE_NAMES, JOB_TITLES, NAMES_M, NAMES_F, SURNAMES, BUILD_STAGES, buildStage, DIRS4, PLOT_FRONT, polyArea, pointInPoly, GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
     T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf, REGION_COST, POLICY_DEFS, POLICY_ORDER,
+    FACTION_DEMANDS, FACTION_STRIKE, FACTION_ULTIMATUM, FACTION_REVOLT, SECRET_DEFS, SECRET_ORDER,
     PLAID_MONTHS, CASE_DEFS, CASE_ORDER, PETITION_DEFS, FREEDOM_PRICE, FINE, LORD_DEBT,
     ORDER_DEFS, ORDER_RANK, SKILLED, ENNOBLE_COST, NOBLE_OFFICES, NOBLE_OFFICE_ORDER, LAW_CHAPTERS, LAW_DEFS, LAW_ORDER, LAW_COST, LAW_COOLDOWN, MAINMORTE,
     TRAIT_DEFS, SEAT_DEFS, SEAT_ORDER, COUNCIL_WAGE, EMBEZZLE, AUDIT_COST, ALMS_COST, FEAST_COST, REP_GEN, REP_SEV, TAX_DEFS, TAX_ORDER, TAILLE_MONTHS, DIME_MONTH, KING_MONTH, LOAN_RATE, LOAN_STEP, LOAN_MISS_MAX, BOOK_CATS, BOOK_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, MODE_BY_ID, DIFFICULTIES, DIFF_BY_ID };

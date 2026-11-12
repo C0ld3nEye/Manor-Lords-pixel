@@ -3012,4 +3012,71 @@ test("étape 7d : sauvegarde des affaires, pétitions et précédents", () => {
   assert.strictEqual(g2.families[0].favor, 2);
 });
 
+/* ================= étape 7e : les intrigues ================= */
+const { FACTION_STRIKE, FACTION_ULTIMATUM, SECRET_DEFS } = require("../js/sim.js");
+
+test("étape 7e : les familles fâchées forment une faction, font grève, posent un ultimatum ; céder la dissout", () => {
+  const g = fresh(); houses(g, 3); doneBuilding(g, "manor");
+  g.taxRate = 0.5; g.approval = 50;
+  for(const f of g.families.slice(0, 2)) g.addMem(f, "x", "Grief", -40, 0);
+  g.rnd = ()=>0.1;
+  g.factionMonth();
+  const F = g.faction;
+  assert.ok(F, "une faction se forme");
+  assert.strictEqual(F.demand, "taille");
+  assert.ok(F.fams.length>=2);
+  assert.ok(g.arrestLeader(), "sans informateur, on ne connaît pas le meneur");
+  F.power = FACTION_STRIKE;
+  const v = g.membersOf(F.fams[0]).find(x=>g.isAdult(x));
+  g.taxes.corvee = 3;
+  assert.ok(g.striking(v.fam));
+  assert.strictEqual(g.corveeCall(v), false, "grève de la corvée");
+  F.power = FACTION_ULTIMATUM; g.pendingEvent = null;
+  g.factionMonth();
+  assert.ok(g.pendingEvent && g.pendingEvent.title==="Un ultimatum");
+  g.resolveEvent(0);
+  assert.strictEqual(g.faction, null);
+  assert.ok(g.taxRate<=0.15);
+  assert.ok(g.chronicle.length>=2, "la chronique en garde trace");
+});
+
+test("étape 7e : un informateur démasque le meneur ; l'arrêter le bannit ; une jacquerie sans milice pille les réserves", () => {
+  const g = fresh(); houses(g, 3); doneBuilding(g, "manor");
+  g.taxRate = 0.5;
+  for(const f of g.families) g.addMem(f, "x", "Grief", -40, 0);
+  const b = g.villagers.find(v=>g.isAdult(v) && v.fam===g.families[2].id);
+  g.appoint("bailiff", b.id);
+  g.rnd = ()=>0.1;
+  g.factionMonth();
+  const F = g.faction;
+  assert.ok(F && F.known, "le bailli sait qui mène");
+  const lead = F.leader;
+  assert.strictEqual(g.arrestLeader(), null);
+  assert.ok(!g.villager(lead), "banni");
+  g.faction = { leader:g.membersOf(g.families[0].id).find(x=>g.isAdult(x)).id, fams:g.families.map(f=>f.id), demand:"taille", power:100, known:true, warned:2 };
+  g.units = [];
+  const food = g.foodStock();
+  g.jacquerie();
+  assert.ok(g.foodStock() < food, "pillage");
+  assert.strictEqual(g.faction, null);
+});
+
+test("étape 7e : un secret appris devient un levier — pression, dénonciation ou pardon ; chronique sauvegardée", () => {
+  const g = fresh();
+  let v = null;
+  for(let k=0;k<400 && !v;k++){ const o = g.villagers.find(x=>g.isAdult(x)); o.id = 5000 + k; if(g.secretOf(o)) v = o; }
+  assert.ok(v && SECRET_DEFS[g.secretOf(v)]);
+  assert.ok(g.useSecret(v.id, "press"), "secret pas encore connu");
+  v.sk = 1;
+  assert.strictEqual(g.useSecret(v.id, "press"), null);
+  assert.strictEqual(g.famOf(v).favor, 1, "la famille vous doit une faveur");
+  assert.ok(g.useSecret(v.id, "forgive"), "un secret ne sert qu'une fois");
+  g.chron("Un fait mémorable.");
+  g.faction = { leader:v.id, fams:[g.families[0].id, g.families[1].id], demand:"feast", power:30, known:false, warned:0 };
+  const g2 = GameState.load(JSON.parse(JSON.stringify(g.serialize())));
+  assert.deepStrictEqual(g2.chronicle, g.chronicle);
+  assert.deepStrictEqual(g2.faction, g.faction);
+  assert.strictEqual(g2.villager(v.id).sk, 2);
+});
+
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));
