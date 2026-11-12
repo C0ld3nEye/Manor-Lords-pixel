@@ -862,7 +862,7 @@ test("étape 3 : une seule chose par arrière-cour, à la mesure de sa taille", 
   const f = (n)=>g.yardFactor({ plot:{ cells:new Array(n+1).fill(0) } });
   assert.strictEqual(f(1), 1); assert.strictEqual(f(4), 1.5); assert.strictEqual(f(9), 2);
   assert.strictEqual(f(100), 2.5); assert.strictEqual(f(0), 0);
-  assert.strictEqual(g.yardFactor(legacyHouse(g)), 1, "ancien bourgage : inchangé");
+  assert.strictEqual(g.yardFactor(legacyHouse(fresh())), 1, "ancien bourgage : inchangé");
   // retirer : moitié du prix rendue, la cour se libère
   g.removeExtension(b.id);
   assert.deepStrictEqual(b.exts, []);
