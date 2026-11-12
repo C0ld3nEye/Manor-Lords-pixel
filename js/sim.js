@@ -198,6 +198,8 @@ const GRASS = [0, 0, 0.7, 1.1, 1.2, 1.1, 1.0, 0.9, 0.9, 0.8, 0.6, 0];   // herbe
 const WINTER_MONTHS = [11, 0, 1];                                          // les b\u00eates mangent du foin
 function isWinterMonth(m){ return m===11 || m===0 || m===1; }
 const PASTURE_MIN = 4, PASTURE_MAX = 90;
+const FIELD_MIN = 4, FIELD_MAX = 64;   // champ tracé librement (en cases)
+const PLOT_MIN = 3;                     // une maison et au moins deux cases de cour
 
 const REGION_DEFS = [
   { id:0, name:"Vallée du Cœur",   bonus:null,          desc:"Votre terre natale (au centre). Déjà à vous." },
@@ -712,6 +714,8 @@ class GameState {
       for(let yy=0;yy<n;yy++) for(let xx=0;xx<n;xx++) this.occupied[(y+yy)*W+(x+xx)] = b.id;
       let sf=0; for(let yy=0;yy<n;yy++) for(let xx=0;xx<n;xx++) sf += this.soil[(y+yy)*W+(x+xx)];
       b.f.fert = Math.min(1, sf/(n*n));
+      const cells = []; for(let yy=0;yy<n;yy++) for(let xx=0;xx<n;xx++) cells.push((y+yy)*W+(x+xx));
+      b.plot = { cells, dir:-1, poly:[[x,y],[x+n,y],[x+n,y+n],[x,y+n]] };
     }
     if(d.instant || d.id==="field"){ b.done = true; b.progress = 1; }
     this.uiVersion++;
@@ -749,7 +753,24 @@ class GameState {
   /* ---------- étape 3 : zones de bourgage tracées point par point ---------- */
   // Découpe un contour libre en parcelles SANS rien modifier (sert aussi d'aperçu à l'interface).
   // pts : points du contour en cases (calés au quart de case). n : nombre de maisons voulu (sinon proposé).
-  planZone(pts        , n        ){
+  // Comme planRawZone, mais chaque parcelle garde au moins PLOT_MIN cases : plus de maison sans cour.
+  planZone(pts, n){
+    let plan = this.planRawZone(pts, n);
+    const small = (pl)=>pl.plots.some(p=>p.cells.length<PLOT_MIN);
+    while(!plan.err && small(plan)){
+      const prev = plan.n;
+      if(prev<=1) return Object.assign({}, plan, { plots:[], n:0, err:"Zone trop petite : "+PLOT_MIN+" cases par maison au moins (la maison et sa cour)" });
+      plan = this.planRawZone(pts, prev-1);
+      if(!plan.err && plan.n>=prev) return Object.assign({}, plan, { plots:[], n:0, err:"Zone trop étroite : élargissez-la pour donner une cour à chaque maison" });
+    }
+    if(plan.err) return plan;
+    let hi = plan.nMax;
+    while(hi>plan.n){ const t = this.planRawZone(pts, hi); if(!t.err && t.plots.length===hi && !small(t)) break; hi--; }
+    plan.nMax = Math.max(plan.n, hi);
+    plan.suggested = Math.min(plan.suggested, plan.nMax);
+    return plan;
+  }
+  planRawZone(pts        , n        ){
     const fail = (err, extra)=>Object.assign({ plots:[], err, limited:false, n:0, nMin:0, nMax:0, suggested:0, poly:null }, extra||{});
     if(!Array.isArray(pts) || pts.length<3) return fail("Posez au moins 3 points");
     const poly = pts.map(q=>[Math.max(0, Math.min(W, Math.round(Number(q[0])*SNAP)/SNAP)),
@@ -1054,6 +1075,62 @@ class GameState {
   /* ================= étape 5 : les champs ================= */
   // culture proposée pour un nouveau champ : la prochaine qu'on pourra semer
   defaultCrop(){ const m = this.time.month; return (m>=4 && m<=9) ? "wheat" : "peas"; }
+  // cases d'un champ (toujours une forme tracée ; les anciens rectangles sont convertis)
+  fieldCells(b){
+    if(b.plot) return b.plot.cells;
+    const c = []; for(let yy=0;yy<b.h;yy++) for(let xx=0;xx<b.w;xx++) c.push((b.y+yy)*W+(b.x+xx)); return c;
+  }
+  fieldN(b){ return b.plot ? b.plot.cells.length : b.w*b.h; }
+  fieldCenter(b){
+    if(b._ctr && b._ctr.n===this.fieldN(b)) return b._ctr;
+    let sx = 0, sy = 0; const cs = this.fieldCells(b);
+    for(const i of cs){ sx += i%W + 0.5; sy += ((i/W)|0) + 0.5; }
+    const c = { x:sx/cs.length, y:sy/cs.length, n:cs.length };
+    try{ Object.defineProperty(b, "_ctr", { value:c, writable:true, enumerable:false, configurable:true }); }catch(e){}
+    return c;
+  }
+  // Découpe un contour libre en champ SANS rien modifier (sert aussi d'aperçu) : fertilité moyenne et récolte estimée.
+  planField(pts, crop){
+    const fail = (err, extra)=>Object.assign({ cells:[], plots:[], err, poly:null, n:0, fert:0, qty:0 }, extra||{});
+    if(!Array.isArray(pts) || pts.length<3) return fail("Posez au moins 3 points");
+    const poly = pts.map(q=>[Math.max(0, Math.min(W, Math.round(Number(q[0])*SNAP)/SNAP)),
+                             Math.max(0, Math.min(H, Math.round(Number(q[1])*SNAP)/SNAP))]);
+    if(poly.some(q=>!isFinite(q[0]) || !isFinite(q[1]))) return fail("Contour invalide");
+    if(selfIntersects(poly)) return fail("Le contour se croise", { poly });
+    let x0=W, y0=H, x1=0, y1=0;
+    for(const q of poly){ x0=Math.min(x0,q[0]); y0=Math.min(y0,q[1]); x1=Math.max(x1,q[0]); y1=Math.max(y1,q[1]); }
+    const cells = [];
+    for(let y=Math.max(0,Math.floor(y0)); y<Math.min(H,Math.ceil(y1)); y++) for(let x=Math.max(0,Math.floor(x0)); x<Math.min(W,Math.ceil(x1)); x++){
+      if(!pointInPoly(x+0.5, y+0.5, poly)) continue;
+      const i=y*W+x;
+      if(this.roads[i]) return fail("Le champ empiète sur une route", { poly });
+      if(this.occupied[i]>=0) return fail("Le champ empiète sur un bâtiment, un pâturage ou un autre champ", { poly });
+      if(this.tiles[i]!==T_GRASS) return fail("Terrain impropre dans le champ (eau, forêt ou rocher)", { poly });
+      if(!this.regionOwned(x)) return fail("Région non réclamée", { poly });
+      cells.push(i);   // ordre de lecture : on laboure rang par rang
+    }
+    if(cells.length<FIELD_MIN) return fail("Champ trop petit ("+FIELD_MIN+" cases au moins)", { poly, n:cells.length });
+    if(cells.length>FIELD_MAX) return fail("Champ trop grand ("+FIELD_MAX+" cases au plus)", { poly, n:cells.length });
+    const fert = Math.min(1, cells.reduce((s, i)=>s + this.soil[i], 0)/cells.length);
+    const cd = CROP_DEFS[crop] || CROP_DEFS[this.defaultCrop()];
+    const fe = cd.hardy ? 0.5 + 0.5*fert : cd.season==="meadow" ? 0.6 + 0.4*fert : fert;
+    const qty = cd.yield ? Math.round(cells.length*4*cd.mul*fe) : 0;
+    return { err:null, cells, poly, plots:[{ cells, dir:-1, poly:cleanPoly(poly) }], n:cells.length, fert, qty, crop:cd.id };
+  }
+  traceField(pts){
+    const plan = this.planField(pts);
+    if(plan.err) return plan.err;
+    const a = plan.cells[0];
+    const b = this.makeBuilding("field", a%W, (a/W)|0);
+    b.w = 1; b.h = 1;
+    b.plot = { cells:plan.cells.slice(), dir:-1, poly:cleanPoly(plan.poly) };
+    b.f.fert = plan.fert;
+    for(const i of plan.cells) this.occupied[i] = b.id;
+    b.done = true; b.progress = 1;
+    this.toast("Champ tracé ("+plan.n+" cases, fertilité "+Math.round(plan.fert*100)+" %).", "good");
+    this.uiVersion++;
+    return null;
+  }
   // remet d'aplomb l'état d'un champ (nouveau champ ou ancienne sauvegarde)
   normField(f){
     const num = (v, d)=>typeof v==="number" && isFinite(v) ? v : d;
@@ -1128,7 +1205,7 @@ class GameState {
     if(!f) return { qty:0, parts:[], unit:null };
     const cd = this.liveCrop(f);
     if(!cd.yield) return { qty:0, parts:[], unit:null };
-    const n = b.w*b.h, fe = this.fertEff(f, cd), rot = this.rotationMul(f, cd);
+    const n = this.fieldN(b), fe = this.fertEff(f, cd), rot = this.rotationMul(f, cd);
     const cond = f.sown ? f.cond : 1, gr = final ? Math.min(1, f.growth) : 1;
     const qty = Math.max(0, Math.round(n*4*cd.mul*fe*rot[0]*cond*gr));
     const parts = [["Fertilité", fe]];
@@ -1181,7 +1258,7 @@ class GameState {
         } else if(f.plow>=1 && cal.sow.includes(m)){ type = "sow"; pr = 1; }
       }
       if(!type) continue;
-      const d = Math.hypot(fd.x+fd.w/2-v.x, fd.y+fd.h/2-v.y);
+      const c = this.fieldCenter(fd), d = Math.hypot(c.x-v.x, c.y-v.y);
       if(pr<bp || (pr===bp && d<bd)){ bp = pr; bd = d; best = { type, bid:fd.id }; }
     }
     if(best) return best;
@@ -1190,7 +1267,7 @@ class GameState {
   }
   threshRoom(){ return Object.keys(SHEAF_RES).some(k=>(this.stock[k]||0)>0 && (this.stock[SHEAF_RES[k]]||0) < this.capFor(SHEAF_RES[k])); }
   // vitesse d'un travail des champs, à la mesure de la taille du champ (un 4×4 sert de repère)
-  fieldRate(fd, base){ return base*16/Math.max(1, fd.w*fd.h); }
+  fieldRate(fd, base){ return base*16/Math.max(1, this.fieldN(fd)); }
   // une étape du travail d'un champ (labour, fumure, semailles, moisson, fauche)
   fieldWork(v, t){
     const fd = t.bid!==undefined ? this.buildings.find(x=>x.id===t.bid) : null;
@@ -1208,7 +1285,7 @@ class GameState {
       if(f.dunged || (this.stock.manure||0)<1){ stop(3); return; }
       f.dungP = Math.min(1, f.dungP + this.fieldRate(fd, 0.02)*sk);
       if(f.dungP>=1){
-        const n = fd.w*fd.h, use = Math.min(this.stock.manure, n*0.5);
+        const n = this.fieldN(fd), use = Math.min(this.stock.manure, n*0.5);
         this.stock.manure -= use;
         f.fert = Math.min(1, f.fert + use/n*0.3);
         f.dunged = true;
@@ -1317,7 +1394,8 @@ class GameState {
       for(const b of fs){
         b.f.grazed = false;
         if(b.f.crop!=="fallow" || b.f.sown) continue;
-        if(herds.some(p=>Math.abs(p.x-(b.x+b.w/2))<=10 && Math.abs(p.y-(b.y+b.h/2))<=10)){ b.f.fert = Math.min(1, b.f.fert + 0.015); b.f.grazed = true; }
+        const c = this.fieldCenter(b);
+        if(herds.some(p=>Math.abs(p.x-c.x)<=10 && Math.abs(p.y-c.y)<=10)){ b.f.fert = Math.min(1, b.f.fert + 0.015); b.f.grazed = true; }
       }
     }
     // prévision de récolte au début de l'été
@@ -1432,7 +1510,7 @@ class GameState {
   pastureCap(b, m){
     const d = b.herd && LIVESTOCK[b.herd.sp]; if(!d) return 0;
     let fallow = 0;
-    for(const fd of this.fields()) if(fd.f.crop==="fallow" && !fd.f.sown && Math.abs(b.x-(fd.x+fd.w/2))<=10 && Math.abs(b.y-(fd.y+fd.h/2))<=10) fallow += fd.w*fd.h;
+    for(const fd of this.fields()){ if(fd.f.crop!=="fallow" || fd.f.sown) continue; const c = this.fieldCenter(fd); if(Math.abs(b.x-c.x)<=10 && Math.abs(b.y-c.y)<=10) fallow += this.fieldN(fd); }
     return (this.grassCells(b) + fallow*0.5)/d.area*GRASS[m];
   }
   keeperOf(b){ return this.workersOf(b).find(v=>this.canWork(v)) || null; }
@@ -3161,12 +3239,17 @@ class GameState {
         const cells = p && Array.isArray(p.cells) ? p.cells.filter(i=>Number.isInteger(i) && i>=0 && i<W*H) : [];
         if(cells.length===0 || cells[0]!==b.y*W+b.x) delete b.plot;
         else {
-          b.plot = { cells, dir: b.def==="pasture" ? -1 : Number.isInteger(p.dir) && p.dir>=0 && p.dir<4 ? p.dir : 2 };
+          b.plot = { cells, dir: (b.def==="pasture" || b.def==="field") ? -1 : Number.isInteger(p.dir) && p.dir>=0 && p.dir<4 ? p.dir : 2 };
           if(Array.isArray(p.poly) && p.poly.length>=3 && p.poly.every(q=>Array.isArray(q) && q.length===2 && q.every(v=>typeof v==="number" && isFinite(v)) && q[0]>=0 && q[0]<=W && q[1]>=0 && q[1]<=H))
             b.plot.poly = p.poly.map(q=>[q[0], q[1]]);
         }
       }
       if(b.def==="pasture") b.herd = g.normHerd(b.herd);
+      // champ d'avant le tracé libre : un rectangle devient une forme comme les autres
+      if(b.def==="field" && !b.plot){
+        const cells = []; for(let yy=0;yy<b.h;yy++) for(let xx=0;xx<b.w;xx++) cells.push((b.y+yy)*W+(b.x+xx));
+        b.plot = { cells, dir:-1, poly:[[b.x,b.y],[b.x+b.w,b.y],[b.x+b.w,b.y+b.h],[b.x,b.y+b.h]] };
+      }
       return b;
     }).filter(b=>b.def!=="pasture" || (b.plot && b.plot.cells.length>=2));
     g.families = Array.isArray(data.families) ? data.families.filter(f=>f && typeof f==="object" && num(f.id)) : [];
@@ -3249,6 +3332,6 @@ class GameState {
 }
 
 if(typeof module!=="undefined" && module.exports){
-  module.exports = { CROP_CAL, GROW_RATE, SHEAF_RES, LIVESTOCK, LIVESTOCK_ORDER, GRASS, PASTURE_MIN, PASTURE_MAX, monthsTxt, isWinterMonth, MONTHS_ABBR, SKILL_DEFS, SKILL_ORDER, SKILL_LEVELS, skillLevel, FOOD_NEED, AGE_TEEN, AGE_ADULT, AGE_ELDER, AGE_RETIRE, STAGE_NAMES, JOB_TITLES, NAMES_M, NAMES_F, SURNAMES, BUILD_STAGES, buildStage, DIRS4, PLOT_FRONT, polyArea, pointInPoly, GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
+  module.exports = { FIELD_MIN, FIELD_MAX, PLOT_MIN, CROP_CAL, GROW_RATE, SHEAF_RES, LIVESTOCK, LIVESTOCK_ORDER, GRASS, PASTURE_MIN, PASTURE_MAX, monthsTxt, isWinterMonth, MONTHS_ABBR, SKILL_DEFS, SKILL_ORDER, SKILL_LEVELS, skillLevel, FOOD_NEED, AGE_TEEN, AGE_ADULT, AGE_ELDER, AGE_RETIRE, STAGE_NAMES, JOB_TITLES, NAMES_M, NAMES_F, SURNAMES, BUILD_STAGES, buildStage, DIRS4, PLOT_FRONT, polyArea, pointInPoly, GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
     T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf, REGION_DEFS, REGION_COST, POLICY_DEFS, POLICY_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, MODE_BY_ID, DIFFICULTIES, DIFF_BY_ID };
 }

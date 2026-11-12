@@ -61,8 +61,8 @@ var CATS = [
     hint:"Tracez une zone le long d'une route : maisons, cours et clôtures se placent seules." },
   { id:"res",   name:"Récolte",    icon:"axe",    items:["woodcutter","forager","hunter","quarry"],
     hint:"Bois, baies, gibier et pierre : posez-les près de la ressource." },
-  { id:"farm",  name:"Terres",     icon:"grain",  items:["field","farm","windmill"], actions:["pasture","buyox"],
-    hint:"Champs gratuits, une ferme pour les travailler, un moulin pour le pain, des pâturages pour le bétail." },
+  { id:"farm",  name:"Terres",     icon:"grain",  items:["farm","windmill"], actions:["fieldzone","pasture","buyox"],
+    hint:"Tracez champs et pâturages à la forme que vous voulez ; une ferme travaille les champs, un moulin fait le pain." },
   { id:"store", name:"Stocks",     icon:"crate",  items:["granary","storehouse"],
     hint:"La grange limite le pourrissement, l'entrepôt augmente la capacité." },
   { id:"realm", name:"Domaine",    icon:"church", items:["market","trade","church","manor"],
@@ -487,8 +487,8 @@ document.addEventListener("click", function(e){
       }
       ui.layersOpen = false; clearTools();
       break;
-    case "zone": case "pasture":
-      clearTools(); ui.zoneMode = true; ui.zoneKind = act==="pasture" ? "pasture" : "house";
+    case "zone": case "pasture": case "fieldzone":
+      clearTools(); ui.zoneMode = true; ui.zoneKind = act==="pasture" ? "pasture" : act==="fieldzone" ? "field" : "house";
       ui.cat = null; ui.buildSel = null; ui.roadMode = false; ui.selId = null; ui.sheet = null;
       break;
     case "placeok":
@@ -509,7 +509,7 @@ document.addEventListener("click", function(e){
     }
     case "zoneok":
       if(ui.zoneClosed){
-        var zerr = ui.zoneKind==="pasture" ? g.tracePasture(ui.zonePts) : g.traceZone(ui.zonePts, ui.zoneN==null ? undefined : ui.zoneN);
+        var zerr = ui.zoneKind==="pasture" ? g.tracePasture(ui.zonePts) : ui.zoneKind==="field" ? g.traceField(ui.zonePts) : g.traceZone(ui.zonePts, ui.zoneN==null ? undefined : ui.zoneN);
         if(zerr) flash(zerr); else { AudioFX.build(); buzz(8); ui.zonePts = []; ui.zoneClosed = false; ui.zoneN = null; }
       }
       break;
@@ -537,7 +537,6 @@ document.addEventListener("click", function(e){
     case "obj": ui.objOpen = !ui.objOpen; break;
     case "layersbtn": ui.layersOpen = !ui.layersOpen; break;
     case "layer": ui.layers[arg] = !ui.layers[arg]; break;
-    case "fieldsize": g.setFieldSize(Number(arg)); break;
     /* --- bâtiment sélectionné --- */
     case "selclose": ui.selId = null; ui.selV = null; break;
     case "assign": if(ui.selId!=null) g.assign(ui.selId); break;
@@ -783,20 +782,24 @@ function renderHud(g){
   /* aide à la pose (bas de l'écran) */
   var h = "";
   if(ui.flash) h += "<div class='flash'>"+esc(ui.flash)+"</div>";
-  if(ui.zoneMode && ui.zoneKind==="pasture"){
-    var po = zoneOverlay(g), pp = ui.zonePts.length, ppl = po && po.plan, ptxt, ptitle = "Pâturage", pok = ui.zoneClosed && ppl && !ppl.err;
-    if(!ui.zoneClosed) ptxt = pp===0 ? "Touchez la carte pour poser les points de la clôture, où vous voulez (4 cases au moins)."
+  if(ui.zoneMode && ui.zoneKind!=="house"){
+    var isF = ui.zoneKind==="field";
+    var po = zoneOverlay(g), pp = ui.zonePts.length, ppl = po && po.plan, ptxt, ptitle = isF ? "Champ" : "Pâturage", pok = ui.zoneClosed && ppl && !ppl.err;
+    if(!ui.zoneClosed) ptxt = pp===0 ? (isF ? "Touchez la carte pour poser les points du champ, où vous voulez ("+FIELD_MIN+" à "+FIELD_MAX+" cases). Le calque montre la fertilité." : "Touchez la carte pour poser les points de la clôture, où vous voulez (4 cases au moins).")
       : pp<3 ? pp+" point"+(pp>1?"s":"")+" posé"+(pp>1?"s":"")+". Continuez le contour."
       : pp+" points. Touchez le premier point (doré) ou « Fermer ». Appui long sur un point pour le déplacer.";
     else if(!pok) ptxt = ppl ? ppl.err : "";
-    else {
+    else if(isF){
+      ptitle = "Champ de "+ppl.n+" cases · fertilité "+Math.round(ppl.fert*100)+" %";
+      ptxt = "Gratuit. "+CROP_DEFS[ppl.crop].name+" (culture proposée) : récolte estimée ≈ "+ppl.qty+(CROP_DEFS[ppl.crop].sheaf ? " gerbes" : "")+" par an, avant météo et rotation.";
+    } else {
       ptitle = "Pâturage de "+ppl.n+" cases "+costHtml({ timber:ppl.cost }, g);
       ptxt = "Herbe pour ~"+Math.floor((ppl.n-1)/0.5)+" moutons, ~"+Math.floor(ppl.n-1)+" vaches ou ~"+Math.floor((ppl.n-1)/0.5)+" porcs. L'abri se place au bord, côté route.";
     }
-    h += "<div class='frame place wrap'>"+ic("sheep","l")+"<div class='t'><b>"+ptitle+"</b><span>"+rich(ptxt)+"</span></div><div class='sizes'>";
+    h += "<div class='frame place wrap'>"+(isF ? ICONS.th("field") : ic("sheep","l"))+"<div class='t'><b>"+ptitle+"</b><span>"+rich(ptxt)+"</span></div><div class='sizes'>";
     if(pp>0) h += "<button class='b' data-act='zoneundo' aria-label='Annuler le dernier point'>↶</button>";
     if(!ui.zoneClosed && pp>=3) h += "<button class='b' data-act='zoneclose'>Fermer</button>";
-    if(pok) h += "<button class='b gold' data-act='zoneok'>Clôturer</button>";
+    if(pok) h += "<button class='b gold' data-act='zoneok'>"+(isF ? "Tracer" : "Clôturer")+"</button>";
     h += "</div><button class='b sq' data-act='cancel' aria-label='Annuler'>"+ic("close")+"</button></div>";
   } else if(ui.zoneMode){
     var zo = zoneOverlay(g), zp = ui.zonePts.length, zpl2 = zo && zo.plan, ztxt, ztitle = "Zone de bourgages", zok = ui.zoneClosed && zpl2 && !zpl2.err;
@@ -822,11 +825,6 @@ function renderHud(g){
     h += "<div class='frame place'><div class='t'><b>"+esc(d.name)+" "+costHtml(d.cost, g)+"</b><span>"+(ui.pendingPlace
          ? "Touchez à nouveau l'emplacement bleu pour valider, ou ailleurs pour le changer."
          : "Touchez la carte pour choisir l'emplacement"+(UNIQUE[ui.buildSel] ? "" : " (plusieurs à la suite)")+".")+"</span></div>";
-    if(d.uiSize){
-      h += "<div class='sizes'>";
-      for(var si=0; si<FIELD_SIZES.length; si++) h += "<button class='b"+(g.fieldSize()===FIELD_SIZES[si]?" on":"")+"' data-act='fieldsize' data-arg='"+FIELD_SIZES[si]+"'>"+FIELD_SIZES[si]+"×"+FIELD_SIZES[si]+"</button>";
-      h += "</div>";
-    }
     if(ui.pendingPlace) h += "<button class='b gold' data-act='placeok'>Valider</button>";
     h += "<button class='b sq' data-act='cancel' aria-label='Annuler'>"+ic("close")+"</button></div>";
   }
@@ -879,6 +877,7 @@ function sheetBuild(g, catId){
   var acts = cat.actions || [];
   for(var a=0;a<acts.length;a++){
     if(acts[a]==="zone") h += actionCard("zone", ic("house","l"), "Tracer une zone", costHtml(BUILD_DEFS.burgage.cost, g)+"<span class='dim'> / maison</span>", "Parcelles le long d'une route");
+    if(acts[a]==="fieldzone") h += actionCard("fieldzone", ICONS.th("field"), "Tracer un champ", "<span class='cost'>gratuit</span>", "Forme libre, "+FIELD_MIN+" à "+FIELD_MAX+" cases");
     if(acts[a]==="pasture") h += actionCard("pasture", ic("sheep","l"), "Tracer un pâturage", "<span class='cost'>clôture "+ic("timber","s")+"</span>", "Moutons, vaches ou porcs");
     if(acts[a]==="buyox") h += actionCard("buyox", ic("ox","l"), "Acheter un bœuf", "<span class='cost"+(g.treasury<20?" no":"")+"'>20"+ic("coin","s")+"</span>", "Labours plus rapides");
     if(acts[a]==="militia") h += actionCard("militia", ic("sword","l"), "Lever la milice", "<span class='cost'>"+g.units.length+" / "+g.militiaCount()+"</span>", "1 soldat pour 2 familles");
@@ -898,7 +897,7 @@ function sheetSelection(g){
   var d = BUILD_DEFS[sel.def];
   var status = g.workStatus(sel);
   var hsp = sel.def==="pasture" && sel.herd && LIVESTOCK[sel.herd.sp] && sel.herd.an.length ? LIVESTOCK[sel.herd.sp] : null;
-  var h = head(ICONS.th(sel.def), esc(d.name)+(sel.def==="burgage" ? " · niveau "+sel.lvl : "")+(hsp ? " · "+hsp.name : "")+(sel.def==="field" ? " · "+sel.w+"×"+sel.h : ""), status ? esc(status) : "");
+  var h = head(ICONS.th(sel.def), esc(d.name)+(sel.def==="burgage" ? " · niveau "+sel.lvl : "")+(hsp ? " · "+hsp.name : "")+(sel.def==="field" ? " · "+g.fieldN(sel)+" cases" : ""), status ? esc(status) : "");
   if(sel.def!=="field") h += "<div class='desc'>"+esc(hsp ? hsp.desc : d.desc)+"</div>";
   if(!sel.done){
     h += "<div class='row'><span class='dim'>Chantier</span>"+bar(sel.progress||0,"gold")+"<b>"+Math.round((sel.progress||0)*100)+" %</b></div>";
@@ -988,14 +987,14 @@ function calTxt(cd){
 function sheetField(g, sel){
   var f = sel.f, cd = g.liveCrop(f), h = "";
   if(!f.sown){
-    h += "<div class='sec'>Culture prévue · "+sel.w+"×"+sel.h+"</div><div class='crops'>";
+    h += "<div class='sec'>Culture prévue · "+g.fieldN(sel)+" cases</div><div class='crops'>";
     for(var ci=0; ci<CROP_ORDER.length; ci++){
       var c = CROP_DEFS[CROP_ORDER[ci]];
       h += "<button class='b"+(f.crop===c.id?" on":"")+"' data-act='crop' data-arg='"+c.id+"'>"+cropIc(c.id)+"<span>"+esc(c.short||c.name)+"</span></button>";
     }
     h += "</div>";
   } else {
-    h += "<div class='sec'>En terre · "+sel.w+"×"+sel.h+"</div>"
+    h += "<div class='sec'>En terre · "+g.fieldN(sel)+" cases</div>"
        + "<div class='kv'><span class='k'>"+cropIc(cd.id,"")+"<b>"+esc(cd.name)+"</b></span><span class='v dim' style='font-weight:400'>semé"+(cd.season==="meadow" ? " (pré)" : "")+" en "+MONTHS_ABBR[((f.sownAt%12)+12)%12]+" "+Math.floor(f.sownAt/12)+"</span></div>";
   }
   h += "<div class='desc'>"+esc(cd.desc)+"<br><span class='gold'>"+esc(calTxt(cd))+"</span></div>";
@@ -1047,11 +1046,11 @@ function sheetFarm(g){
   h += "<div class='kv'><span class='k'>"+ic("manure","s")+"Fumier</span><span class='v'>"+Math.floor(g.stock.manure||0)+"</span></div>";
   var fs = g.fields();
   h += "<div class='sec'>Champs · "+fs.length+"</div>";
-  if(!fs.length) h += "<div class='dim'>Posez des champs depuis le tiroir Terres.</div>";
+  if(!fs.length) h += "<div class='dim'>Tracez des champs depuis le tiroir Terres.</div>";
   fs.forEach(function(b){
     var cd = g.liveCrop(b.f), fc = g.forecast(b);
     var st = g.fieldStatus(b); if(st.indexOf(cd.name+" · ")===0) st = st.slice(cd.name.length+3);
-    h += "<button class='vrow' data-act='bsel' data-arg='"+b.id+"'><span class='ppw'>"+cropIc(cd.id,"")+"</span><span class='t'>"+esc(cd.name)+" · "+b.w+"×"+b.h
+    h += "<button class='vrow' data-act='bsel' data-arg='"+b.id+"'><span class='ppw'>"+cropIc(cd.id,"")+"</span><span class='t'>"+esc(cd.name)+" · "+g.fieldN(b)+" cases"
        + "<span class='s'>"+esc(st.charAt(0).toUpperCase()+st.slice(1))+"</span></span>"+(fc.qty ? "<span class='mood dim'>≈"+fc.qty+"</span>" : "")+"</button>";
   });
   return h;
@@ -1378,7 +1377,7 @@ function renderDock(g){
   for(var i=0;i<CATS.length;i++){
     var c = CATS[i];
     var on = c.tool ? ui.roadMode : (ui.cat===c.id || (ui.buildSel && c.items.indexOf(ui.buildSel)>=0)
-           || (c.id==="home" && ((ui.zoneMode && ui.zoneKind!=="pasture") || ui.extPlace)) || (c.id==="farm" && ui.zoneMode && ui.zoneKind==="pasture"));
+           || (c.id==="home" && ((ui.zoneMode && ui.zoneKind==="house") || ui.extPlace)) || (c.id==="farm" && ui.zoneMode && ui.zoneKind!=="house"));
     h += "<button class='cat"+(on?" on":"")+"' data-act='cat' data-arg='"+c.id+"'>"+ic(c.icon)+"<span>"+c.name+"</span></button>";
   }
   setHTML(elDock, h);
@@ -1519,7 +1518,7 @@ function zoneOverlay(g){
   _zoneKey = key;
   var pasture = ui.zoneKind==="pasture";
   _zoneOv = { kind:ui.zoneKind, pts:ui.zonePts.slice(), closed:ui.zoneClosed, grab:grab,
-              plan: ui.zoneClosed ? (pasture ? g.planPasture(ui.zonePts) : g.planZone(ui.zonePts, ui.zoneN==null ? undefined : ui.zoneN)) : null };
+              plan: ui.zoneClosed ? (pasture ? g.planPasture(ui.zonePts) : ui.zoneKind==="field" ? g.planField(ui.zonePts) : g.planZone(ui.zonePts, ui.zoneN==null ? undefined : ui.zoneN)) : null };
   return _zoneOv;
 }
 
@@ -1549,7 +1548,7 @@ function loop(now){
   if(game) soundForToasts(game);
   _uiAcc += dt;
   if(_uiAcc>300){ _uiAcc = 0; renderUI(); }
-  if(game){ RENDER.setOverlay(zoneOverlay(game)); RENDER.setSelVillager(ui.selV); drawGame(ctx, game, cam, canvas, hover, ui.buildSel, ui.selId, ui.layers, now); }
+  if(game){ RENDER.setOverlay(zoneOverlay(game)); RENDER.setSelVillager(ui.selV); drawGame(ctx, game, cam, canvas, hover, ui.buildSel, ui.selId, (ui.zoneMode && ui.zoneKind==="field") ? Object.assign({}, ui.layers, { soil:true }) : ui.layers, now); }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);

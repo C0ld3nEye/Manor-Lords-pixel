@@ -1293,7 +1293,7 @@ test("étape 4 : une ancienne sauvegarde (familles anonymes) est convertie sans 
 });
 
 /* ================= étape 5 : agriculture et élevage approfondis ================= */
-const { CROP_CAL, LIVESTOCK, LIVESTOCK_ORDER, PASTURE_MIN, monthsTxt } = require("../js/sim.js");
+const { CROP_CAL, LIVESTOCK, LIVESTOCK_ORDER, PASTURE_MIN, PLOT_MIN, monthsTxt } = require("../js/sim.js");
 function feed(g){ g.stock.berries = 250; g.stock.meat = 250; g.stock.firewood = 250; g.stock.clothes = 50; }
 function toMonth(g, m){ g.time.month = m; g.time.day = 0; g.time.tick = 0; }
 function newField(g, crop, n){ g.setFieldSize(n||4); const b = placeInCenter(g, "field"); if(crop) g.setCrop(b.id, crop); return b; }
@@ -1728,6 +1728,59 @@ test("étape 5 : trois ans de ferme et d'élevage — ni exception ni valeur abe
     for(const a of p.herd.an) assert.ok(isFinite(a.a) && a.a>=0);
     assert.ok(g.fields().some(b=>b.f.hist.length>0), "des récoltes ont eu lieu (graine "+seed+")");
   }
+});
+
+test("étape 5 : champ tracé librement — forme libre, fertilité moyenne, cases occupées", () => {
+  const g = fresh();
+  const r = freeBlock(g, 6, 4);
+  // un L : 6×2 en haut + 2×2 en bas à gauche
+  const pts = [[r.x,r.y],[r.x+6,r.y],[r.x+6,r.y+2],[r.x+2,r.y+2],[r.x+2,r.y+4],[r.x,r.y+4]];
+  const plan = g.planField(pts);
+  assert.strictEqual(plan.err, null);
+  assert.strictEqual(plan.n, 16);
+  assert.ok(plan.fert>0 && plan.qty>0);
+  assert.strictEqual(g.traceField(pts), null);
+  const b = g.buildings[g.buildings.length-1];
+  assert.strictEqual(b.def, "field"); assert.ok(b.done);
+  assert.strictEqual(g.fieldN(b), 16);
+  assert.strictEqual(b.plot.cells[0], b.y*W+b.x);
+  for(const i of b.plot.cells) assert.strictEqual(g.occupied[i], b.id);
+  assert.strictEqual(g.occupied[(r.y+3)*W+r.x+4], -1, "le creux du L reste libre");
+  assert.ok(Math.abs(g.forecast(b).qty - plan.qty) <= 1, "l'aperçu annonce la même récolte");
+  assert.ok(/empiète/.test(g.planField(pts).err));
+  const r2 = freeBlock(g, 2, 1);
+  assert.ok(/trop petit/.test(g.planField([[r2.x,r2.y],[r2.x+2,r2.y],[r2.x+2,r2.y+1],[r2.x,r2.y+1]]).err));
+  g.demolish(b.id);
+  for(const i of plan.cells) assert.strictEqual(g.occupied[i], -1);
+});
+
+test("étape 5 : un ancien champ carré devient une forme tracée au chargement", () => {
+  const g = fresh();
+  const b = newField(g, "barley", 4);
+  const data = JSON.parse(JSON.stringify(g.serialize()));
+  delete data.buildings.find(x=>x.id===b.id).plot;
+  const g2 = GameState.load(data);
+  const b2 = g2.buildings.find(x=>x.id===b.id);
+  assert.ok(b2.plot && b2.plot.cells.length===b.w*b.h && b2.plot.cells[0]===b2.y*W+b2.x);
+  assert.strictEqual(g2.fieldN(b2), b.w*b.h);
+});
+
+test("plus de maison sans cour : chaque parcelle a au moins 3 cases", () => {
+  const g = fresh();
+  g.stock.timber = 200;
+  const camp = g.buildings[0];
+  let ry = -1, rx0 = W, rx1 = 0;
+  for(let y=0;y<H && ry<0;y++) for(let x=0;x<W;x++) if(g.roads[y*W+x]){ ry = y; break; }
+  for(let x=0;x<W;x++) if(g.roads[ry*W+x]){ rx0 = Math.min(rx0,x); rx1 = Math.max(rx1,x); }
+  // bande d'une seule case de profondeur le long de la route : au plus une maison toutes les 3 cases
+  const pts = [[rx0, ry+1],[rx1+1, ry+1],[rx1+1, ry+2],[rx0, ry+2]];
+  const plan = g.planZone(pts, 99);
+  if(!plan.err){
+    assert.ok(plan.plots.every(p=>p.cells.length>=PLOT_MIN), "parcelles d'au moins 3 cases");
+    assert.ok(plan.nMax <= Math.floor((rx1-rx0+1)/PLOT_MIN));
+  }
+  const tiny = g.planZone([[rx0, ry+1],[rx0+2, ry+1],[rx0+2, ry+2],[rx0, ry+2]]);
+  assert.ok(tiny.err, "deux cases : pas de maison");
 });
 
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));
