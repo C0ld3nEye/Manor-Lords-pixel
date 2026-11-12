@@ -426,15 +426,14 @@ function fieldStage(f){
 var FIELD_SPR = { wheat:"wheat", barley:"barley", rye:"rye", oats:"oats", flax:"flax", peas:"peas", hay:"hay" };
 function drawField(g, b, season){
   var f = b.f; if(!f) return;
-  var n = b.w*b.h, plowed = Math.floor((f.plow||0)*n + 0.0001), harvested = Math.floor((f.harvestP||0)*n);
+  var cells = g.fieldCells(b), n = cells.length, plowed = Math.floor((f.plow||0)*n + 0.0001), harvested = Math.floor((f.harvestP||0)*n);
   var sowed = Math.floor((f.sowP||0)*n + 0.0001), dunged = f.dunged ? n : Math.floor((f.dungP||0)*n);
   var crop = f.sown ? (f.sownCrop || f.crop) : f.crop;
   var stage = fieldStage(f), mi = g.monthIdx ? g.monthIdx() : 0;
   var stubble = !f.sown && f.prev && f.prev!=="hay" && (f.plow||0)<=0 && mi - (f.stubAt||-999) < 14;
-  var x0 = b.x*TS, y0 = b.y*TS;
   for(var k=0;k<n;k++){
-    var tx = k % b.w, ty = (k / b.w)|0, v = (b.x+tx+b.y+ty)&1;
-    var px = x0 + tx*TS, py = y0 + ty*TS, name = null;
+    var cx = cells[k]%W, cy = (cells[k]/W)|0, v = (cx+cy)&1;
+    var px = cx*TS, py = cy*TS, name = null;
     if(season===0) name = (f.sown && crop!=="hay" && f.growth>0) ? "field_wintercrop_"+v : "field_snow_"+v;
     else if(crop==="fallow") name = "field_fallow_"+v;
     else if(crop==="hay"){
@@ -451,13 +450,20 @@ function drawField(g, b, season){
     else if(stubble) name = "field_stub_"+v;
     if(name) spr(name, px, py + TS);
   }
-  // bordure : talus et piquets
-  var w = b.w*TS, h = b.h*TS;
-  bx.fillStyle = season===0 ? "#8a98a8" : "#4a3624";
-  bx.fillRect(x0-OX, y0-OY, w, 1); bx.fillRect(x0-OX, y0+h-1-OY, w, 1);
-  bx.fillRect(x0-OX, y0-OY, 1, h); bx.fillRect(x0+w-1-OX, y0-OY, 1, h);
-  bx.fillStyle = "#6b4a30";
-  for(var px2=0; px2<=w-1; px2+=6){ bx.fillRect(x0+px2-OX, y0-1-OY, 1, 2); bx.fillRect(x0+px2-OX, y0+h-2-OY, 1, 2); }
+  // bordure : talus et piquets, le long du contour tracé
+  var set = {}; for(k=0;k<n;k++) set[cells[k]] = 1;
+  var bank = season===0 ? "#8a98a8" : "#4a3624";
+  for(k=0;k<n;k++){
+    var c = cells[k], qx = (c%W)*TS - OX, qy = ((c/W)|0)*TS - OY, ccx = c%W;
+    bx.fillStyle = bank;
+    if(!set[c-W]) bx.fillRect(qx, qy, TS, 1);
+    if(!set[c+W]) bx.fillRect(qx, qy+TS-1, TS, 1);
+    if(ccx===0 || !set[c-1]) bx.fillRect(qx, qy, 1, TS);
+    if(ccx===W-1 || !set[c+1]) bx.fillRect(qx+TS-1, qy, 1, TS);
+    bx.fillStyle = "#6b4a30";
+    if(!set[c-W]){ bx.fillRect(qx, qy-1, 1, 2); bx.fillRect(qx+8, qy-1, 1, 2); }
+    if(!set[c+W]){ bx.fillRect(qx, qy+TS-2, 1, 2); bx.fillRect(qx+8, qy+TS-2, 1, 2); }
+  }
 }
 
 /* étape 5 : pâturage — herbe teintée selon ce qu'il en reste, clôture qui suit le tracé */
@@ -742,9 +748,9 @@ function drawOverlay(g, now){
   }
   if(OV.pts){
     var pl = OV.plan, plots = (pl && !pl.err) ? pl.plots : [];
-    var pastureKind = OV.kind==="pasture";
-    for(k=0; k<plots.length; k++){ fillPoly(plots[k].poly, pastureKind ? "rgba(120,210,90,0.30)" : PLOT_TINTS[k&1]); drawPolyFence(g, plots[k].poly, plots[k].dir, 0.95, "#f2e6c8", "#c9a45a"); }
-    for(k=0; k<plots.length; k++){ var hc = plots[k].cells[0]; bx.globalAlpha = 0.7; spr(pastureKind ? "shelter_none" : "burgage1_"+(k%3), cellX(hc), cellY(hc)+TS); bx.globalAlpha = 1; }
+    var pastureKind = OV.kind==="pasture", fieldKind = OV.kind==="field";
+    for(k=0; k<plots.length; k++){ fillPoly(plots[k].poly, pastureKind ? "rgba(120,210,90,0.30)" : fieldKind ? "rgba(150,100,50,0.35)" : PLOT_TINTS[k&1]); drawPolyFence(g, plots[k].poly, plots[k].dir, 0.95, "#f2e6c8", "#c9a45a"); }
+    for(k=0; k<plots.length && !fieldKind; k++){ var hc = plots[k].cells[0]; bx.globalAlpha = 0.7; spr(pastureKind ? "shelter_none" : "burgage1_"+(k%3), cellX(hc), cellY(hc)+TS); bx.globalAlpha = 1; }
     var P = OV.pts, col = (pl && pl.err) ? "#e05a3a" : "#fff4d6", nSeg = OV.closed ? P.length : P.length-1;
     for(k=0; k<nSeg; k++){
       var A = P[k], B = P[(k+1)%P.length];
@@ -947,12 +953,12 @@ function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
   for(var bi=0; bi<g.buildings.length; bi++){
     var b = g.buildings[bi];
     var bx0 = b.x*TS, by0 = b.y*TS, bx1 = bx0 + b.w*TS, by1 = by0 + b.h*TS;
-    if(b.plot && bx1 > OX-80 && bx0 < OX+bw+80 && by1 > OY-80 && by0 < OY+bh+80){
+    if(b.plot && b.def!=="field" && bx1 > OX-80 && bx0 < OX+bw+80 && by1 > OY-80 && by0 < OY+bh+80){
       if(b.def==="pasture"){ if(plotVisible(b, OX, OY, bw, bh)) drawPastureGround(g, b, season, winter); }
       else drawPlotGround(g, b, season, winter);
     }
+    if(b.def==="field"){ if(b.plot ? plotVisible(b, OX-16, OY-16, bw+32, bh+32) : !(bx1 < OX-16 || bx0 > OX+bw+16 || by1 < OY-16 || by0 > OY+bh+16)) drawField(g, b, season); continue; }
     if(bx1 < OX-16 || bx0 > OX+bw+16 || by1 < OY-16 || by0 > OY+bh+16) continue;
-    if(b.def==="field"){ drawField(g, b, season); continue; }
     if(!b.done || b.def==="market" || b.def==="trade" || b.def==="farm"){
       var tile = (b.def==="market" && b.done) ? "cobble_" : "dirt_";
       for(var yy=0; yy<b.h; yy++) for(var xx=0; xx<b.w; xx++){
@@ -1050,11 +1056,12 @@ function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
     if(F.def!=="field" || !F.f || winter) continue;
     var Ff = F.f, cropNow = Ff.sown ? (Ff.sownCrop || Ff.crop) : Ff.prev, cdq = CROP_DEFS[cropNow];
     if(!cdq || !cdq.yield) continue;
-    var harvested = Ff.sown ? Math.floor((Ff.harvestP||0)*F.w*F.h) : ((mIdx - (Ff.stubAt||-999) <= 1 && (Ff.plow||0)<=0 && !(Ff.dungP>0)) ? F.w*F.h : 0);
+    var Fc = g.fieldCells(F), Fn = Fc.length;
+    var harvested = Ff.sown ? Math.floor((Ff.harvestP||0)*Fn) : ((mIdx - (Ff.stubAt||-999) <= 1 && (Ff.plow||0)<=0 && !(Ff.dungP>0)) ? Fn : 0);
     var pile = (cdq.season==="meadow" || cdq.id==="peas") ? "haycock" : "sheaf";
     for(var q=0;q<harvested;q++){
       if(hash(F.id, q, 2) > (pile==="haycock" ? 0.22 : 0.35)) continue;
-      var qx = (F.x + q % F.w)*TS + 6 + Math.floor(hash(F.id,q,3)*5), qy = (F.y + ((q / F.w)|0))*TS + 10;
+      var qx = (Fc[q]%W)*TS + 6 + Math.floor(hash(F.id,q,3)*5), qy = ((Fc[q]/W)|0)*TS + 10;
       obj(qy, drawSprite, pile, qx, qy);
     }
   }
