@@ -4,8 +4,11 @@
 # une nouvelle version s'installe par-dessus l'ancienne, sans perdre les parties.
 name: APK Android
 
+# Seulement sur la branche principale (une fois les changements fusionnés) ou à la demande (onglet Actions →
+# « APK Android » → Run workflow) : jamais depuis une branche de travail.
 on:
   push:
+    branches: [ main ]
     paths:
       - "index.html"
       - "js/**"
@@ -68,5 +71,4 @@ jobs:
             Une nouvelle version s'installe par-dessus l'ancienne si elle porte la même signature : vos parties sont gardées.
             Signature : ${{ env.SIGNATURE }}.
           files: Seigneurie.apk
-          prerelease: ${{ github.ref != 'refs/heads/main' }}
-          make_latest: ${{ github.ref == 'refs/heads/main' }}
+          make_latest: true
