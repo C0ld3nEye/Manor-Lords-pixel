@@ -8,13 +8,49 @@
 var SAVE_SLOTS = ["seigneurie-save-v2-1","seigneurie-save-v2-2","seigneurie-save-v2-3"];
 var SAVE_KEY = SAVE_SLOTS[0];
 var activeSlot = 0;
-function persist(g){ if(!g) return; try{ window.localStorage.setItem(SAVE_SLOTS[activeSlot], JSON.stringify(g.serialize())); }catch(e){} }
-function loadSlot(i){ try{ var r=window.localStorage.getItem(SAVE_SLOTS[i]); return r?GameState.load(JSON.parse(r)):null; }catch(e){ return null; } }
+/* étape 8 : le stockage des parties. Dans un navigateur : le stockage local (dont on demande qu'il soit gardé).
+   Dans l'application Android : en plus, un fichier par emplacement dans la mémoire de l'application (pont
+   « SeigneurieAndroid ») ; il survit à un vidage du navigateur intégré et suit la sauvegarde automatique d'Android.
+   C'est lui qu'on lit d'abord. */
+var NATIVE = (typeof window!=="undefined" && window.SeigneurieAndroid) || null;
+// moment d'une sauvegarde, lu sans tout décoder (pour garder la plus récente des deux copies)
+function saveMoment(str){
+  var m = /"time":\{"tick":(\d+),"day":(\d+),"month":(\d+),"year":(\d+)\}/.exec(str || "");
+  return m ? ((Number(m[4])*12 + Number(m[3]))*32 + Number(m[2]))*1000 + Number(m[1]) : -1;
+}
+function storeGet(k){
+  var v = null, w = null;
+  if(NATIVE){ try{ v = NATIVE.load(k) || null; }catch(e){ v = null; } }
+  try{ w = window.localStorage.getItem(k); }catch(e){}
+  if(v==null) return w;
+  if(w!=null && w!==v && saveMoment(w) > saveMoment(v)) return w;   // le fichier a au plus 30 s de retard
+  return v;
+}
+function storeSet(k, v){
+  var ok = false;
+  try{ window.localStorage.setItem(k, v); ok = true; }catch(e){}
+  if(NATIVE){ try{ if(NATIVE.save(k, String(v))) ok = true; }catch(e){} }
+  return ok;
+}
+function storeDel(k){ try{ window.localStorage.removeItem(k); }catch(e){} if(NATIVE){ try{ NATIVE.remove(k); }catch(e){} } }
+try{ if(!NATIVE && navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){}
+// la sauvegarde automatique passe toutes les 5 s ; le fichier de l'application n'est réécrit qu'au plus toutes les
+// 30 s (batterie), mais toujours aussitôt qu'on quitte ou qu'on change de partie (force)
+var _nativeT = 0;
+function persist(g, force){
+  if(!g) return;
+  try{
+    var str = JSON.stringify(g.serialize());
+    try{ window.localStorage.setItem(SAVE_SLOTS[activeSlot], str); }catch(e){}
+    if(NATIVE && (force || Date.now() - _nativeT > 30000)){ _nativeT = Date.now(); try{ NATIVE.save(SAVE_SLOTS[activeSlot], str); }catch(e){} }
+  }catch(e){}
+}
+function loadSlot(i){ try{ var r=storeGet(SAVE_SLOTS[i]); return r?GameState.load(JSON.parse(r)):null; }catch(e){ return null; } }
 var _slotCache = {};
 function slotInfo(i){
   if(_slotCache[i] && Date.now()-_slotCache[i].t < 1500) return _slotCache[i].info;
   var raw = null;
-  try{ raw = window.localStorage.getItem(SAVE_SLOTS[i]); }catch(e){}
+  raw = storeGet(SAVE_SLOTS[i]);
   if(!raw) return null;
   if(_slotCache[i] && _slotCache[i].raw===raw.length && Date.now()-_slotCache[i].t < 4000) return _slotCache[i].info;
   /* résumé lu directement dans la sauvegarde : recharger une partie régénère toute la grande carte (trop lent ici) */
@@ -39,7 +75,7 @@ function decodeSave(code){ try{ return GameState.load(JSON.parse(decodeURICompon
 var game = null;
 var uiMenu = false; // écran d'accueil (sauvegardes / nouvelle partie)
 try{
-  var _last = window.localStorage.getItem("seigneurie-last-slot");
+  var _last = storeGet("seigneurie-last-slot");
   if(_last!==null){ activeSlot = Math.max(0, Math.min(2, Number(_last)||0)); }
   game = loadSlot(activeSlot);
 }catch(e){}
@@ -633,17 +669,17 @@ document.addEventListener("click", function(e){
       game = new GameState(Math.floor(Math.random()*2000000000), ui.newMode, ui.newDiff);
       activeSlot = Math.max(0, Math.min(2, ui.newSlot));
       SAVE_KEY = SAVE_SLOTS[activeSlot];
-      try{ window.localStorage.setItem("seigneurie-last-slot", String(activeSlot)); }catch(e2){}
-      persist(game);
+      storeSet("seigneurie-last-slot", String(activeSlot));
+      persist(game, true);
       cancelAll(); uiMenu = false; ui.endSeen = false; ui.objOpen = true; ui.lastSpeed = 1;
       centerCam();
       break;
     case "loadslot": {
       var g2 = loadSlot(Number(arg));
       if(g2){
-        if(game && game!==g2) persist(game);
+        if(game && game!==g2) persist(game, true);
         game = g2; activeSlot = Number(arg); SAVE_KEY = SAVE_SLOTS[activeSlot];
-        try{ window.localStorage.setItem("seigneurie-last-slot", String(activeSlot)); }catch(e2){}
+        storeSet("seigneurie-last-slot", String(activeSlot));
         cancelAll(); uiMenu = false; ui.endSeen = false; centerCam();
       }
       break;
@@ -651,7 +687,7 @@ document.addEventListener("click", function(e){
     case "delslot": {
       var si = Number(arg);
       if(ui.delArm && ui.delArm.slot===si && Date.now() < ui.delArm.t){
-        try{ window.localStorage.removeItem(SAVE_SLOTS[si]); }catch(e2){}
+        storeDel(SAVE_SLOTS[si]);
         delete _slotCache[si];
         if(si===activeSlot && game){ game = null; }
         ui.delArm = null;
@@ -660,16 +696,20 @@ document.addEventListener("click", function(e){
     }
     case "saveCode": {
       var code = encodeSave(g);
+      /* dans l'application Android : le partage (Drive, mail, notes…) et le presse-papiers */
+      if(NATIVE){ try{ NATIVE.copy(code); NATIVE.share(code, "Seigneurie — sauvegarde ("+MONTHS[g.time.month]+" "+g.time.year+")"); flash("Code copié ; choisissez où le garder."); }catch(e3){ flash("Partage impossible."); } break; }
       if(navigator.clipboard && navigator.clipboard.writeText){
         navigator.clipboard.writeText(code).then(function(){ flash("Code de sauvegarde copié !"); }, function(){ window.prompt("Votre code de sauvegarde — copiez-le :", code); });
       } else window.prompt("Votre code de sauvegarde — copiez-le :", code);
       break;
     }
     case "loadCode": {
-      var str = window.prompt("Collez un code de sauvegarde :");
+      var str = null;
+      if(NATIVE){ try{ var clip = NATIVE.paste(); if(clip && decodeSave(clip)) str = clip; }catch(e3){} }   // un code déjà copié
+      if(!str) str = window.prompt("Collez un code de sauvegarde :");
       if(str){
         var ng = decodeSave(str);
-        if(ng){ game = ng; persist(game); cancelAll(); uiMenu = false; centerCam(); flash("Partie chargée !"); }
+        if(ng){ game = ng; persist(game, true); cancelAll(); uiMenu = false; centerCam(); flash("Partie chargée !"); }
         else flash("Code invalide.");
       }
       break;
@@ -1614,7 +1654,7 @@ function sheetBook(g){
   else h += "<div class='kv'><span class='k dim'>Taille</span><span class='v dim'>manoir requis</span></div>";
   if(g.taxLevel("dime")) h += "<div class='kv'><span class='k'>Dîme (en nature)</span><span class='v'>"+MONTHS[nd.month]+"</span></div>";
   var ky = g.time.year + Math.floor((g.time.month + nk.inMonths)/12);
-  if(ky>=1177) h += "<div class='kv'><span class='k'>Impôt du roi</span><span class='v'>"+MONTHS[nk.month]+" "+ky+" · ~"+g.kingTaxEstimate(ky)+"</span></div>";
+  if(ky>=1177) h += "<div class='kv'><span class='k'>Impôt du roi</span><span class='v'>"+(g.hasManor() ? MONTHS[nk.month]+" "+ky+" · ~"+g.kingTaxEstimate(ky) : "dû dès qu'il y aura un manoir")+"</span></div>";
   /* mois en cours, mois dernier, douze mois */
   h += "<div class='sec'>Ce mois-ci (en cours)</div>"+bookRows(g.book.cur);
   var last = g.book.hist[g.book.hist.length-1];
@@ -1836,8 +1876,8 @@ function sheetMenu(g){
   h += "<button class='b wide' data-act='modal' data-arg='help'>"+ic("help")+"Comment jouer</button>";
   h += "<button class='b wide' data-act='mute'>"+ic(AudioFX.muted?"mute":"sound")+"Son : "+(AudioFX.muted?"coupé":"activé")+"</button>";
   h += "<button class='b wide' data-act='text'><b class='mono' style='width:18px'>Aa</b>Taille du texte : "+TXT_NAMES[_txtSize]+"</button>";
-  h += "<button class='b wide' data-act='saveCode'>"+ic("scroll")+"Copier un code de sauvegarde</button>";
-  h += "<button class='b wide' data-act='loadCode'>"+ic("scroll")+"Charger un code de sauvegarde</button>";
+  h += "<button class='b wide' data-act='saveCode'>"+ic("scroll")+(NATIVE ? "Exporter la partie (partager un code)" : "Copier un code de sauvegarde")+"</button>";
+  h += "<button class='b wide' data-act='loadCode'>"+ic("scroll")+(NATIVE ? "Importer une partie (code copié)" : "Charger un code de sauvegarde")+"</button>";
   h += "<button class='b wide gold' data-act='mainmenu'>"+ic("house")+"Menu principal (parties, nouvelle partie)</button>";
   h += "</div>";
   return h;
@@ -2053,7 +2093,23 @@ function loop(now){
 }
 requestAnimationFrame(loop);
 
+/* étape 8 : l'application Android demande au jeu de sauvegarder (mise en arrière-plan) et lui passe le bouton
+   Retour : il ferme d'abord ce qui est ouvert, puis il faut toucher Retour deux fois pour quitter */
+var _backT = 0;
+window.seigneurieSave = function(){ persist(game, true); return "ok"; };
+window.seigneurieBack = function(){
+  if(ui.modal){ ui.modal = null; renderUI(); return "ok"; }
+  if(game && game.pendingEvent) return "ok";
+  if(uiMenu && game){ uiMenu = false; renderUI(); return "ok"; }
+  if(cancelAll()){ renderUI(); return "ok"; }
+  persist(game, true);
+  var now = Date.now();
+  if(now - _backT < 2500) return "quit";
+  _backT = now; flash("Touchez encore Retour pour quitter (la partie est sauvegardée).");
+  renderUI();
+  return "ok";
+};
 /* sauvegarde quand on quitte / cache l'application */
-document.addEventListener("visibilitychange", function(){ if(document.hidden) persist(game); });
-window.addEventListener("pagehide", function(){ persist(game); });
-window.addEventListener("beforeunload", function(){ persist(game); });
+document.addEventListener("visibilitychange", function(){ if(document.hidden) persist(game, true); });
+window.addEventListener("pagehide", function(){ persist(game, true); });
+window.addEventListener("beforeunload", function(){ persist(game, true); });

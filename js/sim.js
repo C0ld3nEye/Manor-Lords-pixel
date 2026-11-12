@@ -331,6 +331,7 @@ const DIME_MONTH = 9;               // octobre, une fois la moisson rentrée
 const KING_MONTH = 10;              // novembre : l'impôt du roi
 const KING_HOUSE = [0, 1, 1.5, 2];  // étape 8 : ce que pèse une maison habitée dans l'impôt du roi, selon son niveau
 const KING_TRADE = 0.15;            // étape 8 : part des ventes du comptoir de l'année que le roi réclame
+const KING_KIND = 2;                // étape 8 : mesures de vivres pour chaque denier qui manque à l'impôt du roi
 const LOAN_RATE = 0.02;             // intérêt par mois (environ un quart par an)
 const LOAN_STEP = 50;               // on emprunte et on rembourse par 50 deniers
 const LOAN_MISS_MAX = 3;            // trois échéances manquées : le changeur saisit des biens
@@ -1786,7 +1787,7 @@ class GameState {
       const mm = (m+k)%12, yy = this.time.year + Math.floor((m+k)/12);
       acc += tm;
       if(TAILLE_MONTHS.includes(mm) && this.hasManor()){ taille += acc*rate; acc = 0; }
-      if(mm===KING_MONTH && yy>=1177) king += this.kingTaxEstimate(yy);
+      if(mm===KING_MONTH && yy>=1177 && this.hasManor()) king += this.kingTaxEstimate(yy);
       interest += this.interestDue();
     }
     add("Taille", taille);
@@ -3232,6 +3233,13 @@ class GameState {
     const ev = this.pendingEvent; if(!ev) return;
     const c = ev.choices[choiceIndex];
     if(c.act==="pay"){ this.money("king", -(c.amount||0)); this.toast("Le roi a reçu son dû. La paix est préservée.","good"); }
+    else if(c.act==="payKind"){
+      // les deniers qu'on a, et des vivres pour le reste, pris dans chaque denrée au prorata
+      this.money("king", -Math.min(c.amount||0, Math.max(0, Math.floor(this.treasury))));
+      const tot = this.foodStock(), k = Math.min(c.kind||0, tot);
+      if(tot>0) for(const f of FOOD_TYPES) this.stock[f] = Math.max(0, (this.stock[f]||0) - k*(this.stock[f]||0)/tot);
+      this.toast("Le roi accepte d'être payé en partie en nature : "+Math.round(k)+" mesures de vivres partent pour la couronne.");
+    }
     else if(c.act==="refuseTax"){ this.approval -= 12; const lost=this.stock.berries+this.stock.meat+this.stock.bread+this.stock.eggs+this.stock.veg;
       for(const k of FOOD_TYPES) this.stock[k]=Math.floor(this.stock[k]*0.75); this.toast("Le bailli confisque une partie des récoltes !","bad"); }
     else if(c.act==="payRaid"){ this.money("tribute", -(c.amount||0)); this.toast("Le tribut est versé au Baron. Il se retire… pour l'instant.","good"); }
@@ -5077,17 +5085,22 @@ class GameState {
     // étape 6 : soudure, disette et marchand de grain
     this.dearthMonth(m, starved, meal);
     // événements
-    if(m===KING_MONTH && this.time.year>=1177){
+    // étape 8 : le roi ne réclame rien à une seigneurie qui n'a pas encore de manoir (avant, l'impôt tombait dès
+    // 1177, souvent sans aucun revenu : il fallait refuser et perdre un quart des vivres juste avant l'hiver) ;
+    // faute de deniers, on peut compléter en nature
+    if(m===KING_MONTH && this.time.year>=1177 && !this.hasManor()) this.toast("Le héraut du roi passe : sans manoir, votre seigneurie ne lui doit encore rien cette année.");
+    if(m===KING_MONTH && this.time.year>=1177 && this.hasManor()){
       const amount=this.kingTaxEstimate(this.time.year);
+      const have=Math.max(0, Math.floor(this.treasury)), kind=Math.ceil(Math.max(0, amount-have)*KING_KIND);
+      const choices=[ { label:"Payer "+amount+" 💰", act:"pay", amount, disabled:this.treasury<amount } ];
+      if(have<amount) choices.push({ label:"Payer "+have+" 💰 et le reste en nature ("+kind+" mesures de vivres)", act:"payKind", amount:have, kind, disabled:this.foodStock()<kind });
+      choices.push({ label:"Refuser (approbation −12, récoltes confisquées)", act:"refuseTax" });
       this.pendingEvent={ title:"L'impôt du roi",
         text:"Un héraut du roi exige "+amount+" deniers pour la couronne. Le refroidissement de sa gratitude serait… regrettable.",
-        choices:[
-          { label:"Payer "+amount+" 💰", act:"pay", amount, disabled:this.treasury<amount },
-          { label:"Refuser (approbation −12, récoltes confisquées)", act:"refuseTax" },
-        ]};
+        choices };
     }
     if(m===3) this.livestockFair();
-    if(m===4 && this.time.year>=1177 && this.rnd()<0.55){
+    if(m===4 && this.time.year>=1177 && this.rnd()<0.55*this.diff().bandits*(this.mode().combat ? 1 : 0.5)){   // étape 8 : plus rares sans combat
       const amount=Math.max(8, Math.round(6+this.families.length*1.5));
       this.pendingEvent={ title:"Des brigands en vue !",
         text:"Une bande de brigands rôde autour de la seigneurie. Ils exigent "+amount+" deniers pour passer leur chemin.",
@@ -5696,5 +5709,5 @@ if(typeof module!=="undefined" && module.exports){
     PLAID_MONTHS, CASE_DEFS, CASE_ORDER, PETITION_DEFS, FREEDOM_PRICE, FINE, LORD_DEBT,
     ORDER_DEFS, ORDER_RANK, SKILLED, ENNOBLE_COST, NOBLE_OFFICES, NOBLE_OFFICE_ORDER, LAW_CHAPTERS, LAW_DEFS, LAW_ORDER, LAW_COST, LAW_COOLDOWN, MAINMORTE,
     TAILLE_LVL, TRAIT_DEFS, SEAT_DEFS, SEAT_ORDER, COUNCIL_WAGE, EMBEZZLE, AUDIT_COST, ALMS_COST, FEAST_COST, REP_GEN, REP_SEV, TAX_DEFS, TAX_ORDER, TAILLE_MONTHS, DIME_MONTH, KING_MONTH, LOAN_RATE, LOAN_STEP, LOAN_MISS_MAX, BOOK_CATS, BOOK_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, MODE_BY_ID, DIFFICULTIES, DIFF_BY_ID,
-    GOALS, GOAL_BY_ID, TRADE_BASE, TRADE_LOT, TRADE_KEEP, TRADE_KEEP_WINTER, CLOTH_EVERY, SERF_CRAFT, EXT_FOOD, CHOP_TIMBER, CHOP_FUEL, GATHER_LOAD, HUNT_MEAT, KING_HOUSE, KING_TRADE };
+    GOALS, GOAL_BY_ID, TRADE_BASE, TRADE_LOT, TRADE_KEEP, TRADE_KEEP_WINTER, CLOTH_EVERY, SERF_CRAFT, EXT_FOOD, CHOP_TIMBER, CHOP_FUEL, GATHER_LOAD, HUNT_MEAT, KING_HOUSE, KING_TRADE, KING_KIND };
 }

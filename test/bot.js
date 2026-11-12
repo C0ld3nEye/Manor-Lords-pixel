@@ -153,7 +153,7 @@ function resolve(g, R){
   R.events[ev.title] = (R.events[ev.title]||0) + 1;
   const pick = (act)=>ev.choices.findIndex(c=>c.act===act && !c.disabled);
   let k = -1;
-  if(ev.title==="L'impôt du roi") k = pick("pay");
+  if(ev.title==="L'impôt du roi"){ k = pick("pay"); if(k<0 && g.foodMonths()>3) k = pick("payKind"); }
   else if(ev.title.startsWith("Des brigands")) k = g.treasury > (ev.choices[0].amount||0)*2 ? pick("payBandits") : -1;
   else if(ev.choices.some(c=>c.act==="buyFood")) k = pick("buyFood") >= 0 ? pick("buyFood") : ev.choices.findIndex(c=>c.act==="buyFood" && !c.disabled);
   else if(ev.choices.some(c=>c.act==="fairWood")) k = g.freeStock("timber")>20 ? pick("fairWood") : pick("fairCoin");

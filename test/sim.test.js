@@ -2545,6 +2545,7 @@ test("étape 7a : chaque achat et chaque vente passent au livre ; le mois se fer
 
 test("étape 7a : l'impôt du roi payé passe au livre", () => {
   const g = fresh(); g.time.year = 1178; g.treasury = 200;
+  doneBuilding(g, "manor");   // étape 8 : le roi taxe une seigneurie qui a son manoir
   g.time.month = 10; g.onMonth();
   assert.ok(g.pendingEvent && g.pendingEvent.title==="L'impôt du roi");
   const amount = g.pendingEvent.choices[0].amount;
@@ -3099,7 +3100,7 @@ test("étape 7e : un secret appris devient un levier — pression, dénonciation
 });
 
 /* ================= étape 8 : équilibrage, difficultés, objectifs ================= */
-const { DIFF_BY_ID, CLOTH_EVERY, TRADE_KEEP, KING_TRADE, MODE_BY_ID } = require("../js/sim.js");
+const { DIFF_BY_ID, CLOTH_EVERY, TRADE_KEEP, KING_TRADE, MODE_BY_ID, KING_MONTH: KING_MONTH_T } = require("../js/sim.js");
 
 test("étape 8 : trois difficultés vraiment différentes (réserves, récoltes, gâchis, chauffage, impôt du roi)", () => {
   const e = DIFF_BY_ID.easy, n = DIFF_BY_ID.normal, h = DIFF_BY_ID.hard;
@@ -3261,6 +3262,23 @@ test("étape 8 : l'impôt du roi suit les maisons, les années et une part des v
   g.book.hist.push({ y:1177, m:5, lines:{ trade:200 } });
   assert.strictEqual(g.kingTaxEstimate(1178), t0 + Math.round(KING_TRADE*200));
   assert.ok(g.kingTaxEstimate(1180) > g.kingTaxEstimate(1178), "il grandit avec les années");
+});
+
+test("étape 8 : l'impôt du roi attend le manoir ; faute de deniers, on le complète en nature", () => {
+  const g = fresh(); houses(g, 3); feed(g);
+  g.time.year = 1177; toMonth(g, KING_MONTH_T); g.onMonth();
+  assert.ok(!g.pendingEvent || g.pendingEvent.title!=="L'impôt du roi", "pas de manoir : rien à payer");
+  doneBuilding(g, "manor");
+  g.treasury = 3; g.pendingEvent = null;
+  toMonth(g, KING_MONTH_T); g.onMonth();
+  const ev = g.pendingEvent;
+  assert.ok(ev && ev.title==="L'impôt du roi");
+  const k = ev.choices.findIndex(c=>c.act==="payKind");
+  assert.ok(k>=0 && !ev.choices[k].disabled, "on peut payer en partie en nature");
+  const food = g.foodStock(), kind = ev.choices[k].kind;
+  g.resolveEvent(k);
+  assert.ok(g.treasury < 1e-9, "tous les deniers partent");
+  assert.ok(Math.abs(g.foodStock() - (food - kind)) < 1e-6, "et des vivres pour le reste");
 });
 
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));

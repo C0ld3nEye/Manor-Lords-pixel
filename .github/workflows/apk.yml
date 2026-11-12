@@ -1,0 +1,72 @@
+# Construit l'APK Android de Seigneurie (une vue web hors-ligne qui emballe index.html et js/) et le publie
+# dans les « Releases » du dépôt : on le télécharge directement depuis le téléphone.
+# Toutes les versions sont signées avec la même clé, gardée dans les secrets du dépôt (jamais dans le code) :
+# une nouvelle version s'installe par-dessus l'ancienne, sans perdre les parties.
+name: APK Android
+
+on:
+  push:
+    paths:
+      - "index.html"
+      - "js/**"
+      - "android/**"
+      - ".github/workflows/apk.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      # La clé de signature vient des secrets du dépôt (Settings → Secrets and variables → Actions) :
+      # SEIGNEURIE_KEYSTORE_B64 (le fichier .keystore en base64) et SEIGNEURIE_KS_PASS (son mot de passe).
+      # Sans eux, l'APK est signé avec une clé provisoire : il s'installe, mais une version suivante ne
+      # pourra pas s'installer par-dessus (il faudrait désinstaller ; exportez vos parties d'abord).
+      - name: Construire l'APK
+        env:
+          KS_B64: ${{ secrets.SEIGNEURIE_KEYSTORE_B64 }}
+          SEIGNEURIE_KS_PASS: ${{ secrets.SEIGNEURIE_KS_PASS }}
+        run: |
+          if [ -n "$KS_B64" ] && [ -n "$SEIGNEURIE_KS_PASS" ]; then
+            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/seigneurie.keystore"
+            export SEIGNEURIE_KEYSTORE="$RUNNER_TEMP/seigneurie.keystore"
+            echo "SIGNATURE=définitive (clé du dépôt)" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Pas de clé de signature dans les secrets : APK signé avec une clé provisoire."
+            echo "SIGNATURE=provisoire (ajoutez les secrets SEIGNEURIE_KEYSTORE_B64 et SEIGNEURIE_KS_PASS)" >> "$GITHUB_ENV"
+          fi
+          gradle -p android assembleRelease --no-daemon --stacktrace
+          cp android/app/build/outputs/apk/release/app-release.apk Seigneurie.apk
+          rm -f "$RUNNER_TEMP/seigneurie.keystore"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Seigneurie-apk
+          path: Seigneurie.apk
+
+      - name: Publier la version
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-${{ github.run_number }}
+          name: Seigneurie — APK n° ${{ github.run_number }} (${{ github.ref_name }})
+          body: |
+            Le jeu pour Android, hors-ligne. Téléchargez **Seigneurie.apk** depuis le téléphone, puis ouvrez-le
+            (autorisez l'installation depuis le navigateur ou le gestionnaire de fichiers si Android le demande).
+            Une nouvelle version s'installe par-dessus l'ancienne si elle porte la même signature : vos parties sont gardées.
+            Signature : ${{ env.SIGNATURE }}.
+          files: Seigneurie.apk
+          prerelease: ${{ github.ref != 'refs/heads/main' }}
+          make_latest: ${{ github.ref == 'refs/heads/main' }}
