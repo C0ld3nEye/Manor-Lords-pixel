@@ -786,23 +786,35 @@ function rc(k, v, low){ return "<span class='rc"+(low?" low":"")+"'>"+ic(k)+Math
 /* ---------- surcouche de la carte : objectifs, notifications, calques, aide à la pose ---------- */
 function renderHud(g){
   if(!g){ setHTML(elHudL, ""); setHTML(elHudR, ""); setHTML(elHint, ""); return; }
-  var ob = g.objectives;
-  var list = [["wood","Bûcherons au travail"],["happy","Approbation ≥ 50 % pendant 3 mois"],["pop","8 familles"],["manor","Un manoir achevé"]];
-  var done = list.filter(function(o){ return ob[o[0]]; }).length;
-  var l = "<button class='frame pill' data-act='obj'>"+ic("scroll","s")+"<b>Objectifs</b> <span class='"+(done===list.length?"good":"dim")+"'>"+done+"/"+list.length+"</span></button>";
+  /* étape 8 : les objectifs-guides — le dernier atteint, les prochains, et un conseil pour le premier */
+  var done = g.goalsDone(), total = GOALS.length;
+  var l = "<button class='frame pill' data-act='obj'>"+ic("scroll","s")+"<b>Objectifs</b> <span class='"+(done===total?"good":"dim")+"'>"+done+"/"+total+"</span></button>";
   /* étape 7d : affaires et pétitions qui attendent le seigneur */
   var nj = g.cases.length + g.petitions.length;
   if(nj) l += " <button class='frame pill' data-act='sheet' data-arg='justice'>"+ic("crown","s")+"<b>Audiences</b> <span class='gold'>"+nj+"</span></button>";
   if(factionSeen(g)) l += " <button class='frame pill' data-act='sheet' data-arg='plots'>"+ic("sword","s")+"<b>Mécontents</b> <span class='bad'>"+Math.round(g.faction.power)+"</span></button>";
-  if(ui.objOpen){
+  /* un panneau ouvert : la carte est petite, on replie les objectifs et on ne garde qu'une notification */
+  var busy = !!(ui.sheet || ui.selId!=null || ui.selV!=null || ui.cat);
+  if(ui.objOpen && !busy){
     l += "<div class='frame obj' data-act='obj'>";
-    for(var i=0;i<list.length;i++) l += "<div class='"+(ob[list[i][0]]?"done":"")+"'>"+(ob[list[i][0]]?"✔":"○")+" "+list[i][1]+"</div>";
+    if(g.modeId!=="prosperity"){
+      var cq = g.conquest(), mg = "<div class='gold'>"+ic("flag","s")+" "+esc(g.modeGoal())+"</div>";
+      if(cq.need) mg += "<div class='dim' style='font-size:11px'>Régions : "+cq.have+"/"+cq.need+(cq.baronNear ? " · terres voisines au Baron : "+cq.baronNear : "")+(g.camps.length ? " · camps de brigands : "+g.camps.length : "")+"</div>";
+      l += mg;
+    }
+    var past = GOALS.filter(function(x){ return g.goals.done[x.id]!==undefined; });
+    if(past.length) l += "<div class='done'>✔ "+esc(past[past.length-1].name)+(past.length>1 ? " <span class='dim'>(et "+(past.length-1)+" autre"+(past.length>2?"s":"")+")</span>" : "")+"</div>";
+    var nx = g.nextGoals(3);
+    nx.forEach(function(x, i){
+      l += "<div>○ "+esc(x.name)+"</div>";
+      if(i===0 && x.hint) l += "<div class='hint'>"+esc(x.hint)+"</div>";
+    });
     if(g.victory) l += "<div class='gold'>La seigneurie prospère !</div>";
     l += "</div>";
   }
   /* notifications : les 3 plus récentes, 6 s chacune */
   var now = Date.now();
-  var ts = g.toasts.filter(function(t){ return now-t.t<6000; }).slice(-3);
+  var ts = g.toasts.filter(function(t){ return now-t.t<6000; }).slice(busy ? -1 : -3);
   for(var t=ts.length-1;t>=0;t--){
     var age = now - ts[t].t, op = age>5000 ? Math.max(0, (6000-age)/1000) : 1;
     l += "<div class='toast "+ts[t].kind+"' style='opacity:"+op.toFixed(1)+"'>"+rich(ts[t].text)+"</div>";
@@ -968,7 +980,7 @@ function sheetSelection(g){
     var lnd = g.levelNeeds(sel);
     if(lnd){
       var lc = g.levelCost(sel), lck = Object.keys(lc).map(function(k){ return lc[k]+"&nbsp;"+ic(k,"s"); }).join(" ");
-      h += "<div class='sec'>Pour passer au niveau "+(sel.lvl+1)+" <span class='dim' style='font-weight:normal'>· "+Math.min(sel.monthsGood||0, 3)+"/3 mois d'affilée · "+lck+"</span></div><div class='needs'>";
+      h += "<div class='sec'>Pour passer au niveau "+(sel.lvl+1)+" <span class='dim' style='font-weight:normal'>· "+Math.min(sel.monthsGood||0, 3)+"/3 mois d'affilée · <span style='white-space:nowrap'>"+lck+"</span></span></div><div class='needs'>";
       lnd.forEach(function(n){ h += "<span class='"+(n[1] ? "good" : "bad")+"'>"+(n[1] ? "✔" : "✗")+" "+esc(n[0])+"</span>"; });
       h += "</div>";
     }
@@ -1014,8 +1026,8 @@ function sheetSelection(g){
   if(sel.def==="pasture" && sel.herd) h += sheetPasture(g, sel);
   if(sel.def==="trade" && sel.done){
     h += "<div class='sec'>Prix du marché (deniers)</div><div class='chips'>";
-    for(var pk in g.prices) h += "<span class='chip'>"+(RES[pk] ? ic(pk,"s") : esc(pk))+" "+g.prices[pk]+"</span>";
-    h += "</div>";
+    for(var pk in g.prices) h += "<span class='chip'>"+(RES[pk] ? ic(pk,"s") : esc(pk))+" "+String(g.prices[pk]).replace(".", ",")+(g.tradeLast && g.tradeLast[pk] ? " <span class='dim'>(−"+g.tradeLast[pk]+")</span>" : "")+"</span>";
+    h += "</div><div class='dim' style='font-size:11px'>Entre parenthèses : ce qui a été vendu le mois dernier.</div>";
   }
   if(sel.def==="church" && sel.done){
     var cups = sel.churchUp || [];
@@ -1886,7 +1898,8 @@ function modalMenu(g){
     var dd = DIFFICULTIES[d];
     h += "<button class='opt"+(ui.newDiff===dd.id?" on":"")+"' data-act='ndiff' data-arg='"+dd.id+"'><b>"+esc(dd.name)+"</b></button>";
   }
-  h += "</div><h3>Emplacement</h3><div class='seg'>";
+  var dsel = DIFFICULTIES.filter(function(x){ return x.id===ui.newDiff; })[0];
+  h += "</div>"+(dsel && dsel.desc ? "<p class='dim' style='font-size:12px;margin:6px 0 0'>"+esc(dsel.desc)+"</p>" : "")+"<h3>Emplacement</h3><div class='seg'>";
   for(var k=0;k<3;k++){
     var used = !!slotInfo(k);
     h += "<button class='opt"+(ui.newSlot===k?" on":"")+"' data-act='nslot' data-arg='"+k+"'><b>Slot "+(k+1)+"</b><span>"+(used?"occupé":"libre")+"</span></button>";
@@ -1902,7 +1915,8 @@ function modalEnd(g){
   var h = "<h2>"+(win ? ic("crown","l")+"Victoire !" : ic("heart_r","l")+"Défaite")+"</h2>";
   h += "<p>"+esc(g.mode().name)+" · "+esc(g.diff().name)+"</p>";
   h += "<p>"+MONTHS[g.time.month]+" "+g.time.year+" — "+esc(g.settlementName())+" de "+g.families.length+" familles.</p>";
-  h += "<p>Trésor : "+Math.floor(g.treasury)+" deniers · Influence : "+Math.floor(g.influence)+" · Approbation : "+g.approval+" %</p>";
+  h += "<p>Trésor : "+Math.floor(g.treasury)+"&nbsp;deniers · Influence : "+Math.floor(g.influence)+" · Approbation : "+g.approval+"&nbsp;%</p>";
+  if(win) h += "<p class='dim' style='font-size:12px'>Vous pouvez continuer à faire grandir votre seigneurie : la partie reste sauvegardée.</p>";
   if(!win && g.endReason) h += "<p class='dim'>Cause : "+rich(g.endReason)+"</p>";
   h += "<button class='b gold wide' data-act='mainmenu'>Nouvelle partie</button>";
   h += "<button class='b wide' data-act='endcontinue'>Continuer à jouer</button>";
@@ -1955,7 +1969,7 @@ function modalRegions(g){
 }
 function modalHelp(){
   var h = "<h2>"+ic("help","l")+"Comment jouer</h2>";
-  h += "<h3>Premiers pas</h3><p>Ouvrez <b>Récolte</b> dans la barre du bas et posez un <b>camp de bûcherons</b> près d'une forêt. Touchez-le, puis <b>+</b> pour embaucher un ouvrier : le jeu choisit l'adulte libre le plus doué. Les adultes sans poste (journaliers) construisent les chantiers.</p>";
+  h += "<h3>Premiers pas</h3><p>Suivez les <b>objectifs</b>, en haut à gauche : chacun dit quoi faire et où le trouver. Tracez d'abord une zone de <b>maisons</b> le long de la route, puis ouvrez <b>Récolte</b> et posez un <b>camp de bûcherons</b> (gratuit) près d'une forêt. Un bâtiment achevé reçoit tout de suite un ouvrier ; touchez-le, puis <b>+</b> pour en ajouter : le jeu choisit l'adulte libre le plus doué. Les adultes sans poste (journaliers) construisent les chantiers.</p>";
   h += "<h3>Chantiers et matériaux</h3><p>Le bois et la pierre d'un chantier sont réservés à la pose (on ne peut plus les dépenser ailleurs), puis <b>apportés</b> : ils sortent du stock quand ils arrivent au pied du chantier. Les journaliers les prennent au dépôt le plus commode (campement, poteau du bœuf, <b>entrepôt</b>, camp de bûcherons pour le bois, carrière pour la pierre). Un tronc est trop lourd pour un homme : un journalier va chercher le <b>bœuf</b> et le mène, avec trois troncs derrière lui, quand il ne laboure pas ; sans bœuf en état, on traîne un tronc à la main, lentement. La pierre se porte une à une. On ne bâtit qu'avec ce qui est arrivé : posez vos entrepôts près des chantiers, et touchez un chantier pour le <b>livrer en priorité</b>. Abandonner un chantier rend les matériaux non employés.</p>";
   h += "<h3>Les villageois</h3><p>Chaque habitant a un âge, une santé, une humeur et un savoir-faire par métier, qui progresse en travaillant (de novice à maître). Touchez un villageois sur la carte, ou le compteur d'habitants en haut, pour ouvrir sa fiche : vous y voyez pourquoi il est content ou non, et vous pouvez changer son métier. Les adolescents de 12 à 15 ans peuvent entrer en <b>apprentissage</b> : auprès d'un bon maître, ils apprennent vite. Les couples se marient, ont des enfants, vieillissent ; à 65 ans, on prend sa retraite. Si un maître meurt sans avoir formé personne, son savoir-faire disparaît.</p>";
   h += "<h3>Nourrir et chauffer</h3><p>Cueilleuses (baies, de mars à novembre) et chasseurs (viande) nourrissent le village. Les repas se comptent en cinq sortes d'aliments : <b>pain</b>, <b>viande</b>, <b>laitages et œufs</b>, <b>légumes et pois</b>, <b>fruits et miel</b>. Plus il y en a dans l'écuelle de chaque foyer, plus l'approbation monte. Un <b>marché</b> actif les distribue ; sans lui, chacun se contente d'une seule sorte. L'hiver, la consommation de bois de chauffe double : faites des réserves avant décembre.</p>";
@@ -1966,7 +1980,8 @@ function modalHelp(){
      + "<p><b>Rotation</b> : la même céréale deux ans de suite rend moins ; après des pois ou une jachère, davantage. Le <b>fumier</b> des bêtes, épandu avant le labour, remonte la fertilité ; un <b>bœuf</b> accélère le labour. La météo compte : gel tardif, printemps sec, grêle, été pourri. Le panneau d'un champ montre la récolte attendue et pourquoi.</p>";
   h += "<h3>Élevage</h3><p>Tracez un <b>pâturage</b> (tiroir Terres) comme une zone, n'importe où : la clôture coûte du bois, un abri se pose au bord. Achetez des moutons (laine en mai), des vaches (lait après le vêlage, les jeunes taureaux deviennent des bœufs) ou des porcs (glandée en forêt l'automne). Il faut un mâle pour les naissances et un <b>gardien</b> pour traire, tondre et soigner. L'herbe nourrit les bêtes du printemps à l'automne ; l'hiver, il faut du <b>foin</b> (pré de fauche, herbe en trop fauchée en juin, paille du battage) ou de l'avoine. Réglez l'<b>abattage de novembre</b> pour ne garder que ce que vous pourrez nourrir. Une maladie se propage dans un troupeau : abattre les bêtes malades l'arrête.</p>";
   h += "<h3>La carte et les régions</h3><p>Le pays est vaste : une rivière qu'on traverse aux <b>gués</b>, des lacs, de grandes forêts, et une vingtaine de <b>régions</b> aux frontières en pointillé doré. Vous commencez au Val du Cœur ; les terres assombries ne sont pas à vous : on n'y passe pas et on n'y bâtit pas. Ouvrez <b>Régions</b> (vue d'ensemble de la seigneurie) pour réclamer une région qui touche les vôtres, chacune avec son bonus. La minicarte, en haut à droite, vous emmène n'importe où d'un toucher.</p>";
-  h += "<h3>Croissance</h3><p>Une approbation d'au moins 40 % et une maison libre attirent une nouvelle famille ; les jeunes couples du village qui vivent chez leurs parents passent avant. Les bourgages bien approvisionnés montent de niveau et débloquent des arrière-cours (potager, rucher, atelier…). Le <b>manoir</b> permet de lever l'impôt.</p>";
+  h += "<h3>Croissance</h3><p>Une approbation d'au moins 40&nbsp;%, une maison libre et deux mois de vivres attirent de nouvelles familles, d'autant plus vite que l'approbation est haute ; les jeunes couples du village qui vivent chez leurs parents passent avant. Une maison monte au <b>niveau 2</b> après trois mois nourrie, chauffée, <b>vêtue</b> (atelier du tailleur dans une cour), avec deux sortes d'aliments et un marché ; au <b>niveau 3</b>, il faut trois sortes d'aliments, une église et 65&nbsp;% d'approbation. Touchez une maison : son panneau dit ce qui lui manque. Le <b>manoir</b> permet de lever l'impôt.</p>"
+     + "<h3>Difficulté</h3><p><b>Paisible</b> : récoltes généreuses, hivers doux, impôt du roi léger. <b>Normal</b> : il faut préparer l'hiver et varier les repas. <b>Difficile</b> : récoltes maigres, denrées qui se gâtent vite, hivers rudes, maladies, impôts et ennemis plus durs. Quand les vivres manquent, les colons cessent de venir : le village ne grandit pas plus vite qu'il ne peut se nourrir.</p>";
   h += "<h3>Le fisc</h3><p>Dans le panneau du <b>manoir</b> : la <b>taille</b> (curseur) court chaque mois selon les maisons habitées et leur niveau, mais ne se lève qu'à <b>Pâques</b> (avril) et à la <b>Saint-Michel</b> (septembre) ; une seigneurie mécontente en cache une partie. La <b>dîme</b> (il faut une église) donne à l'Église une part des céréales et des pois récoltés, en octobre, contre de l'influence chaque mois. Les <b>péages</b> se lèvent chaque mois sur les marchands du marché et du comptoir. La <b>corvée</b> appelle, certains jours, les ouvriers des postes sur vos chantiers. Chaque redevance a son coût en approbation. Le <b>conseil</b> (facultatif) : intendant, bailli, chapelain, maître d'armes, chacun avec sa mission ; un intendant cupide détourne des deniers, faites vérifier ses comptes. Chaque famille se souvient de ce que vous lui faites (maison rasée, mort de faim, corvée, aumône, fête…) : touchez un villageois pour voir l'opinion de sa famille. Votre <b>réputation</b> (généreux, avare, craint) se fait au fil de vos choix. <b>Les trois ordres</b> : les familles arrivent <b>serves</b> (tâches de base, chantiers, corvée) ; quand leur maison atteint le niveau 2, elles entrent dans la <b>bourgeoisie</b> : leurs artisans (moulin, boulangerie, laiterie, fumoir, comptoir) travaillent deux fois mieux qu'un serf, qui n'y est qu'un simple manœuvre ; une famille d'une maison de niveau 3 peut être <b>anoblie</b> (influence) : elle ne travaille plus, sert à la cour, au clergé ou comme lettrée, ne paie pas la taille et mène grand train. <b>Justice et audiences</b> : des affaires (bornage, vol, braconnage, dette, rixe) et des pétitions (prêt, exemption, affranchissement, dispense de corvée, mariage au dehors) arrivent au fil des mois ; le bouton « Audiences » apparaît sur la carte. Jugez avant les plaids de la saison ; sans bailli, les preuves sont incertaines et l'on peut condamner un innocent. Une faveur accordée rend la famille redevable. <b>Intrigues</b> : les familles fâchées forment une faction autour d'un meneur et réclament quelque chose (baisse de la taille, moins de corvée…) ; laissée grandir, elle fait grève, pose un ultimatum, puis se soulève. Un bailli ou un chapelain au conseil vous sert d'informateur : il démasque le meneur et apprend les secrets des villageois, dont vous pouvez faire un levier. La <b>chronique</b> garde les grands moments de votre règne. Le <b>coutumier</b> (panneau du manoir) rassemble les lois : chasse, bois mort, port d'armes, couvre-feu, mainmorte, charte du bourg, taille des nobles. Touchez le <b>trésor</b>, en haut, pour le <b>livre de comptes</b> : recettes et dépenses poste par poste, prévision jusqu'au printemps, calendrier fiscal, et le <b>changeur</b> qui prête à 2 % par mois (trois échéances manquées : il saisit des biens).</p>";
   h += "<h3>Commandes</h3><p>Glisser pour déplacer · pincer ou molette pour zoomer · toucher un bâtiment pour l'ouvrir · <b>appui long</b> pour annuler · toucher la minimap pour s'y rendre. Le bandeau des réserves et la date ouvrent le détail. Au clavier : Espace = pause, 1/2/3/4 = vitesse (×1, ×4, ×16, ×60), ZQSD = caméra, Échap = annuler.</p>";
   h += "<h3>Sauvegarde</h3><p>Automatique sur cet appareil (3 emplacements). Le menu permet de copier un code pour continuer sur un autre appareil.</p>";
@@ -1977,6 +1992,10 @@ renderUI();
 
 /* ----- boucle principale ----- */
 var _lastT = performance.now(), _acc = 0, _uiAcc = 0, _saveAcc = 0;
+/* étape 8 : économie de batterie — l'image est redessinée à chaque trame quand on touche l'écran (ou que la
+   caméra glisse), à 30 images par seconde le reste du temps, et à 4 par seconde derrière un menu */
+var _lastInput = 0, _lastDraw = 0;
+["pointerdown","pointermove","wheel","keydown"].forEach(function(ev){ window.addEventListener(ev, function(){ _lastInput = performance.now(); }, { passive:true }); });
 /* étape 3 : outils de zone et de pose dans la cour */
 function clearTools(){ ui.pendingPlace = null; ui.zoneMode = false; ui.zoneKind = "house"; ui.zonePts = []; ui.zoneClosed = false; ui.zoneN = null; ui.extPlace = null; zoneDrag = { i:-1 }; }
 var zoneDrag = { i:-1 }, lastPtrType = "mouse";
@@ -2028,11 +2047,13 @@ function loop(now){
   if(game) soundForToasts(game);
   _uiAcc += dt;
   if(_uiAcc>300){ _uiAcc = 0; renderUI(); }
-  if(game){ RENDER.setOverlay(zoneOverlay(game)); RENDER.setSelVillager(ui.selV); drawGame(ctx, game, cam, canvas, hover, ui.buildSel, ui.selId, (ui.zoneMode && ui.zoneKind==="field") ? Object.assign({}, ui.layers, { soil:true }) : ui.layers, now); }
+  var every = (uiMenu || ui.modal) ? 250 : (now - _lastInput < 600 || camGoal || pvx || pvy) ? 0 : 32;
+  if(game && now - _lastDraw >= every){ _lastDraw = now; RENDER.setOverlay(zoneOverlay(game)); RENDER.setSelVillager(ui.selV); drawGame(ctx, game, cam, canvas, hover, ui.buildSel, ui.selId, (ui.zoneMode && ui.zoneKind==="field") ? Object.assign({}, ui.layers, { soil:true }) : ui.layers, now); }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
 
 /* sauvegarde quand on quitte / cache l'application */
 document.addEventListener("visibilitychange", function(){ if(document.hidden) persist(game); });
+window.addEventListener("pagehide", function(){ persist(game); });
 window.addEventListener("beforeunload", function(){ persist(game); });

@@ -88,13 +88,14 @@ const BUILD_DEFS                              = {
   storehouse:{ id:"storehouse",name:"Entrepôt",        icon:"📦", w:1,h:1, cost:{timber:2}, fam:0, instant:false, desc:"+150 de capacité de stockage pour chaque ressource." },
   market:    { id:"market",    name:"Marché",          icon:"⛺", w:2,h:2, cost:{timber:2}, fam:0, instant:false, desc:"Les familles y échangent leurs vivres : sans marché, chacune n'a qu'une sorte d'aliment au menu. Il faut un marché pour que les maisons montent de niveau." },
   church:    { id:"church",    name:"Église",          icon:"⛪", w:2,h:2, cost:{timber:2,stone:2}, fam:0, instant:false, desc:"+5 d'approbation, de l'influence chaque mois. Requise pour les maisons de niveau 3." },
-  trade:     { id:"trade",     name:"Comptoir",       icon:"\u26fa", w:2,h:2, cost:{timber:3,stone:2}, fam:1, skill:"trade", instant:false, desc:"Vente automatique des surplus chaque mois (prix fluctuants). +richesse régionale." },
+  trade:     { id:"trade",     name:"Comptoir",       icon:"\u26fa", w:2,h:2, cost:{timber:3,stone:2}, fam:1, skill:"trade", instant:false, desc:"Vend chaque mois les vrais surplus : il garde de quoi manger (davantage avant l'hiver) et se vêtir. Les prix varient, et baissent pour ce qu'on vend en masse. Fait monter la richesse régionale." },
   tower:     { id:"tower",     name:"Tour de guet",   icon:"\ud83d\udde1\ufe0f", w:1,h:1, cost:{timber:2,stone:3}, fam:0, instant:false, desc:"+4 approbation, repousse les raids (réduit le pillage de moitié)." },
   wall:      { id:"wall",      name:"Rempart",        icon:"⬛", w:1,h:1, cost:{stone:2}, fam:0, instant:false, wall:true, desc:"Mur défensif : les brigands ne passent pas dessus (case infranchissable)." },
   manor:     { id:"manor",     name:"Manoir",          icon:"🏰", w:2,h:2, cost:{timber:4,stone:3}, fam:0, instant:false, desc:"Siège de l'administration : taille, péages, corvée, décrets et changeur se règlent dans son panneau." },
   // étape 5 : enclos tracé librement (coût selon la longueur de clôture), un abri et un gardien
   pasture:   { id:"pasture",   name:"Pâturage",        icon:"🐑", w:1,h:1, cost:{timber:1}, fam:1, skill:"herd", instant:false, buildRate:3, zone:true, desc:"Enclos tracé librement : l'herbe nourrit un troupeau (moutons, vaches ou porcs) du printemps à l'automne ; l'hiver, il faut du foin. Un gardien soigne les bêtes, trait, tond." },
 };
+const BUILD_FEM = ["forager","quarry","farm","bakery","dairy","granary","church","tower"];   // noms féminins (accords des messages)
 const BUILD_ORDER = ["woodcutter","forager","hunter","quarry","farm","field","windmill","bakery","dairy","smokehouse","granary","storehouse","market","trade","church","tower","wall","manor"];
 
 /* ---------- étape 6 : nourriture, transformation et conservation ----------
@@ -3339,6 +3340,15 @@ class GameState {
     return true;
   }
 
+  // « Le moulin est achevé ! », « La boulangerie est achevée ! » (avant : « Moulin est achevé(e) ! »)
+  doneText(def){
+    if(def==="burgage") return "Une maison est prête.";
+    const d = BUILD_DEFS[def]; if(!d) return "Chantier achevé !";
+    const fem = BUILD_FEM.includes(def), n = d.name.charAt(0).toLowerCase() + d.name.slice(1);
+    const art = /^[aeiouyéèêàâîôû]/i.test(n) ? "L'" : fem ? "La " : "Le ";
+    return art+n+" est achevé"+(fem ? "e" : "")+" !";
+  }
+
   /* ---------- étape 8 : ce qu'il faut à une maison pour monter d'un niveau ---------- */
   // liste [condition, remplie ?] ; null pour une maison vide ou déjà au niveau 3
   levelNeeds(b, fuelOk){
@@ -4151,7 +4161,7 @@ class GameState {
           const sd = BUILD_DEFS[site.def];
           let hired = 0;
           if(sd.fam>0 && site.def!=="pasture" && !(Number(site.want)>0)){ site.want = 1; hired = this.fillJobs(site); }
-          this.toast(sd.name+" est achevé(e) !"+(sd.fam>0 && site.def!=="pasture" ? (hired ? " Un ouvrier s'y met ; touchez-le pour en ajouter." : " Le poste attend un adulte libre.") : ""),"good");
+          this.toast(this.doneText(site.def)+(sd.fam>0 && site.def!=="pasture" ? (hired ? " Un ouvrier s'y met ; touchez-le pour en ajouter." : " Le poste attend un adulte libre.") : ""),"good");
           if(site.def==="burgage") this.rehouseCamp();
           if(site.def==="manor") this.toast("Le manoir est debout : la taille sera levée à Pâques et à la Saint-Michel. Réglez les redevances dans son panneau.","good");
           f.task=null; f.state="idle"; f.cool=5;

@@ -151,13 +151,14 @@ function paintTerrain(g, tx0, ty0, tx1, ty1){
     var owned = !inMap || g.regionOwned(tx, ty);
     var ford = inMap && g.tiles[ty*W+tx]===T_FORD;
     // voisinage 3×3 de la tuile : eau, forêt, pierre, fertilité
-    var nearW = false, nearF = false, nearS = false, hasRoadNear = false;
+    var nearW = false, nearF = false, nearS = false, hasRoadNear = false, nearFord = ford;
     for(var k=0;k<9;k++){
       var nx = tx + (k%3) - 1, ny = ty + ((k/3)|0) - 1;
       NBW[k] = tv(g, T_WATER, nx, ny); NBF[k] = tv(g, T_FOREST, nx, ny); NBS[k] = tv(g, T_STONE, nx, ny);
       NBO[k] = soilT(g, nx, ny);
       if(NBW[k]>0) nearW = true; if(NBF[k]>0) nearF = true; if(NBS[k]>0) nearS = true;
       if(inMap && isRoad(g, nx, ny)) hasRoadNear = true;
+      if(!nearFord && tileAt(g, nx, ny)===T_FORD) nearFord = true;
     }
     for(var j=0;j<TS;j++){
       var cy = IX[j]*3, fv = FS[j], fvl = FL[j];
@@ -172,11 +173,14 @@ function paintTerrain(g, tx0, ty0, tx1, ty1){
         var wm = 0;
         if(nearW){ A_ = NBW[k0]; B_ = NBW[k0+1]; C2 = NBW[k0+3]; D_ = NBW[k0+4];
           wm = A_ + (B_-A_)*fu + (C2-A_)*fv + (A_-B_-C2+D_)*fu*fv + (b-0.5)*0.22; }
-        if(ford && wm > 0.5){
-          // gué : eau claire et peu profonde, galets
-          var hf = hash(px, py, 31);
-          if(s===0) col = hf<0.2 ? C_.st2 : (bay<0.5 ? C_.sn1 : C_.sn2);
-          else col = hf<0.16 ? (hf<0.07 ? C_.st4 : C_.st2) : (bay<0.45 ? C_.wa4 : C_.wa3);
+        // gué : eau claire et peu profonde, galets. Étape 8 : son contour est lissé et bruité comme celui de l'eau
+        // (avant, un rectangle aux bords droits, tramé en damier, qui ressemblait à un défaut d'affichage)
+        var fdm = nearFord && wm > 0.5 ? mask(g, T_FORD, px, py) + (b-0.5)*0.5 + (hash(px, py, 41)-0.5)*0.12 : 0;
+        if(fdm > 0.5){
+          var hf = hash(px, py, 31), fw = a + (hash(px>>1, py, 33)-0.5)*0.3;
+          if(s===0) col = hf<0.05 ? C_.st2 : (fw<0.5 ? C_.sn1 : C_.sn2);
+          else if(mask(g, T_WATER, px, py-1) + (T.nB.at(px+off, py-1+off)-0.5)*0.22 <= 0.5) col = C_.dt3;   // berge en pente douce
+          else col = hf<0.05 ? (hf<0.02 ? C_.st4 : C_.st3) : (hash(px>>2, py, 33)>0.8 ? C_.wa4 : C_.wa3);   // petites rides claires
         } else if(wm > 0.5){
           var up1 = mask(g, T_WATER, px, py-1) + (T.nB.at(px+off, py-1+off)-0.5)*0.22;
           var up2 = mask(g, T_WATER, px, py-2) + (T.nB.at(px+off, py-2+off)-0.5)*0.22;
@@ -217,7 +221,12 @@ function paintTerrain(g, tx0, ty0, tx1, ty1){
             var rd = roadDist(g, px, py, tx, ty);
             var lim = 4.6 + (a-0.5)*1.6;
             if(rd < lim){
-              if(s===0) col = bay<0.55 ? C_.sn1 : C_.dt2;
+              if(s===0){
+                // chemin damé sous la neige : neige tassée, ornières de boue (avant : un damier neige/terre)
+                if(rd > lim-1.1) col = C_.sn2;
+                else if(Math.abs(rd-2.4)<0.55) col = hash(px, py, 5)<0.6 ? C_.dt2 : C_.dt1;
+                else col = hash(px, py, 5)<0.07 ? C_.dt3 : (rd<1.2 ? C_.sn0 : C_.sn1);
+              }
               else if(rd > lim-1.1) col = C_.dt1;
               else if(Math.abs(rd-2.4)<0.55) col = C_.dt1;           // ornières
               else col = hash(px, py, 5)<0.07 ? C_.dt4 : (rd<1 ? C_.dt3 : C_.dt2);
