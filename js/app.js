@@ -563,6 +563,30 @@ document.addEventListener("click", function(e){
     case "sprio": if(ui.selId!=null){ var sp = g.buildings.filter(function(x){ return x.id===ui.selId; })[0]; if(sp) g.setSitePrio(sp.id, !sp.prio); } break;
     case "churchup": if(ui.selId!=null) g.churchUp(ui.selId, arg); break;
     case "policy": g.setPolicy(arg, !g.policies[arg]); break;
+    /* --- étape 7a : redevances et changeur --- */
+    case "taxlvl": { var tl = String(arg).split(":"), te = g.setTaxLevel(tl[0], Number(tl[1])); if(te) flash(te); break; }
+    /* --- étape 7b : conseil, réputation --- */
+    case "appoint": { var ap2 = String(arg).split(":"), ae2 = g.appoint(ap2[0], Number(ap2[1])); if(ae2) flash(ae2); else ui.pickSeat = null; break; }
+    case "pickseat": ui.pickSeat = ui.pickSeat===arg ? null : arg; break;
+    case "dismiss": g.dismiss(arg); break;
+    case "seattask": { var st2 = String(arg).split(":"); g.setSeatTask(st2[0], st2[1]); break; }
+    case "audit": { var au = g.audit(); if(au) flash(au); break; }
+    case "punish": { var pu = g.punishSteward(); if(pu) flash(pu); break; }
+    /* --- étape 7c : ordres et coutumier --- */
+    case "proclaim": { var pl = String(arg).split(":"), pe = g.proclaim(pl[0], Number(pl[1])); if(pe) flash(pe); break; }
+    case "ennoble": { var en = g.ennoble(Number(arg)); if(en) flash(en); break; }
+    case "office": if(ui.selV!=null){ var oe = g.setOffice(ui.selV, arg); if(oe) flash(oe); } break;
+    /* --- étape 7d : justice et audiences --- */
+    case "judge": { var jd = String(arg).split(":"), je = g.judge(Number(jd[0]), jd[1]); if(je) flash(je); break; }
+    case "petition": { var pt = String(arg).split(":"), pe2 = g.answer(Number(pt[0]), pt[1]==="1"); if(pe2) flash(pe2); break; }
+    /* --- étape 7e : intrigues --- */
+    case "facyield": { var fy = g.factionYield(); if(fy) flash(fy); break; }
+    case "facarrest": { var fa2 = g.arrestLeader(); if(fa2) flash(fa2); break; }
+    case "secret": { var sc = String(arg).split(":"), se3 = g.useSecret(Number(sc[0]), sc[1]); if(se3) flash(se3); break; }
+    case "alms": { var al = g.giveAlms(); if(al) flash(al); break; }
+    case "feast": { var fe = g.giveFeast(); if(fe) flash(fe); break; }
+    case "borrow": { var be2 = g.borrow(LOAN_STEP); if(be2) flash(be2); break; }
+    case "repay": { var re2 = g.repay(arg==="all" ? g.fisc.debt : LOAN_STEP); if(re2) flash(re2); break; }
     case "demolish":
       if(ui.selId==null) break;
       if(Date.now() < ui.demolishArm){ g.demolish(ui.selId); ui.selId = null; ui.demolishArm = 0; }
@@ -727,7 +751,7 @@ function renderTop(g){
   var h = "";
   h += "<button class='stat date' data-act='sheet' data-arg='realm'>"+ic(SEASON_IC[g.season()],"l")
      + "<span class='datebox'><span class='m'>"+MONTHS_SHORT[g.time.month]+"</span><span class='y'>"+g.time.year+"</span></span></button>";
-  h += "<button class='stat' data-act='sheet' data-arg='realm'>"+ic("coin")+"<span class='v'>"+Math.floor(g.treasury)+"</span></button>";
+  h += "<button class='stat' data-act='sheet' data-arg='book' aria-label='Livre de comptes'>"+ic("coin")+"<span class='v'>"+Math.floor(g.treasury)+"</span></button>";
   h += "<button class='stat "+apCls+"' data-act='sheet' data-arg='realm'>"+ic(heartIcon(g.approval))+"<span class='v'>"+g.approval+"%</span></button>";
   h += "<button class='stat' data-act='sheet' data-arg='people' aria-label='Habitants'>"+ic("family")+"<span class='v'>"+g.villagers.length+"</span>"
      + (homeless>0 ? "<span class='badge' title='Familles sans logis'>"+homeless+"</span>" : "")+"</button>";
@@ -766,6 +790,10 @@ function renderHud(g){
   var list = [["wood","Bûcherons au travail"],["happy","Approbation ≥ 50 % pendant 3 mois"],["pop","8 familles"],["manor","Un manoir achevé"]];
   var done = list.filter(function(o){ return ob[o[0]]; }).length;
   var l = "<button class='frame pill' data-act='obj'>"+ic("scroll","s")+"<b>Objectifs</b> <span class='"+(done===list.length?"good":"dim")+"'>"+done+"/"+list.length+"</span></button>";
+  /* étape 7d : affaires et pétitions qui attendent le seigneur */
+  var nj = g.cases.length + g.petitions.length;
+  if(nj) l += " <button class='frame pill' data-act='sheet' data-arg='justice'>"+ic("crown","s")+"<b>Audiences</b> <span class='gold'>"+nj+"</span></button>";
+  if(factionSeen(g)) l += " <button class='frame pill' data-act='sheet' data-arg='plots'>"+ic("sword","s")+"<b>Mécontents</b> <span class='bad'>"+Math.round(g.faction.power)+"</span></button>";
   if(ui.objOpen){
     l += "<div class='frame obj' data-act='obj'>";
     for(var i=0;i<list.length;i++) l += "<div class='"+(ob[list[i][0]]?"done":"")+"'>"+(ob[list[i][0]]?"✔":"○")+" "+list[i][1]+"</div>";
@@ -861,6 +889,12 @@ function renderSheet(g){
     else if(ui.sheet==="people") h = sheetPeople(g);
     else if(ui.sheet==="stock") h = sheetStock(g);
     else if(ui.sheet==="realm") h = sheetRealm(g);
+    else if(ui.sheet==="book") h = sheetBook(g);
+    else if(ui.sheet==="council") h = sheetCouncil(g);
+    else if(ui.sheet==="laws") h = sheetLaws(g);
+    else if(ui.sheet==="justice") h = sheetJustice(g);
+    else if(ui.sheet==="plots") h = sheetPlots(g);
+    else if(ui.sheet==="chronicle") h = sheetChronicle(g);
     else if(ui.sheet==="menu") h = sheetMenu(g);
   }
   var key = (ui.cat||"")+"|"+ui.selId+"|"+ui.selV+"|"+(ui.sheet||"");
@@ -930,6 +964,12 @@ function sheetSelection(g){
     if(fam && fam.menu) h += "<div class='kv'><span class='k dim' style='font-size:11px'>Au menu le mois dernier</span><span class='v' style='font-size:11px'>"
        + (fam.menu.length ? fam.menu.map(function(gk){ return esc(FOOD_GROUPS[gk] ? FOOD_GROUPS[gk].name.toLowerCase() : gk); }).join(", ") : "rien")
        + (fam.gruel ? " <span class='bad'>(bouillie de disette)</span>" : "")+"</span></div>";
+    if(fam){
+      h += "<div class='kv'><span class='k'>"+ic("crown","s")+"Ordre</span><span class='v'>"+esc(ORDER_DEFS[fam.ord||"serf"].name)+"</span></div>";
+      if(fam.ord!=="noble" && sel.lvl>=3) h += "<button class='b wide"+(g.canEnnoble(fam)?" off":"")+"' data-act='ennoble' data-arg='"+fam.id+"'>"+ic("crown","s")+"Anoblir la famille · "+g.ennobleCost()+" d'influence</button>"
+         + "<div class='dim' style='font-size:11px'>"+(g.nobleCount()>=g.nobleCap() ? "<span class='bad'>La noblesse reste rare : une famille noble pour huit familles au plus.</span> " : "")+"Noble, elle ne travaille plus, sert à votre cour, au clergé ou comme lettrée, ne paie pas la taille et veut chaque mois des vêtements et une bonne table.</div>";
+      else if(fam.ord==="serf" && sel.lvl<2) h += "<div class='dim' style='font-size:11px'>Au niveau 2, la famille entrera dans la bourgeoisie (métiers d'artisan, plus de corvée).</div>";
+    }
     if(fam) g.membersOf(fam.id).forEach(function(v){ h += vRow(g, v); });
     if(sel.done){
       var exts = sel.exts || [];
@@ -979,9 +1019,7 @@ function sheetSelection(g){
     }
   }
   if(sel.def==="manor" && sel.done){
-    h += "<div class='sec'>Impôt</div><div class='row'><span>Taux</span><b id='taxLbl'>"+Math.round(g.taxRate*100)+" %</b></div>";
-    h += "<input type='range' min='0' max='100' step='5' id='taxSlider' value='"+Math.round(g.taxRate*100)+"'/>";
-    h += "<div class='dim' style='font-size:11px'>Au-delà de 10 %, l'approbation baisse.</div>";
+    h += sheetFisc(g);
     h += "<div class='sec'>Décrets</div>";
     for(var pi=0; pi<POLICY_ORDER.length; pi++){
       var pd = POLICY_DEFS[POLICY_ORDER[pi]], on = !!g.policies[pd.id];
@@ -1194,7 +1232,8 @@ function workersHtml(g, sel, d){
      + "<span class='dim'>"+ic("family","s")+" "+g.unemployed()+" journalier"+(g.unemployed()>1?"s":"")+" libre"+(g.unemployed()>1?"s":"")+"</span></div>";
   if(!ws.length && want===0) h += "<div class='dim' style='font-size:11px'>+ embauche l'adulte libre le plus doué"+(sk ? " ("+SKILL_DEFS[sk].name.toLowerCase()+")" : "")+".</div>";
   ws.forEach(function(v){ h += vRow(g, v, (g.jobTitle(v)||"")+(sk ? " · "+skillLevel(v.skills[sk]).toLowerCase() : "")); });
-  if(want>ws.length) h += "<div class='gold' style='font-size:12px;margin:4px 0'>"+(want-ws.length)+" poste"+(want-ws.length>1?"s":"")+" en attente d'un adulte libre.</div>";
+  if(g.isSkilled(sel)) h += "<div class='dim' style='font-size:11px'>Métier d'artisan : seuls les bourgeois (familles d'une maison de niveau 2) peuvent le tenir.</div>";
+  if(want>ws.length) h += "<div class='gold' style='font-size:12px;margin:4px 0'>"+(want-ws.length)+" poste"+(want-ws.length>1?"s":"")+" en attente d'un"+(g.isSkilled(sel) ? " bourgeois" : " adulte")+" libre.</div>";
   if(sk && sel.done){
     var ap = g.apprenticeOf(sel), m = g.masterOf(sel);
     h += "<div class='sec'>Apprenti</div>";
@@ -1221,6 +1260,23 @@ function sheetVillager(g){
   var h = head(portrait(g, v, 3), esc(g.fullName(v)), sub);
   h += "<div class='kv'><span class='k'>"+ic(heartIcon(v.mood),"s")+"Humeur</span>"+bar(v.mood/100, v.mood<40?"red":v.mood<60?"gold":"")+"<span class='v'>"+Math.round(v.mood)+"</span></div>";
   h += "<div class='kv'><span class='k'>Santé"+(v.sick>0 ? " <span class='bad'>· malade</span>" : "")+"</span>"+bar(v.health/100, v.health<40?"red":v.health<70?"gold":"")+"<span class='v'>"+Math.round(v.health)+"</span></div>";
+  /* étape 7b : caractère, siège au conseil, ce que pense sa famille */
+  if(g.isAdult(v)){
+    var tr = g.traitsOf(v);
+    h += "<div class='chips' style='margin:4px 0'>"+(tr.length ? tr.map(function(t){ return "<span class='chip' title='"+esc(TRAIT_DEFS[t].desc)+"'>"+esc(TRAIT_DEFS[t].name)+"</span>"; }).join("") : "<span class='chip dim'>Sans trait marquant</span>")+"</div>";
+  }
+  if(fam) h += "<div class='kv'><span class='k'>"+ic("crown","s")+"Ordre</span><span class='v'>"+esc(g.orderName(v))+"</span></div>";
+  if(v.sk===1 && g.secretOf(v)){
+    h += "<div class='sec'>Un secret</div><div class='bad' style='font-size:12px'>"+(fem?"Elle":"Il")+" "+esc(SECRET_DEFS[g.secretOf(v)].name.toLowerCase())+".</div>"
+       + "<div class='lvls' style='grid-template-columns:repeat(3,1fr)'><button class='b' data-act='secret' data-arg='"+v.id+":press'><b>Faire pression</b><span>faveur due</span></button>"
+       + "<button class='b' data-act='secret' data-arg='"+v.id+":denounce'><b>Dénoncer</b><span>"+(g.secretOf(v)==="hoard" ? "amende" : "procès")+"</span></button>"
+       + "<button class='b' data-act='secret' data-arg='"+v.id+":forgive'><b>Pardonner</b><span>gratitude</span></button></div>";
+  }
+  if(v.seat) h += "<button class='kv lnk' data-act='sheet' data-arg='council'><span class='k'>"+ic("crown","s")+esc(g.seatTitle(v.seat, v))+" au conseil</span><span class='v'>compétence "+g.competence(v, v.seat)+" ›</span></button>";
+  if(fam){
+    var fo = g.famOpinion(fam);
+    h += "<div class='kv'><span class='k'>"+ic("family","s")+"Opinion de sa famille</span>"+bar(fo/100, fo<30?"red":fo<55?"gold":"")+"<span class='v'>"+fo+"</span></div>";
+  }
   /* pourquoi cette humeur : l'ambiance du village, puis ce qui le touche, lui */
   h += "<div class='sec'>Pourquoi cette humeur</div><div class='why'>";
   h += "<div><span>Ambiance du village (approbation)</span><b>"+g.approval+"</b></div>";
@@ -1229,7 +1285,13 @@ function sheetVillager(g){
   h += "</div>";
   /* métier */
   h += "<div class='sec'>Métier</div>";
-  if(g.canWork(v)){
+  if(g.isNoble(v) && g.isAdult(v) && !v.seat){
+    h += "<div class='dim' style='font-size:12px'>"+(fem?"Noble, elle":"Noble, il")+" ne prend pas de poste : sa charge à votre service.</div><div class='lvls' style='grid-template-columns:repeat(3,1fr)'>";
+    NOBLE_OFFICE_ORDER.forEach(function(k){ var o = NOBLE_OFFICES[k]; h += "<button class='b"+(v.office===k?" on":"")+"' data-act='office' data-arg='"+k+"'><b>"+esc(fem ? o.fem : o.name)+"</b></button>"; });
+    h += "</div>"+(v.office ? "<div class='dim' style='font-size:11px'>"+esc(NOBLE_OFFICES[v.office].desc)+"</div>" : "");
+  } else if(v.seat){
+    h += "<div class='dim' style='font-size:12px'>Siège au conseil : "+(fem?"elle":"il")+" passe ses journées "+(v.seat==="chaplain" ? "à l'église" : "au manoir")+" et ne prend pas de poste.</div>";
+  } else if(g.canWork(v)){
     if(job) h += "<div class='row'><span style='flex:1 1 auto'>"+esc(g.villagerStatus(v))+(g.jobSkill(job) ? " <span class='dim'>· "+esc(skillTxt(v, g.jobSkill(job)))+"</span>" : "")+"</span><button class='b' data-act='bsel' data-arg='"+job.id+"'>Voir</button></div>";
     else h += "<div class='dim' style='font-size:12px'>"+(fem?"Journalière":"Journalier")+" : bâtit les chantiers quand il y en a.</div>";
     h += "<button class='b wide"+(ui.vJob?" on":"")+"' data-act='vjob'>"+(ui.vJob ? "Fermer la liste" : "Changer de métier")+"</button>";
@@ -1288,10 +1350,10 @@ function jobChoices(g, v){
   var any = false;
   g.buildings.forEach(function(b){
     var d = BUILD_DEFS[b.def]; if(!d || d.fam<=0 || b.id===v.work) return;
-    var n = g.workersOf(b).length, full = n>=d.fam, sk = d.skill;
+    var n = g.workersOf(b).length, full = n>=d.fam, sk = d.skill, no = !g.canHold(v, b);
     any = true;
-    h += "<button class='ext"+(full?" off":"")+"' data-act='vassign' data-arg='"+b.id+"'><span class='tb'>"+ICONS.th(b.def)+"</span><span class='t'><b>"+esc(d.name)+(b.done ? "" : " (chantier)")+"</b>"
-       + "<span>"+n+"/"+d.fam+(full ? " · complet" : "")+(sk ? " · "+esc(skillTxt(v, sk)) : "")+"</span></span></button>";
+    h += "<button class='ext"+(full||no?" off":"")+"' data-act='vassign' data-arg='"+b.id+"'><span class='tb'>"+ICONS.th(b.def)+"</span><span class='t'><b>"+esc(d.name)+(b.done ? "" : " (chantier)")+"</b>"
+       + "<span>"+(no ? "Bourgeois seulement" : n+"/"+d.fam+(full ? " · complet" : "")+(sk ? " · "+esc(skillTxt(v, sk)) : ""))+"</span></span></button>";
   });
   if(!any) h += "<div class='dim' style='font-size:12px'>Aucun bâtiment n'emploie d'ouvriers pour l'instant.</div>";
   return h + "</div>";
@@ -1458,6 +1520,260 @@ function sheetStock(g){
   return h;
 }
 
+/* ===== étape 7a : le fisc (panneau du manoir) et le livre de comptes ===== */
+function deniers(v){
+  var a = Math.abs(v), t = a>=10 || Math.abs(a-Math.round(a))<0.05 ? String(Math.round(a)) : (Math.round(a*10)/10).toString().replace(".", ",");
+  return (v>0 ? "+" : v<0 ? "−" : "")+t;
+}
+function inMonthsTxt(k){ return k<=1 ? "le mois prochain" : "dans "+k+" mois"; }
+function sheetFisc(g){
+  var h = "<div class='sec'>Taille</div><div class='row'><span>Taux</span><b id='taxLbl'>"+Math.round(g.taxRate*100)+" %</b></div>";
+  h += "<input type='range' min='0' max='100' step='5' id='taxSlider' value='"+Math.round(g.taxRate*100)+"'/>";
+  var nt = g.nextOf(TAILLE_MONTHS), tm = g.tailleMonthly();
+  h += "<div class='dim' style='font-size:11px'>Au-delà de 10 %, l'approbation baisse. "+(tm<0.05 ? "Aucune maison habitée ne paie encore ; prochaine levée à " : "Environ "+deniers(tm).replace("+","")+" denier"+(tm>=2?"s":"")+" par mois, levés à ")+(nt.month===3 ? "Pâques" : "la Saint-Michel")+" ("+inMonthsTxt(nt.inMonths)+") : "+Math.round(g.fisc.taille)+" en attente."
+     + (g.tailleRate()<1 ? " <span class='bad'>Approbation basse : "+Math.round((1-g.tailleRate())*100)+" % ne seront pas payés.</span>" : "")+"</div>";
+  TAX_ORDER.forEach(function(id){
+    var d = TAX_DEFS[id], lv = g.taxes[id]|0, ok = g.taxPossible(id);
+    h += "<div class='sec'>"+esc(d.name)+"</div><div class='desc' style='margin-bottom:4px'>"+esc(d.desc)+"</div>";
+    if(!ok){ h += "<div class='bad' style='font-size:12px'>"+(d.needs==="church" ? "Il faut une église achevée." : "Il faut un manoir achevé.")+"</div>"; return; }
+    h += "<div class='lvls'>";
+    for(var k=0;k<d.levels.length;k++){
+      var fx = d.ap[k] ? signed(d.ap[k])+" appro." : "";
+      if(id==="dime" && d.inf[k]) fx = "+"+d.inf[k]+" infl. "+fx;
+      h += "<button class='b"+(lv===k?" on":"")+"' data-act='taxlvl' data-arg='"+id+":"+k+"'><b>"+esc(d.levels[k])+"</b><span>"+(fx||"—")+"</span></button>";
+    }
+    h += "</div>";
+    var st = "";
+    if(id==="dime"){
+      st = "Assiette de cette année : "+Math.round(g.fisc.harvest)+" mesures récoltées";
+      if(lv>0) st += ", soit environ "+Math.round(g.fisc.harvest*d.share[lv])+" pour l'Église en octobre";
+      if(g.fisc.lastDime) st += ". Dîme "+g.fisc.lastDime.y+" : "+Math.round(g.fisc.lastDime.q)+" mesures";
+    } else if(id==="peage"){
+      st = !g.marketActive() && !g.buildings.some(function(b){ return b.done && b.def==="trade"; }) ? "Sans marché ni comptoir, aucun marchand ne passe."
+         : "Le mois dernier : "+deniers(g.fisc.peageLast||0)+" deniers"+(g.policies.freeMarket ? " (marchés libres : rien au marché)" : "");
+    } else if(id==="corvee"){
+      st = "Le mois dernier : "+(g.fisc.corveeLast||0)+" journée"+((g.fisc.corveeLast||0)>1?"s":"")+" de corvée"+(g.buildings.some(function(b){ return !b.done; }) ? "" : ". Aucun chantier en cours : personne n'est appelé");
+    }
+    if(st) h += "<div class='dim' style='font-size:11px;margin-top:2px'>"+esc(st)+".</div>";
+  });
+  h += "<button class='kv lnk' data-act='sheet' data-arg='book' style='margin-top:8px'><span class='k'>"+ic("scroll")+"Livre de comptes</span><span class='v'>›</span></button>";
+  h += "<button class='kv lnk' data-act='sheet' data-arg='council'><span class='k'>"+ic("crown")+"Le conseil et la réputation</span><span class='v'>"+councilCount(g)+"/4 ›</span></button>";
+  h += "<button class='kv lnk' data-act='sheet' data-arg='justice'><span class='k'>"+ic("crown")+"Justice et audiences</span><span class='v'>"+(g.cases.length+g.petitions.length ? "<span class='gold'>"+(g.cases.length+g.petitions.length)+" en attente</span> " : "")+"›</span></button>";
+  h += "<button class='kv lnk' data-act='sheet' data-arg='plots'><span class='k'>"+ic("sword")+"Intrigues et chronique</span><span class='v'>"+(factionSeen(g) ? "<span class='bad'>une faction</span> " : "")+"›</span></button>";
+  h += "<button class='kv lnk' data-act='sheet' data-arg='laws'><span class='k'>"+ic("scroll")+"Le coutumier (lois)</span><span class='v'>"+(Object.keys(g.lawPending).length ? "proclamation en cours " : "")+"›</span></button>";
+  return h;
+}
+function bookRows(lines){
+  var h = "", tot = 0;
+  BOOK_ORDER.forEach(function(k){
+    var v = lines[k]; if(!v || Math.abs(v)<0.05) return;
+    tot += v;
+    h += "<div><span>"+esc(BOOK_CATS[k].name)+"</span><b class='"+(v>0?"good":"bad")+"'>"+deniers(v)+"</b></div>";
+  });
+  if(!h) return "<div class='dim' style='font-size:12px'>Aucun mouvement.</div>";
+  return "<div class='why'>"+h+"<div><span><b>Solde</b></span><b class='"+(tot>=0?"good":"bad")+"'>"+deniers(tot)+"</b></div></div>";
+}
+function sheetBook(g){
+  var h = head(ic("scroll","l"), "Livre de comptes", "Trésor : "+Math.floor(g.treasury)+" deniers · "+MONTHS[g.time.month]+" "+g.time.year);
+  h += "<div class='kv'><span class='k'>"+ic("coin")+"Trésor</span><span class='v'>"+Math.floor(g.treasury)+" deniers</span></div>";
+  if(g.fisc.debt>0) h += "<div class='kv'><span class='k bad'>"+ic("bag")+"Dette au changeur</span><span class='v bad'>"+Math.ceil(g.fisc.debt)+" · "+g.interestDue()+" d'intérêts par mois</span></div>";
+  /* prévision */
+  var f = g.cashForecast();
+  h += "<div class='sec'>Prévision jusqu'en mars ("+f.months+" mois)</div>";
+  if(f.lines.length){
+    h += "<div class='why'>";
+    f.lines.forEach(function(l){ h += "<div><span>"+esc(l[0])+"</span><b class='"+(l[1]>0?"good":"bad")+"'>"+deniers(l[1])+"</b></div>"; });
+    h += "</div>";
+  } else h += "<div class='dim' style='font-size:12px'>Aucune recette ni dépense prévue.</div>";
+  h += "<div class='kv'><span class='k'>Trésor attendu à la fin de l'hiver</span><span class='v "+(f.end<0?"bad":f.end<20?"gold":"good")+"'>"+f.end+"</span></div>";
+  if(f.end<0) h += "<div class='bad' style='font-size:12px'>Il manquera des deniers : levez la taille, vendez des surplus ou empruntez au changeur.</div>";
+  /* calendrier */
+  var nt = g.nextOf(TAILLE_MONTHS), nk = g.nextOf([KING_MONTH]), nd = g.nextOf([DIME_MONTH]);
+  h += "<div class='sec'>Calendrier fiscal</div>";
+  if(g.hasManor()) h += "<div class='kv'><span class='k'>Taille ("+(nt.month===3 ? "Pâques" : "Saint-Michel")+")</span><span class='v'>"+MONTHS[nt.month]+" · "+Math.round(g.fisc.taille)+" en attente</span></div>";
+  else h += "<div class='kv'><span class='k dim'>Taille</span><span class='v dim'>manoir requis</span></div>";
+  if(g.taxLevel("dime")) h += "<div class='kv'><span class='k'>Dîme (en nature)</span><span class='v'>"+MONTHS[nd.month]+"</span></div>";
+  var ky = g.time.year + Math.floor((g.time.month + nk.inMonths)/12);
+  if(ky>=1177) h += "<div class='kv'><span class='k'>Impôt du roi</span><span class='v'>"+MONTHS[nk.month]+" "+ky+" · ~"+g.kingTaxEstimate(ky)+"</span></div>";
+  /* mois en cours, mois dernier, douze mois */
+  h += "<div class='sec'>Ce mois-ci (en cours)</div>"+bookRows(g.book.cur);
+  var last = g.book.hist[g.book.hist.length-1];
+  if(last) h += "<div class='sec'>"+MONTHS[last.m]+" "+last.y+"</div>"+bookRows(last.lines);
+  if(g.book.hist.length>1) h += "<div class='sec'>Sur les "+g.book.hist.length+" derniers mois</div>"+bookRows(g.bookYear());
+  /* le changeur */
+  h += "<div class='sec'>Le changeur du bourg</div>";
+  if(!g.hasManor()) h += "<div class='dim' style='font-size:12px'>Il ne traite qu'avec le seigneur d'un manoir.</div>";
+  else {
+    h += "<div class='desc'>Prête jusqu'à "+g.loanCap()+" deniers (selon vos terres), à "+Math.round(LOAN_RATE*100)+" % par mois. Faute de deniers, les intérêts s'ajoutent à la dette ; au bout de "+LOAN_MISS_MAX+" échéances manquées, il saisit des biens.</div>";
+    var can = g.fisc.debt + LOAN_STEP <= g.loanCap() && !g.fisc.missed;
+    h += "<div class='row'><button class='b"+(can?"":" off")+"' data-act='borrow'>"+ic("coin","s")+"Emprunter "+LOAN_STEP+"</button>";
+    if(g.fisc.debt>0){
+      h += "<button class='b' data-act='repay'>Rembourser "+Math.min(LOAN_STEP, Math.ceil(g.fisc.debt))+"</button>";
+      if(g.fisc.debt>LOAN_STEP) h += "<button class='b' data-act='repay' data-arg='all'>Tout ("+Math.ceil(g.fisc.debt)+")</button>";
+    }
+    h += "</div>";
+  }
+  return h;
+}
+
+/* ===== étape 7b : le conseil (facultatif) et la réputation du seigneur ===== */
+function councilCount(g){ return SEAT_ORDER.filter(function(id){ return !!g.seatHolder(id); }).length; }
+function traitChips(g, v){ return g.traitsOf(v).map(function(t){ return "<span class='chip'>"+esc(TRAIT_DEFS[t].name)+"</span>"; }).join(""); }
+function sheetCouncil(g){
+  var h = head(ic("crown","l"), "Le seigneur et son conseil", "Influence "+Math.floor(g.influence)+" · trésor "+Math.floor(g.treasury));
+  /* réputation */
+  var R = g.rep, ts = g.repTitles();
+  h += "<div class='sec'>Votre réputation</div>";
+  h += "<div class='kv'><span class='k'>Générosité</span>"+bar((R.gen+100)/200, R.gen<=-REP_GEN?"red":R.gen>=REP_GEN?"":"gold")+"<span class='v'>"+(R.gen>=0?"+":"−")+Math.abs(Math.round(R.gen))+"</span></div>";
+  h += "<div class='kv'><span class='k'>Sévérité</span>"+bar(R.sev/100, R.sev>=REP_SEV?"red":"gold")+"<span class='v'>"+Math.round(R.sev)+"</span></div>";
+  if(ts.length) ts.forEach(function(t){ h += "<div class='"+(t.ap>0?"good":"bad")+"' style='font-size:12px'><b>"+esc(t.name)+"</b> : "+esc(t.desc)+"</div>"; });
+  else h += "<div class='dim' style='font-size:12px'>On ne dit encore rien de particulier sur vous. Les redevances lourdes vous font une réputation d'avare, les largesses de généreux, une corvée écrasante et les châtiments vous font craindre.</div>";
+  h += "<div class='row'><button class='b"+(g.treasury<ALMS_COST?" off":"")+"' data-act='alms'>Faire l'aumône · "+ALMS_COST+ic("coin","s")+"</button>"
+     + "<button class='b"+(g.feastY===g.time.year||g.treasury<FEAST_COST?" off":"")+"' data-act='feast'>Fête au village · "+FEAST_COST+ic("coin","s")+" + "+g.feastNeed()+" denrées</button></div>";
+  h += "<div class='dim' style='font-size:11px'>L'aumône va aux trois familles les plus démunies ou les plus fâchées. Une fête par an"+(g.feastY===g.time.year ? " (déjà donnée cette année)" : "")+" ; avec de l'ale, on s'en souvient mieux.</div>";
+  /* conseil */
+  h += "<div class='sec'>Le conseil</div><div class='desc'>Facultatif : un siège vide ne coûte rien et le domaine tourne très bien sans. Un conseiller quitte son poste, touche "+COUNCIL_WAGE+" deniers de gages par mois et apporte un plus selon sa compétence (savoir-faire, caractère, expérience). Les anciens retraités y font de bons conseillers.</div>";
+  SEAT_ORDER.forEach(function(id){
+    var d = SEAT_DEFS[id], v = g.seatHolder(id), c = g.council[id];
+    h += "<div class='sec'>"+esc(d.name)+"</div>";
+    if(!g.seatOpen(id)){ h += "<div class='dim' style='font-size:12px'>"+esc(d.desc)+" "+(d.needs==="church" ? "Il faut une église achevée." : "Il faut un manoir achevé.")+"</div>"; return; }
+    if(v){
+      var cp = g.competence(v, id);
+      h += "<div class='kv'><button class='k chip lnk' data-act='vsel' data-arg='"+v.id+"'>"+esc(g.fullName(v))+" · "+g.ageOf(v)+" ans</button>"+bar(cp/100, cp<35?"red":cp<60?"gold":"")+"<span class='v'>"+cp+"</span></div>";
+      h += "<div class='chips' style='margin:2px 0 4px'>"+traitChips(g, v)+(g.canSit(v) ? "" : "<span class='chip bad'>Malade : n'apporte rien</span>")+"</div>";
+      h += "<div class='lvls'>";
+      Object.keys(d.tasks).forEach(function(k){ h += "<button class='b"+(c.task===k?" on":"")+"' data-act='seattask' data-arg='"+id+":"+k+"'><b>"+esc(d.tasks[k].name)+"</b></button>"; });
+      h += "</div><div class='dim' style='font-size:11px'>"+esc(d.tasks[c.task].desc)+" Effet actuel : "+Math.round(g.seatPower(id)*100)+" %.</div>";
+      if(id==="steward"){
+        if(c.known) h += "<div class='bad' style='font-size:12px;margin-top:4px'>Démasqué : "+(v.sex==="f"?"elle":"il")+" a détourné "+Math.round(c.stolen)+" deniers.</div><button class='b wide' data-act='punish'>Lui faire rendre gorge et le chasser du conseil</button>";
+        else h += "<button class='b wide"+(g.influence<AUDIT_COST?" off":"")+"' data-act='audit'>Vérifier ses comptes · "+AUDIT_COST+" d'influence</button>";
+      }
+      h += "<button class='b wide' data-act='dismiss' data-arg='"+id+"'>Relever de ses fonctions</button>";
+    } else {
+      h += "<div class='dim' style='font-size:12px'>Siège vacant. "+esc(d.desc)+"</div>";
+      h += "<button class='b wide"+(ui.pickSeat===id?" on":"")+"' data-act='pickseat' data-arg='"+id+"'>"+(ui.pickSeat===id ? "Fermer la liste" : "Nommer quelqu'un")+"</button>";
+      if(ui.pickSeat===id){
+        var cs = g.seatCandidates(id, 5);
+        if(!cs.length) h += "<div class='dim' style='font-size:12px'>Personne n'est en état de servir.</div>";
+        cs.forEach(function(o){
+          h += "<button class='ext' data-act='appoint' data-arg='"+id+":"+o.id+"'><span class='t'><b>"+esc(g.fullName(o))+" · "+g.ageOf(o)+" ans</b><span>"+esc(g.villagerStatus(o))+" · "+g.traitsOf(o).map(function(t){ return TRAIT_DEFS[t].name; }).join(", ")+"</span></span><span class='gold'>"+g.competence(o, id)+"</span></button>";
+        });
+      }
+    }
+  });
+  return h;
+}
+
+/* ===== étape 7c : les ordres et le coutumier ===== */
+function orderCounts(g){
+  var c = { serf:0, bourg:0, noble:0 };
+  g.families.forEach(function(f){ c[f.ord||"serf"]++; });
+  return c.serf+" serf"+(c.serf>1?"s":"")+" · "+c.bourg+" bourg. · "+c.noble+" noble"+(c.noble>1?"s":"");
+}
+function sheetLaws(g){
+  var h = head(ic("scroll","l"), "Le coutumier", "Influence "+Math.floor(g.influence)+" · une loi coûte "+LAW_COST);
+  /* les ordres */
+  h += "<div class='sec'>Les trois ordres</div>";
+  ["serf","bourg","noble"].forEach(function(o){
+    var n = g.families.filter(function(f){ return (f.ord||"serf")===o; }).length;
+    h += "<div class='kv'><span class='k'><b>"+esc(ORDER_DEFS[o].name)+"</b></span><span class='v'>"+n+" famille"+(n>1?"s":"")+"</span></div><div class='dim' style='font-size:11px;margin:-2px 0 4px'>"+esc(ORDER_DEFS[o].desc)+"</div>";
+  });
+  /* les lois, chapitre par chapitre */
+  h += "<div class='desc' style='margin-top:8px'>Proclamer une loi coûte "+LAW_COST+" d'influence ; elle prend effet le mois suivant, et l'on ne revient pas dessus avant "+LAW_COOLDOWN+" mois.</div>";
+  var lastCh = null;
+  LAW_ORDER.forEach(function(id){
+    var d = LAW_DEFS[id], cur = g.law(id), pend = g.lawPending[id], lk = g.lawLock(id), w = g.lawWait(id);
+    if(d.ch!==lastCh){ h += "<div class='sec'>"+esc(LAW_CHAPTERS[d.ch])+"</div>"; lastCh = d.ch; }
+    h += "<div class='kv'><span class='k'><b>"+esc(d.name)+"</b></span><span class='v"+(pend?" gold":"")+"'>"+esc(pend ? "→ "+d.opts[pend.opt].name+" le mois prochain" : d.opts[cur].name)+"</span></div>";
+    if(d.locked){ h += "<div class='dim' style='font-size:11px'>"+esc(d.locked)+"</div>"; return; }
+    h += "<div class='lvls' style='grid-template-columns:repeat("+d.opts.length+",1fr)'>";
+    d.opts.forEach(function(o, k){
+      var dis = !!lk || !!pend || (k!==cur && (w>0 || g.influence<LAW_COST));
+      h += "<button class='b"+(k===(pend ? pend.opt : cur)?" on":"")+(dis && k!==cur ? " off" : "")+"' data-act='proclaim' data-arg='"+id+":"+k+"'><b>"+esc(o.name)+"</b><span>"+(o.ap ? signed(o.ap)+" appro." : "—")+"</span></button>";
+    });
+    h += "</div><div class='dim' style='font-size:11px'>"+esc(d.opts[pend ? pend.opt : cur].desc)+(lk ? " <span class='bad'>"+esc(lk)+".</span>" : w>0 ? " <span class='gold'>Modifiable dans "+w+" mois.</span>" : "")+"</div>";
+  });
+  return h;
+}
+
+/* ===== étape 7d : justice et audiences ===== */
+function famName(g, id){ var f = g.famById(id); return f ? esc(f.name) : "?"; }
+function sheetJustice(g){
+  var np = g.nextOf(PLAID_MONTHS);
+  var h = head(ic("crown","l"), "Justice et audiences", "Prochains plaids : "+MONTHS[np.month].toLowerCase()+(np.inMonths===12 ? " (ce mois-ci)" : ""));
+  h += "<div class='desc'>Jugez quand vous voulez, au plus tard aux plaids de la saison : une affaire laissée sans jugement fâche les deux familles. "
+     + (g.seatHolder("bailiff") ? "Votre bailli enquête : les preuves sont fiables à "+Math.round(g.proofAcc()*100)+" %." : "Sans bailli, les preuves sont incertaines (fiables à 60 %).")+"</div>";
+  h += "<div class='sec'>Affaires ("+g.cases.length+")</div>";
+  if(!g.cases.length) h += "<div class='dim' style='font-size:12px'>Aucune affaire en attente.</div>";
+  g.cases.forEach(function(c){
+    var d = CASE_DEFS[c.type], acc = c.v ? g.villager(c.v) : null;
+    h += "<div class='kv'><span class='k'><b>"+esc(d.name)+"</b></span><span class='v dim' style='font-weight:400'>avant "+MONTHS[c.until%12].toLowerCase()+"</span></div>";
+    var who = c.type==="border" ? famName(g, c.a)+" contre "+famName(g, c.b)
+      : c.type==="theft" ? famName(g, c.b)+" accuse "+(acc ? esc(g.fullName(acc)) : "?")
+      : c.type==="poach" ? (acc ? esc(g.fullName(acc)) : "?")+" ("+famName(g, c.a)+")"
+      : c.type==="debt" ? famName(g, c.a)+" réclame son dû à la "+esc(g.famLow(g.famById(c.b)))
+      : "Un homme de la "+esc(g.famLow(g.famById(c.a)))+" contre un de la "+esc(g.famLow(g.famById(c.b)));
+    h += "<div class='desc' style='margin-bottom:4px'>"+esc(d.desc)+" "+who+"."+(c.proof ? " <b class='"+(c.proof==="solides"?"gold":"dim")+"'>Preuves "+c.proof+".</b>" : "")+"</div>";
+    var vs = d.verdicts.map(function(x){
+      var lbl = x.id==="a" ? "Raison aux "+esc(g.surnameOf(g.famById(c.a))) : x.id==="b" ? "Raison aux "+esc(g.surnameOf(g.famById(c.b))) : esc(x.name);
+      return "<button class='b"+(x.high ? " off" : "")+"' data-act='judge' data-arg='"+c.id+":"+x.id+"'><b>"+lbl+"</b>"+(x.high ? "<span>baron</span>" : "")+"</button>";
+    });
+    h += "<div class='lvls' style='grid-template-columns:repeat("+Math.min(3, vs.length)+",1fr)'>"+vs.join("")+"</div>";
+    var last = g.prec[c.type];
+    if(last!==undefined && d.accused) h += "<div class='dim' style='font-size:11px'>Précédent : la dernière fois, sur preuves solides, "+esc((d.verdicts.find(function(x){ return x.sev===last; })||{ name:"?" }).name.toLowerCase())+". Un revirement brutal choque le village.</div>";
+  });
+  h += "<div class='sec'>Pétitions ("+g.petitions.length+")</div>";
+  if(!g.petitions.length) h += "<div class='dim' style='font-size:12px'>Personne ne demande audience.</div>";
+  g.petitions.forEach(function(p){
+    var d = PETITION_DEFS[p.type], f = g.famById(p.f), v = p.v ? g.villager(p.v) : null;
+    h += "<div class='kv'><span class='k'><b>"+esc(d.name)+"</b> · "+famName(g, p.f)+"</span><span class='v dim' style='font-weight:400'>"+(f ? "opinion "+g.famOpinion(f) : "")+"</span></div>";
+    h += "<div class='desc' style='margin-bottom:4px'>"+esc(d.desc)+(p.amount ? " Elle demande "+p.amount+" deniers." : "")+(v ? " ("+esc(g.fullName(v))+", "+g.ageOf(v)+" ans)" : "")
+       + (p.type!=="freedom" ? " Accordée, la famille vous devra une faveur." : "")+"</div>";
+    h += "<div class='row'><button class='b' data-act='petition' data-arg='"+p.id+":1'>Accorder</button><button class='b' data-act='petition' data-arg='"+p.id+":0'>Refuser</button></div>";
+  });
+  var debtors = g.families.filter(function(f){ return (f.favor||0)>0; });
+  if(debtors.length){
+    h += "<div class='sec'>Faveurs dues</div><div class='chips'>"+debtors.map(function(f){ return "<span class='chip'>"+esc(g.surnameOf(f))+" · "+f.favor+"</span>"; }).join("")+"</div>"
+       + "<div class='dim' style='font-size:11px'>Une famille redevable accepte un verdict contre elle sans trop de rancune, ou reste au lieu de partir.</div>";
+  }
+  return h;
+}
+
+/* ===== étape 7e : intrigues et chronique ===== */
+function factionSeen(g){ return !!g.faction && (g.faction.known || g.faction.power>=20); }
+function sheetPlots(g){
+  var h = head(ic("sword","l"), "Intrigues", g.informer()>0 ? "Vos informateurs tendent l'oreille" : "Sans bailli ni chapelain, vous ne savez rien");
+  var F = g.faction;
+  h += "<div class='sec'>Les mécontents</div>";
+  if(!F) h += "<div class='dim' style='font-size:12px'>Aucune faction. Quand plusieurs familles vous en veulent (opinion sous 35), elles se rassemblent autour d'un meneur.</div>";
+  else if(!factionSeen(g)) h += "<div class='dim' style='font-size:12px'>Rien de précis… mais on murmure dans les chaumières. Un bailli ou un chapelain vous en dirait plus.</div>";
+  else {
+    var lead = g.villager(F.leader);
+    h += "<div class='kv'><span class='k'>Revendication</span><span class='v'>"+esc(FACTION_DEMANDS[F.demand].name)+"</span></div>";
+    h += "<div class='kv'><span class='k'>Meneur</span><span class='v'>"+(F.known && lead ? "<button class='chip lnk' data-act='vsel' data-arg='"+lead.id+"'>"+esc(g.fullName(lead))+"</button>" : "inconnu")+"</span></div>";
+    h += "<div class='kv'><span class='k'>Familles</span><span class='v'>"+F.fams.map(function(id){ return esc(g.surnameOf(g.famById(id))); }).join(", ")+"</span></div>";
+    h += "<div class='kv'><span class='k'>Force</span>"+bar(F.power/100, F.power>=FACTION_ULTIMATUM?"red":F.power>=FACTION_STRIKE?"gold":"")+"<span class='v'>"+Math.round(F.power)+"</span></div>";
+    h += "<div class='dim' style='font-size:11px'>À "+FACTION_STRIKE+" : grève de la corvée et de la moitié de la taille. À "+FACTION_ULTIMATUM+" : ultimatum. À 100 : jacquerie (matée si votre milice compte au moins un soldat par famille révoltée). Un bailli en tournée et une réputation de seigneur craint la freinent ; satisfaire la revendication ou apaiser les familles la dissout.</div>";
+    h += "<div class='row'><button class='b' data-act='facyield'>Céder</button><button class='b"+(F.known?"":" off")+"' data-act='facarrest'>Faire arrêter le meneur</button></div>";
+  }
+  var sv = g.villagers.filter(function(v){ return v.sk===1 && g.secretOf(v); });
+  h += "<div class='sec'>Secrets connus</div>";
+  if(!sv.length) h += "<div class='dim' style='font-size:12px'>"+(g.informer()>0 ? "Vos informateurs n'ont encore rien appris." : "Il faut un bailli ou un chapelain au conseil pour apprendre les secrets des villageois.")+"</div>";
+  sv.forEach(function(v){ h += vRow(g, v, SECRET_DEFS[g.secretOf(v)].name); });
+  h += "<button class='kv lnk' data-act='sheet' data-arg='chronicle' style='margin-top:8px'><span class='k'>"+ic("scroll")+"Chronique du domaine</span><span class='v'>"+g.chronicle.length+" ›</span></button>";
+  return h;
+}
+function sheetChronicle(g){
+  var h = head(ic("scroll","l"), "Chronique du domaine", "Ce que l'on retiendra de votre règne");
+  if(!g.chronicle.length) return h + "<div class='dim' style='font-size:12px'>Rien de mémorable encore.</div>";
+  var y = null;
+  g.chronicle.slice().reverse().forEach(function(c){
+    if(c.y!==y){ h += "<div class='sec'>"+c.y+"</div>"; y = c.y; }
+    h += "<div style='font-size:12px;margin:3px 0'><span class='dim'>"+MONTHS[c.m]+" · </span><span class='"+(c.k==="bad"?"bad":c.k==="good"?"good":"")+"'>"+esc(c.t)+"</span></div>";
+  });
+  return h;
+}
+
 /* vue d'ensemble de la seigneurie */
 function sheetRealm(g){
   var homeless = g.families.filter(function(f){ return f.home<0; }).length;
@@ -1477,8 +1793,12 @@ function sheetRealm(g){
   h += "<div class='kv'><span class='k' style='padding-left:24px'>Bourgages libres</span><span class='v'>"+g.freeBurgages()+"</span></div>";
   if(homeless) h += "<div class='kv'><span class='k bad' style='padding-left:24px'>Sans logis</span><span class='v bad'>"+homeless+"</span></div>";
   h += "<div class='kv'><span class='k'>"+ic("crown")+"Influence</span><span class='v'>"+Math.floor(g.influence)+"</span></div>";
+  h += "<button class='kv lnk' data-act='sheet' data-arg='justice'><span class='k'>"+ic("crown")+"Justice et audiences</span><span class='v'>"+(g.cases.length+g.petitions.length)+" en attente ›</span></button>";
+  h += "<button class='kv lnk' data-act='sheet' data-arg='plots'><span class='k'>"+ic("sword")+"Intrigues et chronique</span><span class='v'>"+(factionSeen(g) ? "<span class='bad'>une faction</span> " : "")+"›</span></button>";
+  h += "<button class='kv lnk' data-act='sheet' data-arg='laws'><span class='k'>"+ic("scroll")+"Coutumier et ordres</span><span class='v'>"+orderCounts(g)+" ›</span></button>";
+  h += "<button class='kv lnk' data-act='sheet' data-arg='council'><span class='k'>"+ic("crown")+"Conseil et réputation</span><span class='v'>"+councilCount(g)+"/4"+g.repTitles().map(function(t){ return " · "+esc(t.name.toLowerCase()); }).join("")+" ›</span></button>";
   h += "<div class='kv'><span class='k'>"+ic("bag")+"Richesse régionale</span><span class='v'>"+Math.floor(g.wealth)+"</span></div>";
-  h += "<div class='kv'><span class='k'>"+ic("coin")+"Impôt</span><span class='v'>"+(g.hasManor() ? Math.round(g.taxRate*100)+" %" : "manoir requis")+"</span></div>";
+  h += "<button class='kv lnk' data-act='sheet' data-arg='book'><span class='k'>"+ic("scroll")+"Livre de comptes</span><span class='v'>"+(g.hasManor() ? "taille "+Math.round(g.taxRate*100)+" %" : "manoir requis")+(g.fisc.debt>0 ? " · <span class='bad'>dette "+Math.ceil(g.fisc.debt)+"</span>" : "")+" ›</span></button>";
   h += "<div class='kv'><span class='k'>"+ic("sword")+"Soldats</span><span class='v'>"+g.units.length+" / "+g.militiaCount()+"</span></div>";
   if(g.time.year>=1177) h += "<div class='kv'><span class='k bad'>"+ic("shield")+esc(g.baron.name)+"</span><span class='v bad'>puissance "+g.baron.power+"</span></div>";
   h += "<div class='row' style='margin-top:10px'><button class='b' data-act='modal' data-arg='regions'>"+ic("flag")+"Régions</button>"
@@ -1639,6 +1959,7 @@ function modalHelp(){
   h += "<h3>Élevage</h3><p>Tracez un <b>pâturage</b> (tiroir Terres) comme une zone, n'importe où : la clôture coûte du bois, un abri se pose au bord. Achetez des moutons (laine en mai), des vaches (lait après le vêlage, les jeunes taureaux deviennent des bœufs) ou des porcs (glandée en forêt l'automne). Il faut un mâle pour les naissances et un <b>gardien</b> pour traire, tondre et soigner. L'herbe nourrit les bêtes du printemps à l'automne ; l'hiver, il faut du <b>foin</b> (pré de fauche, herbe en trop fauchée en juin, paille du battage) ou de l'avoine. Réglez l'<b>abattage de novembre</b> pour ne garder que ce que vous pourrez nourrir. Une maladie se propage dans un troupeau : abattre les bêtes malades l'arrête.</p>";
   h += "<h3>La carte et les régions</h3><p>Le pays est vaste : une rivière qu'on traverse aux <b>gués</b>, des lacs, de grandes forêts, et une vingtaine de <b>régions</b> aux frontières en pointillé doré. Vous commencez au Val du Cœur ; les terres assombries ne sont pas à vous : on n'y passe pas et on n'y bâtit pas. Ouvrez <b>Régions</b> (vue d'ensemble de la seigneurie) pour réclamer une région qui touche les vôtres, chacune avec son bonus. La minicarte, en haut à droite, vous emmène n'importe où d'un toucher.</p>";
   h += "<h3>Croissance</h3><p>Une approbation d'au moins 40 % et une maison libre attirent une nouvelle famille ; les jeunes couples du village qui vivent chez leurs parents passent avant. Les bourgages bien approvisionnés montent de niveau et débloquent des arrière-cours (potager, rucher, atelier…). Le <b>manoir</b> permet de lever l'impôt.</p>";
+  h += "<h3>Le fisc</h3><p>Dans le panneau du <b>manoir</b> : la <b>taille</b> (curseur) court chaque mois selon les maisons habitées et leur niveau, mais ne se lève qu'à <b>Pâques</b> (avril) et à la <b>Saint-Michel</b> (septembre) ; une seigneurie mécontente en cache une partie. La <b>dîme</b> (il faut une église) donne à l'Église une part des céréales et des pois récoltés, en octobre, contre de l'influence chaque mois. Les <b>péages</b> se lèvent chaque mois sur les marchands du marché et du comptoir. La <b>corvée</b> appelle, certains jours, les ouvriers des postes sur vos chantiers. Chaque redevance a son coût en approbation. Le <b>conseil</b> (facultatif) : intendant, bailli, chapelain, maître d'armes, chacun avec sa mission ; un intendant cupide détourne des deniers, faites vérifier ses comptes. Chaque famille se souvient de ce que vous lui faites (maison rasée, mort de faim, corvée, aumône, fête…) : touchez un villageois pour voir l'opinion de sa famille. Votre <b>réputation</b> (généreux, avare, craint) se fait au fil de vos choix. <b>Les trois ordres</b> : les familles arrivent <b>serves</b> (tâches de base, chantiers, corvée) ; quand leur maison atteint le niveau 2, elles entrent dans la <b>bourgeoisie</b> et peuvent tenir les métiers d'artisan (moulin, boulangerie, laiterie, fumoir, marché, comptoir) ; une famille d'une maison de niveau 3 peut être <b>anoblie</b> (influence) : elle ne travaille plus, sert à la cour, au clergé ou comme lettrée, ne paie pas la taille et mène grand train. <b>Justice et audiences</b> : des affaires (bornage, vol, braconnage, dette, rixe) et des pétitions (prêt, exemption, affranchissement, dispense de corvée, mariage au dehors) arrivent au fil des mois ; le bouton « Audiences » apparaît sur la carte. Jugez avant les plaids de la saison ; sans bailli, les preuves sont incertaines et l'on peut condamner un innocent. Une faveur accordée rend la famille redevable. <b>Intrigues</b> : les familles fâchées forment une faction autour d'un meneur et réclament quelque chose (baisse de la taille, moins de corvée…) ; laissée grandir, elle fait grève, pose un ultimatum, puis se soulève. Un bailli ou un chapelain au conseil vous sert d'informateur : il démasque le meneur et apprend les secrets des villageois, dont vous pouvez faire un levier. La <b>chronique</b> garde les grands moments de votre règne. Le <b>coutumier</b> (panneau du manoir) rassemble les lois : chasse, bois mort, port d'armes, couvre-feu, mainmorte, charte du bourg, taille des nobles. Touchez le <b>trésor</b>, en haut, pour le <b>livre de comptes</b> : recettes et dépenses poste par poste, prévision jusqu'au printemps, calendrier fiscal, et le <b>changeur</b> qui prête à 2 % par mois (trois échéances manquées : il saisit des biens).</p>";
   h += "<h3>Commandes</h3><p>Glisser pour déplacer · pincer ou molette pour zoomer · toucher un bâtiment pour l'ouvrir · <b>appui long</b> pour annuler · toucher la minimap pour s'y rendre. Le bandeau des réserves et la date ouvrent le détail. Au clavier : Espace = pause, 1/2/3/4 = vitesse (×1, ×4, ×16, ×60), ZQSD = caméra, Échap = annuler.</p>";
   h += "<h3>Sauvegarde</h3><p>Automatique sur cet appareil (3 emplacements). Le menu permet de copier un code pour continuer sur un autre appareil.</p>";
   return h + "<button class='b gold wide' data-act='modalclose'>Compris</button>";
