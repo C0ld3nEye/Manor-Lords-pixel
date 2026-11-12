@@ -713,6 +713,61 @@ function granary(){
   return o;
 }
 
+/* étape 6 — Boulangerie : maison à colombages, cheminée de pierre, four à pain en dôme devant */
+function bakery(){
+  var o = S(18, 24, 1, 24);
+  wall(o, 2, 16, 10, 7, "daub", 1);
+  door(o, 4, 18, 3, 5);
+  windowPx(o, 8, 18, 2, 2, true);
+  roofGable(o, 1, 12, 16, 9, 5, "clay", { seed:4 });
+  gableFill(o, 1, 12, 16, 9, 16, "daub");
+  chimney(o, 9, 6, 6, "stone");
+  // four en dôme, gueule rougeoyante
+  var rows = [[14,16],[13,17],[13,17],[13,17],[13,17],[13,17]];
+  for(var j=0;j<rows.length;j++) for(var x=rows[j][0]; x<=rows[j][1]; x++) o.p(x, 17+j, (x+j)%3===0 ? P.st2 : (j<2 ? P.st4 : P.st3));
+  o.r(14, 20, 3, 3, P.ink); o.p(15, 21, P.fire1); o.p(14, 22, P.fire0); o.p(16, 22, P.fire2); o.p(15, 22, P.fire1);
+  // pelle à enfourner et fagot
+  o.ln(0, 16, 2, 22, P.wood3); o.r(0, 15, 1, 2, P.wood4);
+  contact(o, 2, 17, 23);
+  o.outline(C(P.ink), true);
+  return o;
+}
+/* étape 6 — Laiterie : maisonnette chaulée, toit de chaume, baratte et seaux */
+function dairy(){
+  var o = S(18, 22, 1, 22);
+  wall(o, 2, 14, 12, 7, "daub", 0);
+  o.r(3, 14, 10, 6, P.da3); o.r(3, 19, 10, 1, P.da2);   // chaux
+  door(o, 5, 16, 3, 5);
+  windowPx(o, 10, 16);
+  roofHip(o, 1, 15, 4, 14, 3, "thatch", { seed:6 });
+  // baratte
+  o.r(14, 15, 3, 6, P.wood3); o.r(14, 16, 3, 1, P.wood1); o.r(14, 19, 3, 1, P.wood1); o.r(15, 13, 1, 2, P.wood4);
+  // seau de lait et fromages sur la banquette
+  o.r(0, 18, 2, 3, P.wood4); o.r(0, 18, 2, 1, "#f4f2ea");
+  o.r(10, 20, 2, 1, "#e8c35a"); o.p(12, 20, "#d6a83a");
+  contact(o, 2, 16, 21);
+  o.outline(C(P.ink), true);
+  return o;
+}
+/* étape 6 — Fumoir : cabane de planches noircie, toit pentu, jambons sous l'auvent, bûches */
+function smokehouse(){
+  var o = S(18, 24, 1, 24);
+  wall(o, 3, 15, 10, 8, "plank", 0);
+  for(var k=0;k<10;k++) if(k%3===0) o.p(3+k, 15+(k%4), P.wood0);   // planches noircies par la fumée
+  door(o, 6, 17, 3, 6);
+  roofGable(o, 2, 13, 15, 6, 5, "shingle", { seed:8 });
+  gableFill(o, 2, 13, 15, 6, 15, "plank");
+  o.r(7, 6, 2, 1, P.inkSoft);                         // évent du faîte
+  // jambons pendus sous l'auvent
+  o.p(11, 16, P.linen0); o.r(10, 17, 2, 3, "#7a3a1e"); o.p(10, 17, "#a8582e"); o.p(11, 20, "#5a2614");
+  // bûches
+  o.r(14, 20, 4, 1, P.wood3); o.r(14, 21, 4, 1, P.wood2); o.r(15, 19, 3, 1, P.wood3);
+  o.p(14, 20, P.wood4); o.p(14, 21, P.wood4); o.p(15, 19, P.wood4);
+  contact(o, 3, 17, 23);
+  o.outline(C(P.ink), true);
+  return o;
+}
+
 /* Entrepôt : hangar ouvert, caisses, tonneaux, sacs */
 function storehouse(){
   var o = S(18, 22, 1, 22);
@@ -1020,6 +1075,7 @@ var JOB_CLOTH = {
   trade:["#7a4a8a","#5c3768","#9a68aa"], militia:["#3e5a86","#2c4266","#5a78a4"],
   merc:["#7a2a2a","#561c1e","#984040"], brigand:["#4a4038","#342c26","#625548"],
   pasture:["#7a6a44","#5c4f32","#968458"],
+  bakery:["#e0d6c0","#b8ac92","#f2ecdc"], dairy:["#7aa0bc","#5a7e98","#9cc0d8"], smokehouse:["#7a4434","#5a3024","#94584a"],
 };
 var HAIRS = [P.hrBrown, P.hrBlond, P.hrBlack, P.hrRed, P.hrGrey];
 function person(head, body, cloth, hair, opts){
@@ -1102,6 +1158,7 @@ function carrySprite(kind){
   else if(kind==="berries"){ o.r(1, 6, 4, 5, P.wood3); o.r(1, 6, 4, 1, "#c42a2a"); o.p(2,5,"#c42a2a"); o.p(3,5,"#e05050"); o.r(1,10,4,1,P.wood1); }
   else if(kind==="meat"){ o.r(1, 6, 6, 3, "#8a3a2a"); o.r(1, 6, 6, 1, "#b85a44"); o.p(6,5,P.da3); o.p(1,9,"#8a3a2a"); }
   else if(kind==="stone"){ o.r(1, 6, 5, 4, P.st3); o.r(1, 6, 5, 1, P.st4); o.r(5,7,1,3,P.st1); }
+  else if(kind==="milk"){ o.r(1, 7, 4, 4, P.wood4); o.r(1, 8, 4, 1, P.wood2); o.r(1, 7, 4, 1, "#f4f2ea"); o.ln(1, 6, 4, 6, P.st2); }
   else { o.r(1, 5, 5, 6, P.linen); o.r(1, 5, 5, 1, P.linen0); o.p(3,4,P.linen0); o.r(5,6,1,5,P.linen0); }
   o.outline(C(P.ink));
   return o;
@@ -1667,7 +1724,7 @@ function kid(sex, look, body){
   o.ax = 3; o.ay = 9;
   return o;
 }
-var JOBS = ["laborer","woodcutter","forager","hunter","quarry","farm","windmill","market","trade","pasture"];
+var JOBS = ["laborer","woodcutter","forager","hunter","quarry","farm","windmill","market","trade","pasture","bakery","dairy","smokehouse"];
 var BODIES = ["idle","walkA","walkB","workU","workD"];
 
 function build(){
@@ -1692,6 +1749,7 @@ function build(){
   addW("woodcutter", woodcutter()); addW("forager", forager()); addW("hunter", hunter());
   addW("quarry", quarry()); addW("granary", granary()); addW("storehouse", storehouse());
   addW("tower", tower()); addW("farm", farm()); addW("windmill", windmillBody());
+  addW("bakery", bakery()); addW("dairy", dairy()); addW("smokehouse", smokehouse());
   addW("market_1", market(true)); addW("market_0", market(false)); addW("trade", trade());
   addW("church_00", church(false,false)); addW("church_01", church(false,true));
   addW("church_10", church(true,false)); addW("church_11", church(true,true));
@@ -1736,7 +1794,7 @@ function build(){
     addLR("kid_"+(ks?"f":"m")+"_"+kl+"_"+KID_BODIES[kb], kid(ks?"f":"m", kl, KID_BODIES[kb]));
   add("mark_0", marker(0)); add("mark_1", marker(1)); add("baby", babySprite());
   ["axe","pick","hoe","hammer","sickle","basket","bow","fork","seed","scythe","flail","crook"].forEach(function(t){ addLR("tool_"+t+"_u", toolSprite(t,true)); addLR("tool_"+t+"_d", toolSprite(t,false)); });
-  ["timber","berries","meat","stone","sack"].forEach(function(c){ addLR("carry_"+c, carrySprite(c)); });
+  ["timber","berries","meat","stone","sack","milk"].forEach(function(c){ addLR("carry_"+c, carrySprite(c)); });
   ["militia","merc","brigand"].forEach(function(kd){ for(var f=0;f<3;f++) addLR("sol_"+kd+"_"+f, soldier(kd,f)); });
   for(k=0;k<4;k++){ addLR("deer_1_"+k, deer(k,true)); addLR("deer_0_"+k, deer(k,false)); }
   addLR("ox_0", ox(0)); addLR("ox_1", ox(1));
@@ -1803,7 +1861,7 @@ var api = { P:P, C:C, mix:mix, hash:hash, rng:rng, bayer:bayer, Px:Px, LEAF:LEAF
   gen:{ oak:oak, pine:pine, birch:birch, sapling:sapling, stump:stump, bush:bush, rocks:rocks,
     burgage1:burgage1, burgage2:burgage2, burgage3:burgage3, woodcutter:woodcutter, forager:forager,
     hunter:hunter, quarry:quarry, granary:granary, storehouse:storehouse, tower:tower, wallPiece:wallPiece,
-    farm:farm, windmillBody:windmillBody, windmillSails:windmillSails, market:market, trade:trade,
+    farm:farm, windmillBody:windmillBody, bakery:bakery, dairy:dairy, smokehouse:smokehouse, windmillSails:windmillSails, market:market, trade:trade,
     church:church, manor:manor, scaffold:scaffold, materials:materials,
     person:person, toolSprite:toolSprite, carrySprite:carrySprite, soldier:soldier, deer:deer, ox:ox, chicken:chicken,
     skep:skep, vegPatch:vegPatch, barrel:barrel, clothLine:clothLine, fruitTree:fruitTree,

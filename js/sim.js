@@ -54,8 +54,12 @@ const BUILD_DEFS                              = {
   quarry:    { id:"quarry",    name:"Carrière",        icon:"🪨", w:1,h:1, cost:{timber:2}, fam:1, skill:"stone", onStone:true, instant:false, desc:"À poser SUR un gisement de pierre. S'épuise avec le temps." },
   farm:      { id:"farm",      name:"Ferme",           icon:"🚜", w:2,h:2, cost:{timber:3}, fam:2, skill:"farm", instant:false, desc:"Ses fermiers travaillent les champs au fil des saisons (fumure, labour, semailles, moisson, fauche) et battent les gerbes l'hiver." },
   field:     { id:"field",     name:"Champ",           icon:"🌾", w:4,h:4, uiSize:true, cost:{}, fam:0, instant:true,  desc:"Gratuit. Rendement selon la fertilité du sol (visible en mode pose), la météo et la rotation des cultures." },
-  windmill:  { id:"windmill",  name:"Moulin",          icon:"💨", w:2,h:2, cost:{timber:2,stone:2}, fam:1, skill:"craft", instant:false, desc:"Transforme le grain en pain (meilleur variété alimentaire)." },
-  granary:   { id:"granary",   name:"Grange",          icon:"🏚️", w:1,h:1, cost:{timber:2}, fam:0, instant:false, desc:"Réduit fortement le pourrissement des denrées." },
+  windmill:  { id:"windmill",  name:"Moulin",          icon:"💨", w:2,h:2, cost:{timber:2,stone:2}, fam:2, skill:"craft", instant:false, desc:"Moud le grain en farine. Le meunier va chercher le grain à la ferme, à la grange ou à l'entrepôt. Sans boulangerie, chaque foyer cuit un peu de farine dans son four." },
+  // étape 6 : ateliers de transformation (l'artisan va chercher l'ingrédient, le produit part en réserve)
+  bakery:    { id:"bakery",    name:"Boulangerie",     icon:"🍞", w:1,h:1, cost:{timber:2,stone:1}, fam:2, skill:"craft", instant:false, desc:"Cuit le pain : 1 farine donne 1,5 pain (1 seulement au four d'un foyer), avec un peu de bois de chauffe. Le pain rassit vite : on cuit à mesure des besoins." },
+  dairy:     { id:"dairy",     name:"Laiterie",        icon:"🧀", w:1,h:1, cost:{timber:2}, fam:1, skill:"craft", instant:false, desc:"Fait du fromage avec le lait des vaches (3 laits → 2 fromages). Le lait tourne en quelques semaines ; le fromage se garde tout l'hiver et se vend bien." },
+  smokehouse:{ id:"smokehouse",name:"Fumoir",          icon:"🥓", w:1,h:1, cost:{timber:2,stone:1}, fam:1, skill:"craft", instant:false, desc:"Fume la viande au feu de bois : elle se garde des mois au lieu de se gâter. Précieux après l'abattage de novembre." },
+  granary:   { id:"granary",   name:"Grange",          icon:"🏚️", w:1,h:1, cost:{timber:2}, fam:0, instant:false, desc:"À l'abri des rats et de l'humidité, 200 denrées s'y gâtent trois fois moins vite. Les artisans viennent aussi y chercher grain, farine, lait et viande." },
   storehouse:{ id:"storehouse",name:"Entrepôt",        icon:"📦", w:1,h:1, cost:{timber:2}, fam:0, instant:false, desc:"+150 de capacité de stockage pour chaque ressource." },
   market:    { id:"market",    name:"Marché",          icon:"⛺", w:2,h:2, cost:{timber:2}, fam:3, skill:"trade", instant:false, desc:"Sans marché actif, vos familles n'ont accès qu'à un seul type de nourriture." },
   church:    { id:"church",    name:"Église",          icon:"⛪", w:2,h:2, cost:{timber:2,stone:2}, fam:0, instant:false, desc:"+6 d'approbation. Requise pour les bourgages de niveau 3." },
@@ -66,9 +70,52 @@ const BUILD_DEFS                              = {
   // étape 5 : enclos tracé librement (coût selon la longueur de clôture), un abri et un gardien
   pasture:   { id:"pasture",   name:"Pâturage",        icon:"🐑", w:1,h:1, cost:{timber:1}, fam:1, skill:"herd", instant:false, buildRate:3, zone:true, desc:"Enclos tracé librement : l'herbe nourrit un troupeau (moutons, vaches ou porcs) du printemps à l'automne ; l'hiver, il faut du foin. Un gardien soigne les bêtes, trait, tond." },
 };
-const BUILD_ORDER = ["woodcutter","forager","hunter","quarry","farm","field","windmill","granary","storehouse","market","trade","church","tower","wall","manor"];
+const BUILD_ORDER = ["woodcutter","forager","hunter","quarry","farm","field","windmill","bakery","dairy","smokehouse","granary","storehouse","market","trade","church","tower","wall","manor"];
 
-const FOOD_TYPES = ["berries","meat","bread","eggs","veg","apples","honey","pulses","milk"];
+/* ---------- étape 6 : nourriture, transformation et conservation ----------
+   group : famille d'aliments (la variété des repas se compte en familles : pain et viande fumée ne font
+           pas plus de variété que pain et viande fraîche) ;
+   spoil : part qui se gâte en un mois, à la belle saison et hors de la grange. On mange d'abord ce qui
+           se gâte le plus vite : les conserves restent pour l'hiver. */
+const FOOD_DEFS = {
+  bread:  { group:"grain", spoil:0.12 },
+  berries:{ group:"fruit", spoil:0.12 },
+  apples: { group:"fruit", spoil:0.05 },
+  honey:  { group:"fruit", spoil:0 },
+  veg:    { group:"veg",   spoil:0.10 },
+  pulses: { group:"veg",   spoil:0.03 },
+  meat:   { group:"meat",  spoil:0.15 },
+  smoked: { group:"meat",  spoil:0.02 },
+  eggs:   { group:"dairy", spoil:0.12 },
+  milk:   { group:"dairy", spoil:0.5 },
+  cheese: { group:"dairy", spoil:0.02 },
+};
+const FOOD_TYPES = ["berries","meat","bread","eggs","veg","apples","honey","pulses","milk","cheese","smoked"];
+const FOOD_GROUPS = {
+  grain: { id:"grain", name:"Pain" },
+  meat:  { id:"meat",  name:"Viande" },
+  dairy: { id:"dairy", name:"Laitages et œufs" },
+  veg:   { id:"veg",   name:"Légumes et pois" },
+  fruit: { id:"fruit", name:"Fruits et miel" },
+};
+const FOOD_GROUP_ORDER = ["grain","meat","dairy","veg","fruit"];
+// provisions qu'on ne mange pas telles quelles, mais qui se gâtent aussi un peu (rats, humidité)
+const STORE_SPOIL = { grain:0.02, barley:0.02, oats:0.02, flour:0.03 };
+const GRUEL = ["flour","grain","barley"];   // en disette, on mange le grain en bouillie (pas l'avoine des bêtes)
+const GRANARY_CAP = 200;                    // denrées qu'une grange met à l'abri
+const GRANARY_MUL = 1/3;                    // ce qui est à l'abri se gâte trois fois moins vite
+// approbation selon le nombre moyen de familles d'aliments au menu des foyers (0 à 5)
+const VARIETY_APPROVAL = [-8, -2, 6, 12, 15, 18];
+// ateliers : l'artisan va chercher « inp » (load à la fois) dans l'un des lieux « from », puis
+// transforme « per » unités en « give » unités de « out », en « time » temps de travail ; fuel : bois de chauffe par fournée
+const RECIPES = {
+  windmill:   { inp:"grain", per:1, out:"flour",  give:1,   time:12, load:4, fuel:0,    from:["farm","granary","storehouse","camp"], verb:"Mouture" },
+  bakery:     { inp:"flour", per:1, out:"bread",  give:1.5, time:10, load:4, fuel:0.25, from:["windmill","granary","storehouse"], verb:"Cuisson du pain" },
+  dairy:      { inp:"milk",  per:3, out:"cheese", give:2,   time:12, load:3, fuel:0,    from:["pasture","granary"], verb:"Fromages" },
+  smokehouse: { inp:"meat",  per:1, out:"smoked", give:1,   time:10, load:3, fuel:0.5,  from:["hunter","pasture","granary","storehouse","camp"], verb:"Fumage" },
+};
+const SMOKE_KEEP = 4;        // le fumoir laisse un peu de viande fraîche à manger tout de suite
+const HOME_BAKE = 1;         // farine qu'un foyer logé cuit lui-même dans le mois, faute de boulangerie
 
 const EXT_DEFS = {
   garden:  { id:"garden",  name:"Potager",            cost:{timber:1},           lvl:1, desc:"+0,5 légume par mois." },
@@ -255,7 +302,8 @@ const SETTLEMENT_LEVELS = [
   { name:"Ville", minPop:40 },
 ];
 const RES_ICONS                        = { timber:"🪵", firewood:"🔥", stone:"🪨", grain:"🌾", bread:"🍞", berries:"🍒", meat:"🍗", eggs:"🥚", veg:"🥕", apples:"🍎", honey:"🍯", clothes:"👕", ale:"🍺", barley:"🌾", ox:"🐂",
-  oats:"🌱", flax:"🪻", pulses:"🫛", milk:"🥛", wool:"🧶", hay:"🌿", manure:"🟫", sh_grain:"🎋", sh_barley:"🎋", sh_oats:"🎋" };
+  oats:"🌱", flax:"🪻", pulses:"🫛", milk:"🥛", wool:"🧶", hay:"🌿", manure:"🟫", sh_grain:"🎋", sh_barley:"🎋", sh_oats:"🎋",
+  flour:"🥣", cheese:"🧀", smoked:"🥓" };
 
 /* ---------- étape 4 : villageois individuels ---------- */
 const SURNAMES = ["Lefèvre","Charpentier","Dubois","Meunier","Fournier","Mercier","Bouvier","Berger","Tisserand","Lebrun",
@@ -289,6 +337,7 @@ const JOB_TITLES = {
   woodcutter:["Bûcheron","Bûcheronne"], forager:["Cueilleur","Cueilleuse"], hunter:["Chasseur","Chasseresse"],
   quarry:["Tailleur de pierre","Tailleuse de pierre"], farm:["Fermier","Fermière"], windmill:["Meunier","Meunière"],
   market:["Marchand","Marchande"], trade:["Négociant","Négociante"],
+  bakery:["Boulanger","Boulangère"], dairy:["Fromager","Fromagère"], smokehouse:["Charcutier","Charcutière"],
 };
 
                                                                                                                                        
@@ -354,7 +403,7 @@ class GameState {
     this.baron = { name:"Baron von Graufeld", regions:[], power:0, nextClaim:6, nextRaid:10 };
     this.influence = 0;
     this.policies = { tithe:false, freeMarket:false, militiaService:false };
-    this.prices = { bread:2, clothes:3, ale:2, apples:1, honey:4, meat:1, berries:1, wool:2 };
+    this.prices = { bread:2, clothes:3, ale:2, apples:1, honey:4, meat:1, berries:1, wool:2, cheese:3 };
     this.occupied = new Int32Array(W*H).fill(-1);
     this.buildings = []; this.nextB = 1;
     this.families = []; this.nextF = 1;      // foyers (une maison, une marmite)
@@ -364,7 +413,11 @@ class GameState {
     this.camps = []; this.nextC = 1;
     this.units = []; this.nextU = 1;
     this.stock = { timber:15, firewood:12, stone:0, grain:0, bread:6, berries:40, meat:25, eggs:0, veg:0, apples:0, honey:0, clothes:2, ale:0, barley:0, ox:0,
-                   oats:0, flax:0, pulses:0, milk:0, wool:0, hay:6, manure:0, sh_grain:0, sh_barley:0, sh_oats:0 };   // une petite meule de foin pour le bœuf
+                   oats:0, flax:0, pulses:0, milk:0, wool:0, hay:6, manure:0, sh_grain:0, sh_barley:0, sh_oats:0,   // une petite meule de foin pour le bœuf
+                   flour:0, cheese:0, smoked:0 };
+    this.spoiled = {};                        // étape 6 : ce qui s'est gâté le mois dernier
+    this.dearth = 0;                          // étape 6 : mois de disette d'affilée
+    this.dearthWarnY = 0; this.merchantAt = -99;
     this.oxen = []; this.nextA = 1;           // étape 5 : bœufs de trait ; identifiants des bêtes
     this.wx = null;                            // étape 5 : aléa agricole du mois (drought | wet | null)
     this.pastureCell = new Uint8Array(W*H);   // étape 5 : cases de pâturage (franchissables)
@@ -525,6 +578,7 @@ class GameState {
       let s=0; for(let yy=0;yy<d.h;yy++) for(let xx=0;xx<d.w;xx++) s += this.soil[(y+yy)*W+(x+xx)];
       b.f = this.normField({ fert: Math.min(1, s/(d.w*d.h)), crop:this.defaultCrop() });
     }
+    if(RECIPES[def]) b.inp = 0;   // étape 6 : ce que l'artisan a sur place
     this.buildings.push(b);
     for(let yy=0;yy<d.h;yy++) for(let xx=0;xx<d.w;xx++) this.occupied[(y+yy)*W+(x+xx)] = b.id;
     return b;
@@ -748,6 +802,8 @@ class GameState {
       this.stock.timber += Math.floor((d.cost.timber||0)/2);
       this.stock.stone += Math.floor((d.cost.stone||0)/2);
     }
+    // étape 6 : ce que l'artisan avait apporté retourne en réserve
+    if(RECIPES[b.def] && b.inp>0){ const r = RECIPES[b.def].inp; this.stock[r] = Math.min(this.capFor(r), (this.stock[r]||0) + b.inp); }
     for(let yy=0;yy<b.h;yy++) for(let xx=0;xx<b.w;xx++) this.occupied[(b.y+yy)*W+(b.x+xx)] = -1;
     if(b.plot) for(const i of b.plot.cells) if(this.occupied[i]===b.id) this.occupied[i] = -1;
     for(const v of this.villagers) if(v.work===b.id){ v.work=-1; v.appr=false; this.resetWorker(v); }
@@ -1814,13 +1870,19 @@ class GameState {
     else if(c.act==="payRaid"){ this.treasury -= (c.amount||0); this.toast("Le tribut est versé au Baron. Il se retire… pour l'instant.","good"); }
     else if(c.act==="refuseRaid"){ this.approval -= 15;
       const fort = this.buildings.some(b=>b.done&&b.def==="tower") ? 0.5 : 1.0;
-      for(const k of ["berries","meat","bread","eggs","veg","apples","honey"]) this.stock[k]=Math.floor((this.stock[k]||0)*(1-0.3*fort));
+      for(const k of FOOD_TYPES) this.stock[k]=Math.floor((this.stock[k]||0)*(1-0.3*fort));
       this.stock.timber=Math.floor(this.stock.timber*(1-0.15*fort));
       this.toast("Les cavaliers pillent la seigneurie !"+(fort<1?" (la tour en a limité les dégâts)":""),"bad"); }
     else if(c.act==="payBandits"){ this.treasury -= (c.amount||0); this.toast("Les brigands s'éloignent, bourse plus légère.","good"); }
     else if(c.act==="fairWood" || c.act==="fairCoin") this.fairDeal(ev.fair, c.act==="fairWood");
     else if(c.act==="fairNo") this.toast("Le marchand de bestiaux reprend la route.");
-    else if(c.act==="hideBandits"){ for(const k of ["berries","meat","bread","eggs","veg"]) this.stock[k]=Math.floor(this.stock[k]*0.8);
+    else if(c.act==="buyFood"){
+      const q = Math.min(c.qty||0, Math.max(0, this.capFor("pulses") - (this.stock.pulses||0)));
+      const cost = Math.ceil(q*(c.price||0));
+      if(q>0 && this.treasury>=cost){ this.treasury -= cost; this.stock.pulses = (this.stock.pulses||0) + q; this.toast("Le marchand de grain livre "+q+" mesures de pois et fèves secs 🫛 (−"+cost+" 💰).","good"); }
+    }
+    else if(c.act==="noFood") this.toast("Le marchand de grain reprend la route.");
+    else if(c.act==="hideBandits"){ for(const k of FOOD_TYPES) this.stock[k]=Math.floor(this.stock[k]*0.8);
       this.stock.timber=Math.floor(this.stock.timber*0.9); this.toast("Les brigands pillent la seigneurie et repartent.","bad"); }
     this.pendingEvent = null;
     this.approval = Math.max(0, Math.min(100, this.approval));
@@ -2172,11 +2234,8 @@ class GameState {
         this.sendToBuilding(f, b, {type:"herd", bid:b.id});
         return;
       }
-      case "windmill":{
-        if(this.stock.grain>0 && this.stock.bread<this.capFor("bread")){
-          this.sendToBuilding(f, b, {type:"mill"}); return;
-        }
-        f.cool=40; return;
+      case "windmill": case "bakery": case "dairy": case "smokehouse":{
+        this.workshopJob(f, b); return;
       }
       case "market":{
         this.sendToBuilding(f, b, {type:"stall"}); return;
@@ -2412,6 +2471,99 @@ class GameState {
     return base;
   }
 
+  /* ================= étape 6 : ateliers de transformation ================= */
+  // ce qu'on veut avoir d'avance : le pain rassit vite, on cuit à mesure ; la farine pour deux mois de pain
+  craftTarget(res){
+    const need = this.foodNeed();
+    if(res==="bread") return Math.min(this.capFor(res), Math.max(8, Math.ceil(need*1.2)));
+    if(res==="flour") return Math.min(this.capFor(res), Math.max(12, Math.ceil(need*2)));
+    return this.capFor(res);
+  }
+  // ingrédients en route vers les ateliers (loaded : seulement ceux déjà chargés)
+  inFetch(r, loaded){
+    let n = 0;
+    for(const v of this.villagers){
+      const t = v.task;
+      if(t && t.type==="fetch" && t.res===r && (!loaded || t.phase==="bring")) n += t.n;
+    }
+    return n;
+  }
+  // ce qu'un artisan peut encore aller prendre (le fumoir laisse un peu de viande fraîche)
+  fetchable(r){
+    const keep = r==="meat" ? SMOKE_KEEP : 0;
+    return Math.max(0, Math.floor((this.stock[r]||0) - keep - this.inFetch(r) + 1e-9));
+  }
+  // pourquoi l'atelier ne peut pas faire une fournée maintenant (null : il peut)
+  craftBlock(b){
+    const rc = RECIPES[b.def]; if(!rc) return "none";
+    if((this.stock[rc.out]||0) >= this.craftTarget(rc.out) - 1e-9) return "full";
+    if((b.inp||0) < rc.per - 1e-9) return "input";
+    if(rc.fuel && (this.stock.firewood||0) < rc.fuel) return "fuel";
+    return null;
+  }
+  craftOne(b){
+    const rc = RECIPES[b.def];
+    b.inp = Math.max(0, (b.inp||0) - rc.per);
+    if(rc.fuel) this.stock.firewood = Math.max(0, this.stock.firewood - rc.fuel);
+    this.stock[rc.out] = Math.min(this.capFor(rc.out), (this.stock[rc.out]||0) + rc.give);
+    b.made = (b.made||0) + rc.give;   // bilan du mois (panneau de l'atelier)
+  }
+  // le lieu où l'artisan va chercher son ingrédient : le plus proche de ceux qui en ont
+  ingredientDepot(b, r, x, y){
+    const rc = RECIPES[b.def]; let best = null, bd = Infinity;
+    for(const d of this.buildings){
+      if(!d.done || d===b || rc.from.indexOf(d.def)<0) continue;
+      if(d.def==="pasture" && !(d.herd && d.herd.an.length && (r!=="milk" || d.herd.sp==="cattle"))) continue;
+      const k = Math.hypot(d.x+d.w/2-x, d.y+d.h/2-y) + Math.hypot(b.x+b.w/2-(d.x+d.w/2), b.y+b.h/2-(d.y+d.h/2));
+      if(k<bd){ bd = k; best = d; }
+    }
+    return best;
+  }
+  workshopJob(f, b){
+    const rc = RECIPES[b.def];
+    const block = this.craftBlock(b);
+    if(block===null){ this.sendToBuilding(f, b, {type:"craft", bid:b.id}); return; }
+    if(block!=="input"){ f.cool = 40; return; }
+    // plus rien sur place : aller chercher l'ingrédient
+    const n = Math.min(rc.load, this.fetchable(rc.inp));
+    if(n + (b.inp||0) < rc.per){ f.cool = 40; return; }
+    const dep = this.ingredientDepot(b, rc.inp, f.x, f.y);
+    if(!dep){ this.stock[rc.inp] -= n; b.inp = (b.inp||0) + n; f.cool = 2; return; }   // aucun lieu de dépôt : on le lui apporte
+    if(!this.sendToBuilding(f, dep, {type:"fetch", bid:b.id, res:rc.inp, n, dep:dep.id, phase:"go"})){ f.task = null; f.cool = 20; }
+  }
+  // un pas de plus dans la course : chargement au dépôt, puis dépôt à l'atelier (l'ingrédient sort alors du stock)
+  fetchArrive(f){
+    const t = f.task;
+    const end = (c)=>{ f.carry=null; f.task=null; f.state="idle"; f.cool=c||0; };
+    const b = this.buildings.find(x=>x.id===t.bid && x.done);
+    if(!b || !RECIPES[b.def] || f.work!==b.id){ end(5); return; }
+    if(t.phase==="go"){
+      const others = this.inFetch(t.res, true);
+      t.n = Math.max(0, Math.min(t.n, Math.floor((this.stock[t.res]||0) - others + 1e-9)));
+      if(t.n<=0){ end(20); return; }
+      t.phase = "bring"; f.carry = { [t.res]: t.n };
+      if(!this.sendToBuilding(f, b, t)) end(10);
+      return;
+    }
+    const q = Math.max(0, Math.min(t.n, this.stock[t.res]||0));
+    this.stock[t.res] = (this.stock[t.res]||0) - q;
+    b.inp = (b.inp||0) + q;
+    this.uiVersion++;
+    end(0);
+  }
+  workshopStatus(b){
+    const rc = RECIPES[b.def];
+    const fetching = this.villagers.some(v=>v.work===b.id && v.task && v.task.type==="fetch");
+    const block = this.craftBlock(b);
+    const SOME = { grain:"du grain", flour:"de la farine", milk:"du lait", meat:"de la viande" };
+    const OF = { grain:"de grain", flour:"de farine", milk:"de lait", meat:"de viande" };
+    if(block===null) return rc.verb+" en cours";
+    if(block==="full") return "Réserve suffisante, l'atelier attend";
+    if(block==="fuel") return "Manque de bois de chauffe";
+    if(fetching || this.fetchable(rc.inp) + (b.inp||0) >= rc.per) return "Va chercher "+SOME[rc.inp];
+    return "En attente "+OF[rc.inp]+(rc.inp==="meat" && (this.stock.meat||0)>0 ? " (on garde "+SMOKE_KEEP+" viandes fraîches pour la table)" : " (plus rien en réserve)");
+  }
+
   stepVillager(f       ){
     const st = this.stageOf(f), sp = (st==="child" || st==="baby" || st==="elder") ? 0.8 : 1;
     switch(f.state){
@@ -2427,7 +2579,8 @@ class GameState {
           const t=f.task;
           if(!t){ f.state="idle"; break; }
           if(t.type==="haul"){ this.haulArrive(f); break; }
-          if(t.type==="build"||t.type==="mill"||t.type==="stall"||FIELD_TASKS[t.type]||t.type==="thresh"||t.type==="herd"){ f.state="work"; f.timer=0; }
+          if(t.type==="fetch"){ this.fetchArrive(f); break; }
+          if(t.type==="build"||t.type==="mill"||t.type==="craft"||t.type==="stall"||FIELD_TASKS[t.type]||t.type==="thresh"||t.type==="herd"){ f.state="work"; f.timer=0; }
           else { f.state="work"; f.timer=this.workTime(f, t.type); }
         }
         break;
@@ -2452,7 +2605,7 @@ class GameState {
     const t=f.task; if(!t){ f.state="idle"; return; }
     const b = f.work>0 ? this.buildings.find(x=>x.id===f.work) : null;
     // chaque moment passé à l'ouvrage fait progresser le savoir-faire correspondant (bilan mensuel)
-    const sk = t.type==="build" ? "build" : (FIELD_TASKS[t.type] || t.type==="thresh") ? "farm" : t.type==="herd" ? "herd" : t.type==="mill" ? "craft"
+    const sk = t.type==="build" ? "build" : (FIELD_TASKS[t.type] || t.type==="thresh") ? "farm" : t.type==="herd" ? "herd" : (t.type==="mill" || t.type==="craft" || t.type==="fetch") ? "craft"
              : (t.type==="stall" || t.type==="trade") ? "trade" : (this.jobSkill(b) || "build");
     this.noteWork(f, sk);
     switch(t.type){
@@ -2502,14 +2655,21 @@ class GameState {
         this.herdWork(f, t);
         break;
       }
-      case "mill":{
+      case "mill": case "craft":{
+        // étape 6 : l'artisan transforme ce qu'il a sur place ; quand il n'a plus rien, il repart chercher
+        const ws = b && RECIPES[b.def] ? b : null;
+        if(!ws){ f.task=null; f.state="idle"; f.cool=20; break; }
+        const rc = RECIPES[ws.def];
         f.timer++;
-        if(f.timer>=Math.round(12/this.skillMul(f, "craft"))){
+        if(f.timer>=Math.round(rc.time/this.skillMul(f, "craft"))){
           f.timer=0;
-          if(this.stock.grain>0 && this.stock.bread<this.capFor("bread")){
-            this.stock.grain--; this.stock.bread++;
-          } else { f.task=null; f.state="idle"; f.cool=20; }
+          if(this.craftBlock(ws)===null) this.craftOne(ws);
+          else { f.task=null; f.state="idle"; f.cool=0; }
         }
+        break;
+      }
+      case "fetch":{
+        this.fetchArrive(f);
         break;
       }
       case "stall":{
@@ -2791,6 +2951,12 @@ class GameState {
     const f = this.famOf(v);
     const fed = f ? (f.fed===undefined ? 1 : f.fed) : 1;
     if(fed<0.5) why.push(["A faim", -15]); else if(fed<0.999) why.push(["Mange trop peu", -6]);
+    // étape 6 : ce qu'il y a dans l'écuelle
+    if(f && f.gruel) why.push(["Bouillie de disette", -4]);
+    else if(f && fed>=0.5 && f.variety!==undefined){
+      if(f.variety>=4) why.push(["Repas variés", 3]);
+      else if(f.variety<=1) why.push(["Toujours la même chose", -3]);
+    }
     if(v.sick>0) why.push(["Malade", -10]); else if(v.health<40) why.push(["Santé fragile", -5]);
     if(v.grief>0) why.push(["En deuil"+(v.griefFor ? " de "+v.griefFor : ""), -12]);
     if(v.joy>0) why.push([v.joyFor || "Heureux événement", 8]);
@@ -3028,31 +3194,11 @@ class GameState {
       if(y<H-1&&this.tiles[i+W]===T_FOREST)nf++;
       if(nf>=2){ this.tiles[i]=T_FOREST; this.treeWood[i]=3; planted++; }
     }
-    // ----- consommation des foyers : chacun mange selon son âge ; bois de chauffe par maison -----
+    // ----- étape 6 : fours des foyers, puis repas (chacun mange selon son âge, le plus périssable d'abord) -----
     const market=this.marketActive();
-    const available=FOOD_TYPES.filter(k=>this.stock[k]>0.5);
-    const accessible=market?available:available.slice(0,1);
-    const varietyVillage=accessible.length; // variété offerte par le marché
-    let starved=0;
-    for(const f of this.families){
-      const mem = this.membersOf(f.id);
-      let need = mem.reduce((s,v)=>s+FOOD_NEED[this.stageOf(v)], 0);
-      const want = need;
-      let ate=0, turn=0;
-      while(need>0.001 && accessible.length>0){
-        accessible.sort((a,b)=>this.stock[b]-this.stock[a]);
-        // on alterne les types pour la variété alimentaire (comme les étals d'un marché)
-        const k = (turn%2===1 && accessible.length>1) ? accessible[1] : accessible[0];
-        turn++;
-        const bite = Math.min(need, 0.5);
-        if(this.stock[k]<bite) break;
-        this.stock[k]-=bite; ate+=bite; need-=bite;
-        if(this.stock[k]<0.5){ const ix=accessible.indexOf(k); if(ix>=0) accessible.splice(ix,1); }
-      }
-      f.lastAte=Math.round(ate*100)/100; f.lastVariety=varietyVillage;
-      f.fed = want>0 ? Math.min(1, ate/want) : 1;
-      if(want>0 && f.fed<0.5){ f.starving=(f.starving||0)+1; starved++; } else f.starving=0;
-    }
+    this.homeBake();
+    const meal = this.eatMonth(market);
+    const starved = meal.starved, varietyAvg = meal.variety;
     // bois de chauffe (neige = +1 par famille en plus)
     const fuelNeed=this.families.length*(winter?2:1)+(this.weather==="snow"?this.families.length:0);
     const fuelGot=Math.min(this.stock.firewood, fuelNeed);
@@ -3074,10 +3220,9 @@ class GameState {
       }
     }
     const aleRatio=this.families.length>0?drunk/this.families.length:1;
-    // pourrissement
-    const spoil=this.buildings.some(b=>b.done&&b.def==="granary")?0.03:0.10;
-    // étape 5 : le lait tourne vite (pas encore de laiterie), les pois secs se gardent
-    for(const k of FOOD_TYPES) this.stock[k]=Math.max(0,this.stock[k]*(1-(k==="milk" ? 0.5 : k==="pulses" ? spoil*0.3 : spoil)));
+    // étape 6 : pourrissement, denrée par denrée (la grange en abrite une partie, le froid ralentit tout)
+    this.spoilMonth();
+    for(const b of this.buildings) if(RECIPES[b.def]){ b.lastMade = Math.round((b.made||0)*10)/10; b.made = 0; }
     // effets des décrets actifs
     if(this.policies.tithe){ this.influence += 8; }
     if(this.policies.freeMarket){ this.wealth += 6; }
@@ -3090,8 +3235,11 @@ class GameState {
     // approbation : chaque cause est gardée pour être expliquée au joueur
     const why = [["Base", 50]];
     const add = (label, v)=>{ if(v) why.push([label, v]); };
-    add(varietyVillage>=3 ? "Nourriture variée ("+varietyVillage+" sortes)" : varietyVillage===2 ? "Deux sortes de nourriture" : varietyVillage===1 ? "Une seule sorte de nourriture" : "Plus rien à manger",
-        varietyVillage>=3 ? 12 : varietyVillage===2 ? 6 : varietyVillage===1 ? -2 : -8);
+    if(this.families.length){
+      const vt = (Math.round(varietyAvg*10)/10).toString().replace(".", ",");
+      add(varietyAvg>=2.5 ? "Repas variés ("+vt+" sortes d'aliments par foyer)" : varietyAvg>=1.5 ? "Repas peu variés ("+vt+" sortes par foyer)" : varietyAvg>=0.5 ? "Toujours la même chose au menu" : "Plus rien à manger",
+          this.varietyApproval(varietyAvg));
+    }
     add(fuelRatio>=1 ? "Bois de chauffe suffisant" : "Manque de bois de chauffe", fuelRatio>=1 ? 4 : fuelRatio>=0.5 ? -5 : -15);
     add(clothRatio>=1 ? "Vêtements pour tous" : "Manque de vêtements", clothRatio>=1 ? 4 : clothRatio>=0.5 ? -3 : -8);
     if(winter) add(aleRatio>=1 ? "Ale pour l'hiver" : "Pas d'ale cet hiver", aleRatio>=1 ? 3 : aleRatio<0.5 ? -6 : 0);
@@ -3107,6 +3255,7 @@ class GameState {
     if(this.policies.freeMarket) add("Marchés libres", 3);
     if(this.policies.militiaService) add("Service militaire", -3);
     if(starved>0) add("Des familles ont faim", -8);
+    if(meal.gruel>0) add("Disette : on mange le grain en bouillie", -4);
     // humeur des habitants : deuils, maladies, joies, métier (effet modéré sur l'ensemble)
     const pers = this.villagers.map(v=>this.personalMood(v, campB));
     if(pers.length){
@@ -3189,7 +3338,7 @@ class GameState {
       if(b.def!=="burgage"||!b.done) continue;
       const res=this.families.find(f=>f.home===b.id);
       if(!res) continue;
-      const ok=(res.fed!==undefined ? res.fed>=0.999 : res.lastAte>=1) && fuelRatio>=1 && market && varietyVillage>=2 && clothRatio>=1;
+      const ok=(res.fed!==undefined ? res.fed>=0.999 : res.lastAte>=1) && fuelRatio>=1 && market && (res.variety||0)>=2 && !res.gruel && clothRatio>=1;
       if(ok) b.monthsGood++; else b.monthsGood=0;
       if(b.lvl===1 && b.monthsGood>=3 && this.freeStock("timber")>=2){ this.stock.timber-=2; b.lvl=2; this.toast("Un bourgage évolue : niveau 2 !","good"); }
       else if(b.lvl===2 && b.monthsGood>=3 && this.approval>=65 && this.hasChurch() && this.freeStock("timber")>=2 && this.freeStock("stone")>=2){
@@ -3260,6 +3409,8 @@ class GameState {
       this.winterWarned=true; this.toast("⚠️ Stockez du bois de chauffe avant l'hiver !","bad");
     }
     if(m===2) this.winterWarned=false;
+    // étape 6 : soudure, disette et marchand de grain
+    this.dearthMonth(m, starved, meal);
     // événements
     if(m===10 && this.time.year>=1177){
       const amount=Math.round(8+this.families.length*1.2+(this.time.year-1177)*2);
@@ -3299,6 +3450,151 @@ class GameState {
     // ----- IA du Baron rival -----
     this.baronStep();
     this.uiVersion++;
+  }
+
+  /* ================= étape 6 : repas, conservation, disette ================= */
+  // faute de boulangerie, chaque foyer logé cuit un peu de farine dans son four (1 farine → 1 pain)
+  homeBake(){
+    const baker = this.buildings.some(b=>b.done && b.def==="bakery" && this.workersOf(b).length>0);
+    const ovens = this.families.filter(f=>{ const h = f.home>0 ? this.buildings.find(b=>b.id===f.home) : null; return h && h.def==="burgage" && h.done; }).length;
+    const want = Math.max(0, this.craftTarget("bread") - (this.stock.bread||0));
+    const q = Math.min(this.stock.flour||0, ovens*HOME_BAKE*(baker ? 0.5 : 1), want, (this.stock.firewood||0)/0.25);
+    if(q<=0.01){ this.homeBaked = 0; return 0; }
+    this.stock.flour -= q; this.stock.firewood -= q*0.25;
+    this.stock.bread = Math.min(this.capFor("bread"), (this.stock.bread||0) + q);
+    this.homeBaked = Math.round(q*10)/10;
+    return q;
+  }
+  varietyApproval(v){
+    const t = VARIETY_APPROVAL, x = Math.max(0, Math.min(t.length-1, v)), i = Math.min(t.length-2, Math.floor(x));
+    return t[i] + (t[i+1]-t[i])*(x-i);
+  }
+  // les repas du mois : avec un marché, une part égale dans chaque sorte d'aliment disponible,
+  // en commençant par ce qui se gâte le plus vite ; faute de tout, le grain en bouillie
+  eatMonth(market){
+    const groups = {};
+    for(const k of FOOD_TYPES){ const g = FOOD_DEFS[k].group; (groups[g] = groups[g] || []).push(k); }
+    for(const g in groups) groups[g].sort((a, b)=>FOOD_DEFS[b].spoil - FOOD_DEFS[a].spoil);
+    const left = (g)=>groups[g].reduce((s, k)=>s + (this.stock[k]||0), 0);
+    const take = (g, q)=>{   // prend q dans la famille g, le plus périssable d'abord ; rend ce qui a été pris
+      let got = 0;
+      for(const k of groups[g]){
+        const x = Math.min(q - got, this.stock[k]||0);
+        if(x>0){ this.stock[k] -= x; got += x; }
+        if(got >= q - 1e-9) break;
+      }
+      return got;
+    };
+    // le village mange comme une seule tablée : chaque sorte d'aliment est partagée entre les foyers
+    // au prorata de leurs besoins (les derniers servis ne sont pas lésés)
+    const wants = this.families.map(f=>this.membersOf(f.id).reduce((s, v)=>s+FOOD_NEED[this.stageOf(v)], 0));
+    const total = wants.reduce((s, w)=>s+w, 0);
+    let need = total;
+    const eaten = {};
+    let gl = FOOD_GROUP_ORDER.filter(g=>left(g)>1e-6);
+    if(!market){
+      // sans marché, chacun se contente de ce qu'il trouve : la sorte d'aliment la plus abondante
+      gl.sort((a, b)=>left(b) - left(a));
+      for(const g of gl){ if(need<=1e-6) break; const q = take(g, need); if(q>0){ eaten[g] = q; need -= q; } }
+    } else {
+      while(need>1e-6 && gl.length){
+        const share = need/gl.length;
+        for(const g of gl.slice()){
+          const q = take(g, share);
+          if(q>0){ eaten[g] = (eaten[g]||0) + q; need -= q; }
+          if(q < share - 1e-9) gl.splice(gl.indexOf(g), 1);   // cette sorte d'aliment est épuisée
+        }
+      }
+    }
+    // disette : faute de mieux, le grain (ou la farine) en bouillie
+    let gr = 0;
+    for(const k of GRUEL){ if(need<=1e-6) break; const q = Math.min(need, this.stock[k]||0); if(q>0){ this.stock[k] -= q; need -= q; gr += q; } }
+    if(gr>0) eaten.grain = (eaten.grain||0) + gr;
+    // quand il n'y en a pas assez pour tous, les foyers sont servis l'un après l'autre (comme avant) :
+    // une disette laisse des affamés, elle n'affame pas tout le village d'un coup
+    const ateAll = Math.max(0, total - Math.max(0, need));
+    let pot = ateAll;
+    let starved = 0, gruel = 0, vSum = 0, nSum = 0;
+    this.families.forEach((f, i)=>{
+      const want = wants[i], ate = Math.min(want, pot); pot -= ate;
+      const part = ateAll>0 ? ate/ateAll : 0;
+      const varN = Object.keys(eaten).filter(g=>eaten[g]*part >= Math.min(0.05, want*0.08)).length;
+      f.lastAte = Math.round(ate*100)/100;
+      f.fed = want>0 ? Math.min(1, ate/want) : 1;
+      f.variety = varN; f.lastVariety = varN; f.gruel = gr>0 && ate>0;
+      f.menu = Object.keys(eaten).filter(g=>eaten[g]*part>0.01);
+      if(f.gruel) gruel++;
+      if(want>0 && f.fed<0.5){ f.starving=(f.starving||0)+1; starved++; } else f.starving=0;
+      const w = Math.max(1, this.membersOf(f.id).length);
+      vSum += varN*w; nSum += w;
+    });
+    return { starved, gruel, variety: nSum ? vSum/nSum : 0 };
+  }
+  // ce qui se gâte en un mois, à cet instant : la grange met GRANARY_CAP denrées à l'abri chacune
+  // (le lait n'y gagne rien), le froid de l'hiver ralentit tout, la chaleur de l'été l'accélère
+  spoilKeys(){ return FOOD_TYPES.concat(Object.keys(STORE_SPOIL)); }
+  spoilBase(k){ return FOOD_DEFS[k] ? FOOD_DEFS[k].spoil : (STORE_SPOIL[k]||0); }
+  seasonSpoil(m){ return isWinterMonth(m) ? 0.5 : (m>=5 && m<=7) ? 1.3 : 1; }
+  granaryCount(){ return this.buildings.filter(b=>b.done && b.def==="granary").length; }
+  granaryShare(){
+    const n = this.granaryCount(); if(!n) return 0;
+    const tot = this.spoilKeys().reduce((s, k)=>s + (k==="milk" ? 0 : (this.stock[k]||0)), 0);
+    return tot<=0 ? 1 : Math.min(1, n*GRANARY_CAP/tot);
+  }
+  spoilRate(k, m){
+    const base = this.spoilBase(k); if(!base) return 0;
+    const p = k==="milk" ? 0 : this.granaryShare();
+    return Math.min(1, base*this.seasonSpoil(m===undefined ? this.time.month : m)*(1 - p + p*GRANARY_MUL));
+  }
+  spoilMonth(){
+    const lost = {}, m = this.time.month;
+    const rates = {};
+    for(const k of this.spoilKeys()) rates[k] = this.spoilRate(k, m);   // la part abritée se calcule avant les pertes
+    for(const k of this.spoilKeys()){
+      const q = (this.stock[k]||0)*rates[k];
+      if(q>0){ this.stock[k] = Math.max(0, this.stock[k] - q); lost[k] = Math.round(q*10)/10; }
+    }
+    this.spoiled = lost;
+    return lost;
+  }
+  // nourriture en réserve, et combien de mois elle tiendra (la farine et le grain comptent : on peut les cuire)
+  foodStock(){ return FOOD_TYPES.reduce((s, k)=>s + (this.stock[k]||0), 0); }
+  foodMonths(){
+    const need = this.foodNeed();
+    if(need<=0) return 99;
+    return (this.foodStock() + (this.stock.flour||0) + (this.stock.grain||0))/need;
+  }
+  dearthMonth(m, starved, meal){
+    const short = this.families.some(f=>(f.fed===undefined ? 1 : f.fed) < 0.999) || meal.gruel>0;
+    if(short){
+      this.dearth = (this.dearth||0) + 1;
+      if(this.dearth===1) this.toast("Disette ! Les réserves ne suffisent plus à nourrir tout le monde.","bad");
+    } else this.dearth = 0;
+    // la soudure (printemps) et l'hiver s'annoncent : un avertissement par an et par saison
+    const fm = this.foodMonths(), y = this.time.year;
+    if(m===2 && this.families.length && fm<3 && this.dearthWarnY!==y*10+1){
+      this.dearthWarnY = y*10+1;
+      this.toast("⚠️ La soudure s'annonce difficile : "+Math.floor(fm)+" mois de vivres, et la moisson n'est qu'en juillet.","bad");
+    }
+    if(m===9 && this.families.length && fm<4 && this.dearthWarnY!==y*10+2){
+      this.dearthWarnY = y*10+2;
+      this.toast("⚠️ À peine "+Math.floor(fm)+" mois de vivres pour passer l'hiver : fumez la viande, faites du fromage, gardez le grain.","bad");
+    }
+    // un marchand de grain passe quand on a faim (pas plus d'une fois par trimestre)
+    const now = this.monthIdx();
+    if(this.dearth>=1 && !this.pendingEvent && now - (this.merchantAt||-99) >= 3 && this.families.length && this.rnd()<0.6){
+      this.merchantAt = now;
+      const qty = Math.max(6, Math.ceil(this.foodNeed()*2));
+      const price = this.dearth>=3 ? 3 : 2;
+      const half = Math.ceil(qty/2);
+      this.pendingEvent = { title:"Un marchand de grain",
+        text:"Un marchand venu de la ville voisine a appris la disette. Il propose des pois et fèves secs, qui se gardent, à "+price+" deniers la mesure.",
+        choices:[
+          { label:"Acheter "+qty+" mesures ("+Math.ceil(qty*price)+" 💰)", act:"buyFood", qty, price, disabled:this.treasury<Math.ceil(qty*price) },
+          { label:"Acheter "+half+" mesures ("+Math.ceil(half*price)+" 💰)", act:"buyFood", qty:half, price, disabled:this.treasury<Math.ceil(half*price) },
+          { label:"Refuser", act:"noFood" },
+        ]};
+    }
   }
 
   // peste : les plus fragiles (anciens, petits, malades) en meurent, d'autres tombent malades
@@ -3364,7 +3660,7 @@ class GameState {
       case "hunter": return this.findDeerNear(b) ? "Chasse en cours" : "Aucun gibier à portée";
       case "quarry": { const i=b.y*W+b.x; return this.stoneAmt[i]<=0 ? "Carrière épuisée" : "Extraction en cours"; }
       case "farm": return this.farmStatus(b);
-      case "windmill": return this.stock.grain>0 ? "Mouture du grain" : "En attente de grain";
+      case "windmill": case "bakery": case "dairy": case "smokehouse": return this.workshopStatus(b);
       case "market": return nw>0 ? "Étals tenus" : "Marché inactif";
       case "trade": return nw>0 ? "Comptoir actif (ventes auto)" : "Comptoir inactif";
       default: return "";
@@ -3443,7 +3739,7 @@ class GameState {
   }
   serialize(){
     return {
-      v:6, // v6 : matériaux des chantiers (b.mat) ; v5 : champs détaillés (b.f), pâturages (b.herd), bœufs (oxen) ; v4 : villageois ; v3 : parcelles de bourgage (b.plot)
+      v:7, // v7 : ateliers (b.inp), farine, fromage, viande fumée, disette ; v6 : matériaux des chantiers (b.mat) ; v5 : champs détaillés (b.f), pâturages (b.herd), bœufs (oxen) ; v4 : villageois ; v3 : parcelles de bourgage (b.plot)
       seed:this.seed,
       modeId:this.modeId,
       weather:this.weather,
@@ -3481,6 +3777,10 @@ class GameState {
       nextA:this.nextA,
       wx:this.wx,
       keepCalves:this.keepCalves,
+      spoiled:this.spoiled,
+      dearth:this.dearth,
+      dearthWarnY:this.dearthWarnY,
+      merchantAt:this.merchantAt,
     };
   }
   static load(data    )          {
@@ -3597,6 +3897,17 @@ class GameState {
       if(b.plot) for(const i of b.plot.cells) if(g.occupied[i]<0) g.occupied[i] = b.id;
     }
     g.markPastures();
+    // étape 6 : ce que les artisans ont sur place ; un meunier d'avant (tâche « mill ») reprend comme les autres
+    for(const b of g.buildings){
+      if(RECIPES[b.def]) b.inp = num(b.inp) ? Math.max(0, b.inp) : 0; else delete b.inp;
+      if(!num(b.made)) delete b.made;
+      if(!num(b.lastMade)) delete b.lastMade;
+    }
+    for(const v of g.villagers) if(v.task && (v.task.type==="mill" || (v.task.type==="fetch" && !num(v.task.n)))){ v.task = null; v.state = "idle"; v.path = null; v.carry = null; }
+    g.spoiled = data.spoiled && typeof data.spoiled==="object" ? data.spoiled : {};
+    g.dearth = num(data.dearth) ? Math.max(0, data.dearth) : 0;
+    g.dearthWarnY = num(data.dearthWarnY) ? data.dearthWarnY : 0;
+    g.merchantAt = num(data.merchantAt) ? data.merchantAt : -99;
     // étape 5 bis : matériaux des chantiers ; ceux d'une sauvegarde plus ancienne sont déjà sur place
     for(const b of g.buildings){
       if(b.done){ delete b.mat; delete b.prio; continue; }
@@ -3620,6 +3931,6 @@ class GameState {
 }
 
 if(typeof module!=="undefined" && module.exports){
-  module.exports = { MAT_RES, PORTER_LOAD, OX_LOAD, OX_SPEED, DRAG_SPEED, DEPOT_DEFS, TS, WORK_DIV, TICKS_PER_DAY, DAYS_PER_MONTH, FIELD_MIN, FIELD_MAX, PLOT_MIN, CROP_CAL, GROW_RATE, SHEAF_RES, LIVESTOCK, LIVESTOCK_ORDER, GRASS, PASTURE_MIN, PASTURE_MAX, monthsTxt, isWinterMonth, MONTHS_ABBR, SKILL_DEFS, SKILL_ORDER, SKILL_LEVELS, skillLevel, FOOD_NEED, AGE_TEEN, AGE_ADULT, AGE_ELDER, AGE_RETIRE, STAGE_NAMES, JOB_TITLES, NAMES_M, NAMES_F, SURNAMES, BUILD_STAGES, buildStage, DIRS4, PLOT_FRONT, polyArea, pointInPoly, GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
+  module.exports = { FOOD_DEFS, FOOD_GROUPS, FOOD_GROUP_ORDER, STORE_SPOIL, GRUEL, GRANARY_CAP, GRANARY_MUL, VARIETY_APPROVAL, RECIPES, SMOKE_KEEP, HOME_BAKE, MAT_RES, PORTER_LOAD, OX_LOAD, OX_SPEED, DRAG_SPEED, DEPOT_DEFS, TS, WORK_DIV, TICKS_PER_DAY, DAYS_PER_MONTH, FIELD_MIN, FIELD_MAX, PLOT_MIN, CROP_CAL, GROW_RATE, SHEAF_RES, LIVESTOCK, LIVESTOCK_ORDER, GRASS, PASTURE_MIN, PASTURE_MAX, monthsTxt, isWinterMonth, MONTHS_ABBR, SKILL_DEFS, SKILL_ORDER, SKILL_LEVELS, skillLevel, FOOD_NEED, AGE_TEEN, AGE_ADULT, AGE_ELDER, AGE_RETIRE, STAGE_NAMES, JOB_TITLES, NAMES_M, NAMES_F, SURNAMES, BUILD_STAGES, buildStage, DIRS4, PLOT_FRONT, polyArea, pointInPoly, GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
     T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf, REGION_DEFS, REGION_COST, POLICY_DEFS, POLICY_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, MODE_BY_ID, DIFFICULTIES, DIFF_BY_ID };
 }
