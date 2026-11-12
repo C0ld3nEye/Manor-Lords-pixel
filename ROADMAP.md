@@ -87,7 +87,7 @@ Le détail technique et l'historique (audit, anciennes phases 0 à 7) restent da
 | Logistique | ✅ Étape 5 bis : le bois et la pierre sont réservés à la pose et sortent du stock à la livraison ; un journalier mène le bœuf, qui traîne trois troncs (la pierre se porte une à une), depuis le campement, l'entrepôt, le camp de bûcherons ou la carrière ; le chantier ne progresse qu'avec ce qui est livré ; chantier prioritaire. |
 | Nourriture | ✅ Étape 6 : moulin (farine), boulangerie, laiterie (fromage), fumoir ; les artisans vont chercher leurs ingrédients à pied ; chaque denrée se gâte à son rythme (froid, chaleur, grange qui abrite 200 denrées) ; repas comptés en cinq sortes d'aliments, foyer par foyer, le plus périssable mangé d'abord ; disette, bouillie de grain, soudure annoncée, marchand de grain. |
 | Agriculture et élevage | ✅ Étape 5 : 8 cultures et leur calendrier, fumure, labour, semailles, moisson en gerbes, battage, rotation, météo, prévision de récolte ; pâturages tracés, moutons, vaches, porcs, foin d'hiver, maladies, bœufs de trait. |
-| Simulation | 20 bâtiments, 8 cultures, 3 espèces de bétail, 11 denrées en 5 sortes, routes, comptoir, 3 régions, un baron rival, brigands, milice, 5 modes, 3 difficultés. 155 tests. |
+| Simulation | 20 bâtiments, 8 cultures, 3 espèces de bétail, 11 denrées en 5 sortes, routes, comptoir, 3 régions, un baron rival, brigands, milice, 5 modes, 3 difficultés. 158 tests. |
 | Administration, vassaux, dynastie | ❌ À construire. |
 | Équilibrage et fun | ❓ À vérifier en jouant sur téléphone. |
 | Distribution | Page web uniquement. |
