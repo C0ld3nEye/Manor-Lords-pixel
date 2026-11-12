@@ -963,6 +963,38 @@ function materials(){
   return o;
 }
 
+/* étape 5 bis : tas livrés au pied du chantier (1 à 4 troncs, 1 à 3 pierres) */
+function logPile(n){
+  var o = S(14, 9, 0, 9);
+  var rows = [[1,7,11],[2,5,9],[3,3,7],[4,1,5]];   // [x, y, longueur] du bas vers le haut
+  for(var i=0;i<n;i++){
+    var q = rows[i];
+    o.r(q[0], q[1], q[2], 2, i&1 ? P.wood3 : P.wood2); o.r(q[0], q[1], q[2], 1, i&1 ? P.wood4 : P.wood3);
+    o.p(q[0], q[1]+1, P.wood4); o.p(q[0]+q[2]-1, q[1]+1, P.wood1);
+  }
+  o.outline(C(P.ink));
+  return o;
+}
+function stonePile(n){
+  var o = S(12, 8, 0, 8);
+  var at = [[1,4,5,3],[6,4,5,3],[3,1,5,3]];
+  for(var i=0;i<n;i++){ var q = at[i]; o.r(q[0], q[1], q[2], q[3], i===2 ? P.st2 : P.st3); o.r(q[0], q[1], q[2], 1, P.st4); o.p(q[0]+q[2]-1, q[1]+q[3]-1, P.st1); }
+  o.outline(C(P.ink));
+  return o;
+}
+/* étape 5 bis : ce que le bœuf traîne derrière lui (troncs liés, ou traîneau de pierres) */
+function dragLoad(kind){
+  var o = S(16, 7, 8, 7);
+  if(kind==="timber"){
+    for(var i=0;i<3;i++){ o.r(1, 1+i*2, 14, 2, i&1 ? P.wood3 : P.wood2); o.r(1, 1+i*2, 14, 1, i&1 ? P.wood4 : P.wood3); o.p(1, 2+i*2, P.wood4); }
+  } else {
+    o.r(1, 4, 14, 2, P.wood2); o.r(1, 4, 14, 1, P.wood3);
+    o.r(2, 1, 4, 3, P.st3); o.r(6, 2, 4, 2, P.st2); o.r(10, 1, 4, 3, P.st3); o.r(2, 1, 4, 1, P.st4); o.r(10, 1, 4, 1, P.st4);
+  }
+  o.outline(C(P.ink));
+  return o;
+}
+
 /* ======================================================
    PERSONNAGES (8 × 12, pied au centre bas, regard vers la droite)
    ====================================================== */
@@ -1667,6 +1699,9 @@ function build(){
   for(k=0;k<16;k++) addW("wall_"+k, wallPiece(k));
   for(k=0;k<8;k++) add("sails_"+k, windmillSails(k));
   add("scaffold_1", scaffold(1,1)); add("scaffold_2", scaffold(2,2)); add("materials", materials());
+  for(var lp=1; lp<=4; lp++) add("pile_timber_"+lp, logPile(lp));
+  for(var sp=1; sp<=3; sp++) add("pile_stone_"+sp, stonePile(sp));
+  add("drag_timber", dragLoad("timber")); add("drag_stone", dragLoad("stone"));
   addW("camp", banditCamp());
   for(v=0;v<2;v++){ add("cobble_"+v, cobbleTile(v)); add("dirt_"+v, dirtTile(v)); }
   /* sol des champs */

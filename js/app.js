@@ -110,13 +110,13 @@ function costHtml(cost, g){
   var ks = Object.keys(cost||{});
   if(!ks.length) return "<span class='cost'>Gratuit</span>";
   return ks.map(function(k){
-    var short = g && (g.stock[k]||0) < cost[k];
+    var short = g && g.freeStock(k) < cost[k];
     return "<span class='cost"+(short?" no":"")+"'>"+cost[k]+ic(k,"s")+"</span>";
   }).join(" ");
 }
 function missingText(def, g){
   var c = BUILD_DEFS[def].cost, m = [];
-  for(var k in c) if((g.stock[k]||0) < c[k]) m.push((c[k]-(g.stock[k]||0))+" "+RES[k].n.toLowerCase());
+  for(var k in c) if(g.freeStock(k) < c[k]) m.push(Math.ceil(c[k]-Math.max(0, g.freeStock(k)))+" "+RES[k].n.toLowerCase());
   return m.length ? "Il manque "+m.join(" et ")+"." : "";
 }
 function bar(p, cls){ return "<div class='bar"+(cls?" "+cls:"")+"'><i style='width:"+Math.max(0,Math.min(100,Math.round(p*100)))+"%'></i></div>"; }
@@ -550,6 +550,7 @@ document.addEventListener("click", function(e){
       }
       break;
     case "crop": if(ui.selId!=null) g.setCrop(ui.selId, arg); break;
+    case "sprio": if(ui.selId!=null){ var sp = g.buildings.filter(function(x){ return x.id===ui.selId; })[0]; if(sp) g.setSitePrio(sp.id, !sp.prio); } break;
     case "churchup": if(ui.selId!=null) g.churchUp(ui.selId, arg); break;
     case "policy": g.setPolicy(arg, !g.policies[arg]); break;
     case "demolish":
@@ -904,7 +905,7 @@ function sheetSelection(g){
   if(sel.def!=="field") h += "<div class='desc'>"+esc(hsp ? hsp.desc : d.desc)+"</div>";
   if(!sel.done){
     h += "<div class='row'><span class='dim'>Chantier</span>"+bar(sel.progress||0,"gold")+"<b>"+Math.round((sel.progress||0)*100)+" %</b></div>";
-    h += "<div class='dim' style='font-size:11px'>Les journaliers (adultes sans poste) construisent les chantiers.</div>";
+    h += sheetSite(g, sel);
   }
   if(d.fam>0) h += workersHtml(g, sel, d);
   if(sel.def==="burgage"){
@@ -968,7 +969,30 @@ function sheetSelection(g){
     }
   }
   var armed = Date.now() < ui.demolishArm;
-  h += "<button class='b red wide' data-act='demolish'>"+(armed ? "Toucher encore pour confirmer" : "Démolir (moitié remboursée)")+"</button>";
+  var lbl = !sel.done && sel.mat ? "Abandonner le chantier (matériaux non employés rendus)" : "Démolir (moitié remboursée)";
+  h += "<button class='b red wide' data-act='demolish'>"+(armed ? "Toucher encore pour confirmer" : lbl)+"</button>";
+  return h;
+}
+/* étape 5 bis : matériaux du chantier — livrés, en route, à aller chercher */
+function sheetSite(g, sel){
+  var h = "";
+  if(!sel.mat){
+    return h + "<div class='dim' style='font-size:11px'>Les journaliers (adultes sans poste) construisent les chantiers.</div>";
+  }
+  h += "<div class='sec'>Matériaux</div>";
+  MAT_RES.forEach(function(r){
+    var need = sel.mat.need[r]; if(!need) return;
+    var got = Math.min(need, sel.mat.got[r]||0), way = g.inTransit(sel, r);
+    h += "<div class='row'><span class='dim'>"+ic(r,"s")+RES[r].n+"</span>"+bar(got/need, got>=need ? "" : "gold")
+       + "<b>"+Math.floor(got)+" / "+need+"</b></div>";
+    if(got<need) h += "<div class='dim' style='font-size:11px;margin:-2px 0 4px'>"
+       + (way>0 ? way+" en route"+(g.villagers.some(function(v){ return v.task && v.task.type==="haul" && v.task.ox && v.task.bid===sel.id && v.task.res===r && v.task.phase!=="back"; }) ? " (avec le bœuf)" : "") : g.pickable(r)<=0 ? "plus rien en réserve : il faut en produire" : r==="timber" && g.oxen.some(function(o){ return g.oxCanHaul(o); }) ? "le bœuf est pris, on attend son retour" : "personne n'est encore parti le chercher")+"</div>";
+  });
+  var deps = g.depotsFor("timber").concat(g.depotsFor("stone")).filter(function(b, i, a){ return a.indexOf(b)===i; });
+  h += "<div class='dim' style='font-size:11px'>Les journaliers vont chercher le bois et la pierre "
+     + (deps.length ? "au plus commode des dépôts ("+deps.map(function(b){ return BUILD_DEFS[b.def].name.toLowerCase(); }).filter(function(n, i, a){ return a.indexOf(n)===i; }).join(", ")+")" : "chez un marchand, faute de dépôt")
+     + ". Un tronc est trop lourd pour un homme : un journalier mène le bœuf, qui en traîne trois (faute de bœuf, on en traîne un à la main, lentement). La pierre se porte une à une. Chaque charge sort du stock quand elle est déposée ; on ne bâtit qu'avec ce qui est arrivé.</div>";
+  h += "<button class='ext"+(sel.prio ? " have" : "")+"' style='cursor:pointer' data-act='sprio'><span class='t'><b>Livrer en priorité</b><span>Porteurs et bœuf servent ce chantier avant les autres.</span></span><span class='"+(sel.prio ? "good" : "dim")+"'>"+(sel.prio ? "Oui" : "—")+"</span></button>";
   return h;
 }
 
@@ -1311,6 +1335,8 @@ function sheetStock(g){
   var h = head(ic("crate","l"), "Réserves", "Capacité : "+cap+" par ressource · "+g.storehouseCount()+" entrepôt(s)");
   function line(k){ var v = Math.floor(g.stock[k]||0); return "<div class='kv'><span class='k'>"+ic(k)+RES[k].n+"</span>"+bar(v/cap, v>=cap?"gold":"")+"<span class='v' style='min-width:36px;text-align:right'>"+v+"</span></div>"; }
   h += "<div class='sec'>Matériaux</div>"+line("timber")+line("stone");
+  var rt = g.reserved("timber"), rs = g.reserved("stone");
+  if(rt>0 || rs>0) h += "<div class='dim' style='font-size:11px'>Dont réservés aux chantiers : "+(rt>0 ? Math.ceil(rt)+" bois" : "")+(rt>0 && rs>0 ? " et " : "")+(rs>0 ? Math.ceil(rs)+" pierre"+(rs>1?"s":"") : "")+". Ils sortent du stock à la livraison.</div>";
   h += "<div class='sec'>Chauffage</div>"+line("firewood");
   h += "<div class='sec'>Nourriture · "+Math.floor(food)+" · variété "+kinds+"/"+FOOD_TYPES.length+"</div>";
   if(!g.marketActive()) h += "<div class='bad' style='font-size:12px'>Sans marché actif, chaque famille ne reçoit qu'un type de nourriture.</div>";
@@ -1485,6 +1511,7 @@ function modalRegions(g){
 function modalHelp(){
   var h = "<h2>"+ic("help","l")+"Comment jouer</h2>";
   h += "<h3>Premiers pas</h3><p>Ouvrez <b>Récolte</b> dans la barre du bas et posez un <b>camp de bûcherons</b> près d'une forêt. Touchez-le, puis <b>+</b> pour embaucher un ouvrier : le jeu choisit l'adulte libre le plus doué. Les adultes sans poste (journaliers) construisent les chantiers.</p>";
+  h += "<h3>Chantiers et matériaux</h3><p>Le bois et la pierre d'un chantier sont réservés à la pose (on ne peut plus les dépenser ailleurs), puis <b>apportés</b> : ils sortent du stock quand ils arrivent au pied du chantier. Les journaliers les prennent au dépôt le plus commode (campement, poteau du bœuf, <b>entrepôt</b>, camp de bûcherons pour le bois, carrière pour la pierre). Un tronc est trop lourd pour un homme : un journalier va chercher le <b>bœuf</b> et le mène, avec trois troncs derrière lui, quand il ne laboure pas ; sans bœuf en état, on traîne un tronc à la main, lentement. La pierre se porte une à une. On ne bâtit qu'avec ce qui est arrivé : posez vos entrepôts près des chantiers, et touchez un chantier pour le <b>livrer en priorité</b>. Abandonner un chantier rend les matériaux non employés.</p>";
   h += "<h3>Les villageois</h3><p>Chaque habitant a un âge, une santé, une humeur et un savoir-faire par métier, qui progresse en travaillant (de novice à maître). Touchez un villageois sur la carte, ou le compteur d'habitants en haut, pour ouvrir sa fiche : vous y voyez pourquoi il est content ou non, et vous pouvez changer son métier. Les adolescents de 12 à 15 ans peuvent entrer en <b>apprentissage</b> : auprès d'un bon maître, ils apprennent vite. Les couples se marient, ont des enfants, vieillissent ; à 65 ans, on prend sa retraite. Si un maître meurt sans avoir formé personne, son savoir-faire disparaît.</p>";
   h += "<h3>Nourrir et chauffer</h3><p>Cueilleuses (baies, de mars à novembre) et chasseurs (viande) nourrissent le village. La <b>variété</b> de nourriture fait monter l'approbation, et il faut un <b>marché</b> actif pour la distribuer. L'hiver, la consommation de bois de chauffe double : faites des réserves avant décembre.</p>";
   h += "<h3>Agriculture</h3><p>Les champs sont gratuits ; les fermiers d'une <b>ferme</b> les travaillent au fil des saisons. Chaque culture a son calendrier : le <b>blé d'hiver</b> et le <b>seigle</b> se sèment à l'automne et se moissonnent l'été suivant ; l'orge, l'avoine, le lin et les pois se sèment au printemps ; le <b>pré de fauche</b> donne du foin en juin-juillet sans labour. Les céréales sont moissonnées en <b>gerbes</b>, battues ensuite à la ferme (surtout l'hiver) ; le moulin fait le pain.</p>"

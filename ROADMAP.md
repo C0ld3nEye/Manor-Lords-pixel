@@ -84,9 +84,10 @@ Le détail technique et l'historique (audit, anciennes phases 0 à 7) restent da
 | Interface mobile | ✅ Étape 2 : barre compacte, construction par catégories, panneaux en bas d'écran. |
 | Maisons et chantiers | ✅ Étape 3 : zones tracées point par point, parcelles, jardins et clôtures, chantiers en quatre étapes, départ au campement. |
 | Villageois | ✅ Étape 4 : chaque habitant a un prénom, un âge, une santé, une humeur et un savoir-faire ; un métier par adulte, apprentis, mariages, naissances, vieillesse, décès. |
+| Logistique | ✅ Étape 5 bis : le bois et la pierre sont réservés à la pose et sortent du stock à la livraison ; un journalier mène le bœuf, qui traîne trois troncs (la pierre se porte une à une), depuis le campement, l'entrepôt, le camp de bûcherons ou la carrière ; le chantier ne progresse qu'avec ce qui est livré ; chantier prioritaire. |
 | Agriculture et élevage | ✅ Étape 5 : 8 cultures et leur calendrier, fumure, labour, semailles, moisson en gerbes, battage, rotation, météo, prévision de récolte ; pâturages tracés, moutons, vaches, porcs, foin d'hiver, maladies, bœufs de trait. |
-| Simulation | 17 bâtiments, 8 cultures, 3 espèces de bétail, nourriture variée, routes, comptoir, 3 régions, un baron rival, brigands, milice, 5 modes, 3 difficultés. 129 tests. |
-| Logistique, transformation, administration, vassaux, dynastie | ❌ À construire. |
+| Simulation | 17 bâtiments, 8 cultures, 3 espèces de bétail, nourriture variée, routes, comptoir, 3 régions, un baron rival, brigands, milice, 5 modes, 3 difficultés. 138 tests. |
+| Transformation, administration, vassaux, dynastie | ❌ À construire. |
 | Équilibrage et fun | ❓ À vérifier en jouant sur téléphone. |
 | Distribution | Page web uniquement. |
 
@@ -110,7 +111,7 @@ Nouvelles cultures, rotation, fumier, labour, battage, météo. Bétail avec rep
 **Étape 5 ter — Un rythme à contempler** ✅
 Un mois dure environ 5 minutes à vitesse ×1 (une année : 1 heure), pour prendre son temps et regarder labourer. Vitesses pause / ×1 / ×4 / ×16 / ×60 pour faire défiler le temps. Les villageois marchent à la même allure ; leur ouvrage et leurs pauses sont étalés pour que l'économie par mois reste celle d'avant.
 
-**Étape 5 bis — Logistique et chantiers livrés**
+**Étape 5 bis — Logistique et chantiers livrés** ✅
 Les matériaux ne sortent plus du stock par magie : le chantier réclame son bois et sa pierre, des porteurs et l'attelage de bœufs les amènent depuis le camp ou l'entrepôt, et la construction ne progresse qu'une fois la livraison arrivée (troncs traînés sur la carte, tas déposés au pied du chantier). Entrepôts, trajets réels, priorité des livraisons. Placée ici parce que le bœuf et le bétail ont alors un vrai rôle (étape 5) et avant les chaînes de transformation (étape 6), qui se brancheront directement sur ces transports au lieu d'être reprises. Numéros des étapes suivantes inchangés.
 
 **Étape 6 — Nourriture et transformation**
