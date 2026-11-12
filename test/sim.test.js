@@ -90,17 +90,19 @@ test("la carrières exige un gisement de pierre", () => {
   assert.strictEqual(g.place("quarry", stone%W, Math.floor(stone/W)), null);
 });
 
-test("affectation d'une famille à un camp de bûcherons", () => {
+test("affectation d'un adulte à un camp de bûcherons", () => {
   const g = fresh();
   g.stock.timber = 50;
   const s = freeSpot(g);
   g.place("woodcutter", s.x, s.y);
   const b = g.buildings[g.buildings.length-1];
   b.done = true; b.progress = 1;
+  const free0 = g.unemployed();
   g.assign(b.id);
-  const f = g.families.find(f => f.work === b.id);
-  assert.ok(f, "une famille est affectée");
-  assert.strictEqual(g.unemployed(), g.families.length - 1);
+  const v = g.villagers.find(v => v.work === b.id);
+  assert.ok(v, "un adulte est affecté");
+  assert.ok(g.isAdult(v));
+  assert.strictEqual(g.unemployed(), free0 - 1);
 });
 
 test("journal : toast ajoute une entrée datée et est limité à 120", () => {
@@ -337,7 +339,7 @@ test("comptoir : vend les surplus, crédite trésorerie et richesse", () => {
   const b = placeInCenter(g, "trade");
   b.done = true; b.progress = 1;
   g.assign(b.id);
-  assert.ok(b.families.length > 0, "commerçant affecté");
+  assert.ok(g.workersOf(b).length > 0, "commerçant affecté");
   const t0 = g.treasury, w0 = g.wealth, bread0 = g.stock.bread;
   for(let i=0;i<200;i++) g.step(); // ~1 mois
   assert.ok(g.treasury > t0, "trésorerie augmentée par les ventes");
@@ -893,7 +895,7 @@ test("étape 3 : sauvegarde v3 des parcelles et de leur contour, démolition lib
   const gm = GameState.load(multi);
   assert.deepStrictEqual(gm.buildings.find(x=>x.id===b.id).exts, ["garden"]);
   assert.strictEqual(gm.stock.timber, multi.stock.timber + EXT_DEFS.orchard.cost.timber);
-  assert.strictEqual(data.v, 3);
+  assert.strictEqual(data.v, 4);
   const g2 = GameState.load(data);
   const b2 = g2.buildings.find(x=>x.id===b.id);
   assert.deepStrictEqual(b2.plot, b.plot);
@@ -954,5 +956,340 @@ test("étape 3 : les survivants du départ ne quittent jamais la seigneurie", ()
   assert.ok(!g.families.some(f=>f.id===500), "un nouvel arrivant mécontent peut partir");
 });
 function legacyHouse2(g){ for(let i=0;i<W*H;i++){ if(!g.place("burgage", i%W, (i/W)|0)) return; } }
+
+/* ================= étape 4 : villageois individuels ================= */
+const { SKILL_ORDER, FOOD_NEED, AGE_ADULT, AGE_RETIRE, skillLevel } = require("../js/sim.js");
+// maisons d'une case posées et achevées tout de suite (les familles du campement y emménagent)
+function houses(g, n){ g.stock.timber = Math.max(g.stock.timber, n+10); for(let k=0;k<n;k++) legacyHouse2(g); g.rehouseCamp(); }
+// un camp de bûcherons achevé, dans la région du centre
+function doneBuilding(g, def){
+  g.stock.timber = Math.max(g.stock.timber, 20); g.stock.stone = Math.max(g.stock.stone, 20);
+  const b = placeInCenter(g, def); b.done = true; b.progress = 1; return b;
+}
+// un villageois créé à la main, d'un âge donné, dans une famille donnée
+function person(g, fam, sex, age){ return g.makePerson(fam, sex, age, { x:W/2, y:H/2 }); }
+function withRnd(g, val, fn){ const r = g.rnd; g.rnd = ()=>val; try{ return fn(); } finally { g.rnd = r; } }
+
+test("étape 4 : trois familles de survivants, chacune avec ses membres", () => {
+  const g = fresh();
+  assert.strictEqual(g.families.length, 3);
+  for(const f of g.families) assert.ok(g.membersOf(f.id).length>=2, f.name+" a au moins 2 membres");
+  const adults = g.villagers.filter(v=>g.isAdult(v)), kids = g.villagers.filter(v=>g.ageOf(v)<AGE_ADULT);
+  assert.ok(adults.length>=5, "au moins 5 adultes ou anciens");
+  assert.ok(kids.length>=3, "des enfants et des adolescents");
+  assert.ok(g.villagers.some(v=>g.stageOf(v)==="teen"), "au moins un adolescent (futur apprenti)");
+  assert.ok(g.villagers.some(v=>g.stageOf(v)==="elder"), "un ancien");
+  for(const v of g.villagers){
+    assert.ok(typeof v.first==="string" && v.first.length>1);
+    assert.ok(v.sex==="m" || v.sex==="f");
+    assert.strictEqual(v.health, 100);
+    for(const k of SKILL_ORDER) assert.ok(v.skills[k]>=0 && v.skills[k]<=100);
+  }
+  // les couples sont mariés entre eux, les enfants connaissent leurs parents
+  const married = g.villagers.filter(v=>v.spouse>=0);
+  assert.ok(married.length>=4);
+  for(const v of married) assert.strictEqual(g.villager(v.spouse).spouse, v.id);
+  assert.ok(g.villagers.some(v=>v.mother>=0 || v.father>=0));
+  assert.strictEqual(g.unemployed(), g.villagers.filter(v=>g.canWork(v)).length, "tous les adultes sont journaliers au départ");
+});
+
+test("étape 4 : l'âge avance d'un an tous les 12 mois, avec les étapes de la vie", () => {
+  const g = fresh();
+  const f = g.families[0];
+  const v = person(g, f, "m", 11);
+  v.bornAt = g.monthIdx() - 11*12;
+  assert.strictEqual(g.ageOf(v), 11);
+  assert.strictEqual(g.stageOf(v), "child");
+  g.time.year += 1;
+  assert.strictEqual(g.ageOf(v), 12);
+  assert.strictEqual(g.stageOf(v), "teen");
+  g.time.year += 4;
+  assert.strictEqual(g.stageOf(v), "adult");
+  g.time.year += 40;
+  assert.strictEqual(g.stageOf(v), "elder");
+  assert.strictEqual(skillLevel(0), "Novice"); assert.strictEqual(skillLevel(85), "Maître");
+});
+
+test("étape 4 : + affecte l'adulte libre le plus compétent, − retire le moins compétent", () => {
+  const g = fresh();
+  const b = doneBuilding(g, "woodcutter");
+  const free = g.villagers.filter(v=>g.canWork(v));
+  free.forEach((v, k)=>{ v.skills.wood = 10 + k; });
+  const best = free[free.length-1]; best.skills.wood = 90;
+  g.assign(b.id);
+  assert.deepStrictEqual(g.workersOf(b).map(v=>v.id), [best.id], "le meilleur bûcheron est choisi");
+  g.assign(b.id);
+  assert.strictEqual(g.workersOf(b).length, 2);
+  assert.strictEqual(b.want, 2);
+  assert.strictEqual(g.assign(b.id), false, "complet à 2");
+  g.unassign(b.id);
+  assert.deepStrictEqual(g.workersOf(b).map(v=>v.id), [best.id], "le moins compétent repart");
+  assert.strictEqual(b.want, 1);
+  // les enfants ne sont jamais affectés
+  g.assign(b.id);
+  for(const v of g.workersOf(b)) assert.ok(g.isAdult(v));
+});
+
+test("étape 4 : un poste voulu se pourvoit tout seul dès qu'un adulte se libère", () => {
+  const g = fresh();
+  const busy = doneBuilding(g, "farm"), b = doneBuilding(g, "hunter");
+  for(const v of g.villagers) if(g.canWork(v)) v.work = busy.id;   // tout le monde est déjà occupé
+  b.want = 2;
+  assert.strictEqual(g.fillJobs(), 0);
+  assert.strictEqual(g.workStatus(b), "En attente d'un adulte libre");
+  const v = g.villagers.find(x=>x.work===busy.id);
+  v.work = -1;
+  assert.strictEqual(g.fillJobs(), 1);
+  assert.ok(g.workersOf(b).includes(v), "le premier adulte libéré prend le poste");
+  // un adolescent qui fête ses 16 ans prend le poste suivant
+  const teen = g.villagers.find(x=>g.stageOf(x)==="teen");
+  teen.bornAt = g.monthIdx() + 1 - AGE_ADULT*12;
+  g.time.month += 1;
+  withRnd(g, 0.5, ()=>g.onMonth());
+  assert.strictEqual(g.stageOf(teen), "adult");
+  assert.ok(g.workersOf(b).includes(teen), "le nouvel adulte est embauché");
+  assert.ok(g.log.some(l=>/16 ans/.test(l.text)));
+});
+
+test("étape 4 : le savoir-faire accélère le travail et progresse avec la pratique", () => {
+  const g = fresh();
+  const b = doneBuilding(g, "woodcutter");
+  const v = g.villagers.find(x=>g.canWork(x));
+  g.assignVillager(v.id, b.id);
+  v.skills.wood = 0; const slow = g.workTime(v, "chop");
+  v.skills.wood = 100; const fast = g.workTime(v, "chop");
+  assert.ok(fast < slow, "un maître abat plus vite qu'un novice ("+fast+" < "+slow+")");
+  v.skills.wood = 10;
+  for(let i=0;i<160*6;i++) g.step();
+  assert.ok(v.skills.wood > 15, "après 6 mois au camp, la compétence bois a progressé ("+v.skills.wood+")");
+});
+
+test("étape 4 : apprenti — un adolescent par atelier, qui apprend vite auprès d'un maître", () => {
+  const g = fresh();
+  const b = doneBuilding(g, "woodcutter"), b2 = doneBuilding(g, "forager");
+  const master = g.villagers.find(x=>g.canWork(x));
+  master.skills.wood = 80; g.assignVillager(master.id, b.id);
+  const kid = g.villagers.find(v=>g.stageOf(v)==="child");
+  if(kid) assert.ok(g.takeApprentice(b.id, kid.id), "un enfant ne peut pas être apprenti");
+  const adult = g.villagers.find(v=>g.canWork(v) && v!==master);
+  assert.ok(g.takeApprentice(b.id, adult.id), "un adulte ne peut pas être apprenti");
+  const teen = person(g, g.families[0], "f", 13); teen.skills.wood = 5;
+  const teen2 = person(g, g.families[1], "m", 14); teen2.skills.gather = 5;
+  assert.strictEqual(g.takeApprentice(b.id, teen.id), null);
+  assert.ok(g.takeApprentice(b.id, teen2.id), "un seul apprenti par atelier");
+  assert.strictEqual(g.apprenticeOf(b), teen);
+  assert.ok(!g.workersOf(b).includes(teen), "l'apprenti n'occupe pas un poste d'ouvrier");
+  assert.strictEqual(g.takeApprentice(b2.id, teen2.id), null);
+  for(let i=0;i<160*6;i++) g.step();
+  assert.ok(teen.skills.wood > 25, "apprentie formée par un maître : "+teen.skills.wood);
+  assert.ok(teen.skills.wood > teen2.skills.gather + 5, "plus vite qu'un apprenti sans maître ("+teen2.skills.gather+")");
+  // à 16 ans, l'apprentie prend sa place d'ouvrière si l'atelier a de la place
+  teen.bornAt = g.monthIdx() - AGE_ADULT*12;
+  g.time.month = (g.time.month+11)%12; if(g.time.month===11) g.time.year--;   // on recule d'un mois…
+  teen.bornAt = g.monthIdx() + 1 - AGE_ADULT*12;                               // … pour fêter ses 16 ans au mois suivant
+  g.onMonth(); g.time.month = (g.time.month+1)%12; if(g.time.month===0) g.time.year++;
+  g.onMonth();
+  assert.strictEqual(teen.appr, false);
+  assert.ok(teen.work===b.id || teen.work===-1);
+  if(teen.work===b.id) assert.ok(g.workersOf(b).includes(teen), "devenue ouvrière du camp");
+});
+
+test("étape 4 : chacun mange selon son âge ; la faim abîme la santé puis tue", () => {
+  const g = fresh();
+  houses(g, 3);
+  const need = g.foodNeed();
+  assert.ok(Math.abs(need - g.villagers.reduce((s,v)=>s+FOOD_NEED[g.stageOf(v)],0))<1e-9);
+  assert.ok(need>2 && need<4.5, "trois foyers mangent à peu près comme avant ("+need.toFixed(2)+")");
+  for(const k of ["berries","meat","bread"]) g.stock[k] = 0;
+  g.stock.firewood = 100;
+  const n0 = g.villagers.length;
+  g.onMonth();
+  assert.ok(g.families.every(f=>f.fed===0), "personne n'a mangé");
+  assert.ok(g.villagers.every(v=>v.health<100), "la faim abîme la santé");
+  assert.ok(g.villagers.every(v=>v.why.some(w=>w[0]==="A faim")), "et se lit dans l'humeur");
+  for(let m=0;m<10;m++){ for(const k of ["berries","meat","bread","eggs","veg","apples","honey"]) g.stock[k]=0; g.onMonth(); }
+  assert.ok(g.villagers.length < n0, "des villageois meurent de faim");
+  assert.ok(g.log.some(l=>/Décès de .* de faim/.test(l.text)), "le journal dit pourquoi");
+});
+
+test("étape 4 : un décès libère le poste, met la famille en deuil, et les orphelins sont recueillis", () => {
+  const g = fresh();
+  const b = doneBuilding(g, "woodcutter");
+  const f = g.families.find(ff=>g.membersOf(ff.id).some(v=>g.isAdult(v)) && g.membersOf(ff.id).some(v=>!g.isAdult(v)));
+  const adults = g.membersOf(f.id).filter(v=>g.isAdult(v));
+  g.assignVillager(adults[0].id, b.id);
+  const kids = g.membersOf(f.id).filter(v=>!g.isAdult(v));
+  g.die(adults[0], "de maladie");
+  assert.strictEqual(g.workersOf(b).length, 0);
+  assert.ok(kids.every(k=>k.grief>0), "les enfants sont en deuil");
+  for(const a of adults.slice(1)) g.die(a, "de maladie");
+  assert.ok(!g.families.includes(f), "le foyer sans adulte est dissous");
+  for(const k of kids){ assert.ok(g.villagers.includes(k), "l'orphelin vit toujours"); assert.ok(g.families.some(ff=>ff.id===k.fam), "recueilli par une autre famille"); }
+  assert.ok(g.log.some(l=>/recueillis/.test(l.text)));
+});
+
+test("étape 4 : un savoir-faire de maître que personne n'a appris disparaît avec lui", () => {
+  const g = fresh();
+  for(const v of g.villagers) v.skills.stone = 10;
+  const m = g.villagers.find(v=>g.isAdult(v)); m.skills.stone = 85;
+  g.die(m, "de vieillesse");
+  assert.ok(g.log.some(l=>/savoir-faire \(pierre\) disparaît/.test(l.text)));
+  const g2 = fresh();
+  const a = g2.villagers.filter(v=>g2.isAdult(v));
+  a[0].skills.stone = 85; a[1].skills.stone = 45;
+  g2.die(a[0], "de vieillesse");
+  assert.ok(!g2.log.some(l=>/savoir-faire/.test(l.text)), "un compagnon a pris la relève");
+});
+
+test("étape 4 : naissance chez un couple logé et nourri", () => {
+  const g = fresh();
+  houses(g, 3);
+  g.time.month = 5;
+  for(const f of g.families) f.fed = 1;
+  const n0 = g.villagers.length;
+  withRnd(g, 0.02, ()=>g.demography(false, 1));
+  const babies = g.villagers.slice(n0).filter(v=>g.ageOf(v)===0);
+  assert.ok(babies.length>=1, "au moins une naissance");
+  const b = babies[0], mom = g.villager(b.mother), dad = g.villager(b.father);
+  assert.ok(mom && dad && mom.spouse===dad.id, "fils ou fille d'un couple marié");
+  assert.strictEqual(b.fam, mom.fam);
+  assert.ok(g.log.some(l=>/Naissance de/.test(l.text)));
+  // pas de naissance au campement
+  const g2 = fresh();
+  for(const f of g2.families) f.fed = 1;
+  const m0 = g2.villagers.length;
+  withRnd(g2, 0.02, ()=>g2.demography(false, 1));
+  assert.strictEqual(g2.villagers.filter(v=>g2.ageOf(v)===0 && g2.villagers.indexOf(v)>=m0).length, 0, "on attend d'avoir une maison");
+});
+
+test("étape 4 : mariage — maison libre ou foyer du mari ; jamais entre frère et sœur", () => {
+  const g = fresh();
+  houses(g, 3);
+  const fa = g.families[0], fb = g.families[1];
+  const h = person(g, fa, "m", 22), w = person(g, fb, "f", 20);
+  g.wed(h, w);
+  assert.strictEqual(h.spouse, w.id); assert.strictEqual(w.spouse, h.id);
+  assert.strictEqual(w.fam, h.fam, "faute de maison libre, l'épouse rejoint la famille du mari");
+  assert.strictEqual(w.maiden, g.surnameOf(fb));
+  // une maison libre : le jeune couple s'y installe
+  legacyHouse2(g);
+  g.rehouseCouples();
+  const nf = g.famOf(h);
+  assert.notStrictEqual(nf.id, fa.id, "nouveau foyer");
+  assert.strictEqual(w.fam, nf.id);
+  assert.ok(g.buildings.some(b=>b.id===nf.home && b.def==="burgage"));
+  // frère et sœur
+  const s1 = person(g, fa, "m", 20), s2 = person(g, fa, "f", 19);
+  s1.mother = s2.mother = 9999;
+  assert.ok(g.related(s1, s2));
+});
+
+test("étape 4 : retraite à 65 ans, le poste est repris par un autre", () => {
+  const g = fresh();
+  const b = doneBuilding(g, "quarry");
+  const old = g.villagers.find(v=>g.canWork(v));
+  g.assignVillager(old.id, b.id);
+  assert.strictEqual(b.want, 1);
+  old.bornAt = g.monthIdx() + 1 - AGE_RETIRE*12;   // 65 ans le mois prochain
+  g.time.month += 1;
+  withRnd(g, 0.5, ()=>g.demography(false, 1));
+  assert.strictEqual(old.work, -1);
+  assert.ok(g.log.some(l=>/retraite/.test(l.text)));
+  g.fillJobs();
+  assert.strictEqual(g.workersOf(b).length, 1, "un autre adulte reprend la carrière");
+  assert.strictEqual(g.assignVillager(old.id, b.id), "Trop âgé pour travailler");
+});
+
+test("étape 4 : affectation à la main depuis la fiche", () => {
+  const g = fresh();
+  const b = doneBuilding(g, "quarry"), b2 = doneBuilding(g, "woodcutter");
+  const [a, c] = g.villagers.filter(v=>g.canWork(v));
+  assert.strictEqual(g.assignVillager(a.id, b.id), null);
+  assert.strictEqual(g.assignVillager(c.id, b.id), "Plus de place : Carrière est complet");
+  assert.strictEqual(g.assignVillager(a.id, b2.id), null, "change de métier");
+  assert.strictEqual(a.work, b2.id);
+  assert.strictEqual(b.want, 0, "la carrière ne cherche pas à le remplacer");
+  const kid = g.villagers.find(v=>g.stageOf(v)==="child" || g.stageOf(v)==="baby");
+  assert.strictEqual(g.assignVillager(kid.id, b.id), "Trop jeune pour travailler");
+  assert.strictEqual(g.assignVillager(a.id, -1), null);
+  assert.strictEqual(a.work, -1);
+  assert.strictEqual(g.villagerStatus(a), a.sex==="f" ? "Journalière" : "Journalier");
+});
+
+test("étape 4 : l'approbation se détaille cause par cause, et chacun a son humeur", () => {
+  const g = fresh();
+  g.onMonth();
+  const sum = g.approvalWhy.reduce((s,w)=>s+w[1], 0);
+  assert.ok(Math.abs(Math.max(0, Math.min(100, sum)) - g.approval) <= 2, "la somme des causes donne l'approbation");
+  assert.ok(g.approvalWhy.some(w=>w[0]==="Vie au campement"));
+  const v = g.villagers[0];
+  v.sick = 2; g.onMonth();
+  assert.ok(v.why.some(w=>w[0]==="Malade"));
+  assert.ok(v.mood < g.approval + 1);
+});
+
+test("étape 4 : la peste emporte des villageois, pas des familles entières", () => {
+  const g = fresh();
+  const n0 = g.villagers.length, f0 = g.families.length;
+  const old = g.villagers.find(v=>g.stageOf(v)==="elder");
+  const dead = g.plague();
+  assert.ok(dead>=2 && dead<=4, dead+" morts");
+  assert.strictEqual(g.villagers.length, n0 - dead);
+  assert.ok(!g.villagers.includes(old), "les plus fragiles d'abord (l'ancien)");
+  assert.ok(g.families.length >= f0-1, "les familles survivent");
+  assert.ok(g.log.some(l=>/peste/.test(l.text)));
+});
+
+test("étape 4 : sauvegarde v4 — villageois, liens et compétences conservés, données abîmées écartées", () => {
+  const g = fresh();
+  houses(g, 3);
+  const b = doneBuilding(g, "woodcutter");
+  g.assign(b.id);
+  for(let i=0;i<300;i++) g.step();
+  const data = JSON.parse(JSON.stringify(g.serialize()));
+  assert.strictEqual(data.v, 4);
+  const g2 = GameState.load(data);
+  assert.strictEqual(g2.villagers.length, g.villagers.length);
+  for(const v of g.villagers){
+    const o = g2.villager(v.id);
+    assert.strictEqual(o.first, v.first); assert.strictEqual(o.fam, v.fam); assert.strictEqual(o.spouse, v.spouse);
+    assert.deepStrictEqual(o.skills, v.skills); assert.strictEqual(o.bornAt, v.bornAt);
+  }
+  assert.strictEqual(g2.workersOf(g2.buildings.find(x=>x.id===b.id)).length, 1);
+  const bad = JSON.parse(JSON.stringify(data));
+  bad.villagers.push({ id:"x" }, { id:999, fam:424242 }, null);
+  bad.villagers[0].skills.wood = "beaucoup"; bad.villagers[0].health = NaN; bad.villagers[0].work = 99999;
+  const g3 = GameState.load(bad);
+  assert.strictEqual(g3.villagers.length, g.villagers.length, "entrées invalides ignorées");
+  assert.strictEqual(g3.villagers[0].skills.wood, 0);
+  assert.strictEqual(g3.villagers[0].health, 100);
+  assert.strictEqual(g3.villagers[0].work, -1);
+  for(let i=0;i<200;i++) g3.step();
+});
+
+test("étape 4 : une ancienne sauvegarde (familles anonymes) est convertie sans rien perdre", () => {
+  const g = fresh();
+  houses(g, 3);
+  const b = doneBuilding(g, "woodcutter");
+  const data = JSON.parse(JSON.stringify(g.serialize()));
+  // forme v3 : pas de villageois, chaque famille marche et travaille elle-même
+  delete data.villagers; delete data.approvalWhy; data.v = 3;
+  data.families.forEach((f, k)=>{ Object.assign(f, { x:10.5+k, y:12.5, path:null, state:"idle", timer:0, task:null, carry:null, cool:0, work:-1, lastAte:1 }); delete f.fed; });
+  data.families[0].work = b.id;
+  for(const x of data.buildings){ x.families = []; delete x.want; }
+  data.buildings.find(x=>x.id===b.id).families = [data.families[0].id];
+  const g2 = GameState.load(data);
+  assert.strictEqual(g2.families.length, 3);
+  for(const f of g2.families){ assert.ok(g2.membersOf(f.id).length>=1); assert.strictEqual(f.x, undefined, "plus de position sur le foyer"); }
+  const b2 = g2.buildings.find(x=>x.id===b.id);
+  assert.strictEqual(b2.families, undefined);
+  assert.strictEqual(b2.want, 1);
+  const w = g2.workersOf(b2);
+  assert.strictEqual(w.length, 1, "le premier adulte garde le métier de sa famille");
+  assert.strictEqual(w[0].fam, data.families[0].id);
+  assert.strictEqual(w[0].x, 10.5);
+  for(let i=0;i<400;i++) g2.step();
+  assert.ok(g2.villagers.length>=3);
+});
 
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));
