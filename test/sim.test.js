@@ -945,6 +945,14 @@ test("étape 3 : les familles quittent le campement pour leurs maisons, puis il 
   assert.ok(g.families.every(f=>f.home>=0 && f.home!==camp.id));
   assert.strictEqual(g.occupied[camp.y*W+camp.x], -1);
 });
+test("étape 3 : les survivants du départ ne quittent jamais la seigneurie", () => {
+  const g = fresh();
+  assert.ok(g.families.every(f=>f.founder));
+  g.families.push({ id:500, name:"Nouvelle", home:-1, work:-1 });
+  for(let m=0; m<6; m++){ g.approval = 5; g.time.day = DAYS_PER_MONTH-1; g.time.tick = TICKS_PER_DAY-1; g.step(); g.approval = 5; g.pendingEvent = null; }
+  assert.strictEqual(g.families.filter(f=>f.founder).length, 3, "les 3 familles du départ restent");
+  assert.ok(!g.families.some(f=>f.id===500), "un nouvel arrivant mécontent peut partir");
+});
 function legacyHouse2(g){ for(let i=0;i<W*H;i++){ if(!g.place("burgage", i%W, (i/W)|0)) return; } }
 
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));

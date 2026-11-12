@@ -654,9 +654,9 @@ function drawOverlay(g, now){
       pxLine(A[0]*TS, A[1]*TS, B[0]*TS, B[1]*TS, function(x, y){ rect(x, y+1, 1, 1, "rgba(0,0,0,0.45)"); rect(x, y, 1, 1, col); });
     }
     for(k=0; k<P.length; k++){
-      var big = k===0 && !OV.closed && P.length>=3, sz = big ? 5 : 3;
+      var held = k===OV.grab, big = held || (k===0 && !OV.closed && P.length>=3), sz = held ? 7 : big ? 5 : 3;
       rect(Math.round(P[k][0]*TS)-(sz>>1)-1, Math.round(P[k][1]*TS)-(sz>>1)-1, sz+2, sz+2, "#1a140e");
-      rect(Math.round(P[k][0]*TS)-(sz>>1), Math.round(P[k][1]*TS)-(sz>>1), sz, sz, big ? "#e8c35a" : col);
+      rect(Math.round(P[k][0]*TS)-(sz>>1), Math.round(P[k][1]*TS)-(sz>>1), sz, sz, held ? "#7bd88f" : big ? "#e8c35a" : col);
     }
   }
 

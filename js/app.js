@@ -218,11 +218,19 @@ canvas.addEventListener("pointerdown", function(e){
     drag.down = false; drag.moved = true; zoneDrag = { i:-1 };
     return;
   }
-  /* outil de zone : toucher un point existant = le déplacer (ou fermer le contour sur le premier) */
+  /* outil de zone, sur un point existant :
+     - appui long (0,28 s) = on « attrape » le point, qui suit ensuite le doigt en relatif (il reste visible) ;
+     - glisser tout de suite depuis le dernier point = tirer un nouveau trait ;
+     - glisser tout de suite ailleurs = déplacer la vue ; toucher le premier point = fermer le contour */
   if(game && ui.zoneMode && ui.zonePts.length){
     var zw0 = toWorld(e.clientX, e.clientY), zi = nearZonePt(zw0.wx, zw0.wy);
     if(zi>=0){
-      zoneDrag = { i:zi, sx:e.clientX, sy:e.clientY, moved:false, extend: !ui.zoneClosed && zi===ui.zonePts.length-1 };
+      zoneDrag = { i:zi, sx:e.clientX, sy:e.clientY, moved:false, grabbed:false, p0:ui.zonePts[zi].slice(),
+                   extend: !ui.zoneClosed && zi===ui.zonePts.length-1 };
+      zoneDrag.timer = setTimeout(function(){
+        if(zoneDrag.i===zi && !zoneDrag.moved){ zoneDrag.grabbed = true; zoneDrag.extend = false; buzz(15); }
+      }, 280);
+      drag.sx = e.clientX; drag.sy = e.clientY; drag.cx = cam.x; drag.cy = cam.y;
       drag.down = false; drag.moved = true; return;
     }
   }
@@ -257,15 +265,24 @@ canvas.addEventListener("pointermove", function(e){
     return;
   }
   if(zoneDrag.i>=0){
-    if(Math.abs(e.clientX-zoneDrag.sx)+Math.abs(e.clientY-zoneDrag.sy)>6) zoneDrag.moved = true;
-    if(zoneDrag.moved){
-      /* tirer depuis le dernier point : un nouveau trait suit le doigt */
-      if(zoneDrag.extend){ ui.zonePts.push(ui.zonePts[zoneDrag.i].slice()); zoneDrag.i = ui.zonePts.length-1; zoneDrag.extend = false; }
-      var zw = toWorld(e.clientX, e.clientY), zn = ui.zonePts.length, zi2 = zoneDrag.i;
-      var zprev = zi2>0 ? ui.zonePts[zi2-1] : (ui.zoneClosed ? ui.zonePts[zn-1] : null);
-      ui.zonePts[zi2] = game.snapZonePoint(zw.wx, zw.wy, zprev);
+    var zdx = e.clientX-zoneDrag.sx, zdy = e.clientY-zoneDrag.sy;
+    if(!zoneDrag.grabbed && !zoneDrag.follow && Math.abs(zdx)+Math.abs(zdy)>8){
+      clearTimeout(zoneDrag.timer);
+      if(zoneDrag.extend){ /* tirer depuis le dernier point : un nouveau trait suit le doigt */
+        ui.zonePts.push(ui.zonePts[zoneDrag.i].slice()); zoneDrag.i = ui.zonePts.length-1; zoneDrag.extend = false; zoneDrag.follow = true;
+      } else { zoneDrag = { i:-1 }; drag.down = true; } /* pas d'appui long : on déplace la vue */
     }
-    return;
+    if(zoneDrag.i>=0){
+      if(zoneDrag.grabbed || zoneDrag.follow){
+        if(Math.abs(zdx)+Math.abs(zdy)>2) zoneDrag.moved = true;
+        var zn = ui.zonePts.length, zi2 = zoneDrag.i, zx, zy;
+        var zprev = zi2>0 ? ui.zonePts[zi2-1] : (ui.zoneClosed ? ui.zonePts[zn-1] : null);
+        if(zoneDrag.grabbed){ zx = zoneDrag.p0[0] + zdx/(16*cam.zoom); zy = zoneDrag.p0[1] + zdy/(16*cam.zoom); }
+        else { var zw = toWorld(e.clientX, e.clientY); zx = zw.wx; zy = zw.wy; }
+        ui.zonePts[zi2] = game.snapZonePoint(zx, zy, zprev);
+      }
+      return;
+    }
   }
   var w = toWorld(e.clientX, e.clientY);
   var inside = w.tx>=0 && w.ty>=0 && w.tx<W && w.ty<H;
@@ -299,8 +316,8 @@ function endPointer(e){
 canvas.addEventListener("pointerup", function(e){
   if(!game) return;
   if(zoneDrag.i>=0){
-    var zd = zoneDrag; zoneDrag = { i:-1 }; endPointer(e);
-    if(!zd.moved && zd.i===0 && !ui.zoneClosed && ui.zonePts.length>=3){ ui.zoneClosed = true; ui.zoneN = null; buzz(8); }
+    var zd = zoneDrag; clearTimeout(zd.timer); zoneDrag = { i:-1 }; endPointer(e);
+    if(!zd.moved && !zd.grabbed && zd.i===0 && !ui.zoneClosed && ui.zonePts.length>=3){ ui.zoneClosed = true; ui.zoneN = null; buzz(8); }
     renderUI(); return;
   }
   var wasMoved = drag.moved;
@@ -322,7 +339,7 @@ canvas.addEventListener("pointerup", function(e){
   ui.objOpen = false; ui.layersOpen = false;
   if(w.tx<0||w.ty<0||w.tx>=W||w.ty>=H){ renderUI(); return; }
   if(ui.zoneMode){
-    if(ui.zoneClosed) flash("Glissez un point pour ajuster le contour, ou ↶ pour le rouvrir.");
+    if(ui.zoneClosed) flash("Appui long sur un point pour le déplacer, ou ↶ pour rouvrir le contour.");
     else { ui.zonePts.push(game.snapZonePoint(w.wx, w.wy, ui.zonePts[ui.zonePts.length-1])); buzz(5); }
   }
   else if(ui.roadMode){
@@ -350,7 +367,7 @@ canvas.addEventListener("pointerup", function(e){
   }
   renderUI();
 });
-canvas.addEventListener("pointercancel", function(e){ zoneDrag = { i:-1 }; endPointer(e); });
+canvas.addEventListener("pointercancel", function(e){ clearTimeout(zoneDrag.timer); zoneDrag = { i:-1 }; endPointer(e); });
 canvas.addEventListener("pointerleave", function(e){ if(e.pointerType==="mouse"){ ui.hoverTip = null; renderTip(); } });
 canvas.addEventListener("wheel", function(e){
   e.preventDefault();
@@ -696,12 +713,12 @@ function renderHud(g){
     var zo = zoneOverlay(g), zp = ui.zonePts.length, zpl2 = zo && zo.plan, ztxt, ztitle = "Zone de bourgages", zok = ui.zoneClosed && zpl2 && !zpl2.err;
     if(!ui.zoneClosed) ztxt = zp===0 ? "Touchez la carte pour poser les points du contour, le long d'une route."
       : zp<3 ? zp+" point"+(zp>1?"s":"")+" posé"+(zp>1?"s":"")+". Continuez le contour."
-      : zp+" points. Touchez le premier point (doré) ou « Fermer ».";
+      : zp+" points. Touchez le premier point (doré) ou « Fermer ». Appui long sur un point pour le déplacer.";
     else if(!zok) ztxt = zpl2 ? zpl2.err : "";
     else {
       var zs = zpl2.plots.map(function(p){ return p.cells.length-1; }), zmn = Math.min.apply(null, zs), zmx = Math.max.apply(null, zs);
       ztitle = zpl2.plots.length+" maison"+(zpl2.plots.length>1?"s":"")+" "+costHtml({ timber:zpl2.plots.length*(BUILD_DEFS.burgage.cost.timber||0) }, g);
-      ztxt = "Jardins de "+(zmn===zmx ? zmn : zmn+" à "+zmx)+" case"+(zmx>1?"s":"")+(zpl2.limited ? " · bois insuffisant pour plus" : "")+". Glissez un point pour ajuster.";
+      ztxt = "Jardins de "+(zmn===zmx ? zmn : zmn+" à "+zmx)+" case"+(zmx>1?"s":"")+(zpl2.limited ? " · bois insuffisant pour plus" : "")+". Appui long sur un point pour le déplacer.";
     }
     h += "<div class='frame place wrap'>"+ic("house","l")+"<div class='t'><b>"+ztitle+"</b><span>"+esc(ztxt)+"</span></div><div class='sizes'>";
     if(zp>0) h += "<button class='b' data-act='zoneundo' aria-label='Annuler le dernier point'>↶</button>";
@@ -1059,17 +1076,18 @@ var _lastT = performance.now(), _acc = 0, _uiAcc = 0, _saveAcc = 0;
 function clearTools(){ ui.zoneMode = false; ui.zonePts = []; ui.zoneClosed = false; ui.zoneN = null; ui.extPlace = null; zoneDrag = { i:-1 }; }
 var zoneDrag = { i:-1 }, lastPtrType = "mouse";
 function nearZonePt(x, y){
-  var r = Math.max(0.35, 30/(16*cam.zoom)), best = -1;
+  var r = Math.max(0.35, 34/(16*cam.zoom)), best = -1;
   for(var i=0; i<ui.zonePts.length; i++){ var d = Math.hypot(ui.zonePts[i][0]-x, ui.zonePts[i][1]-y); if(d<=r){ r = d; best = i; } }
   return best;
 }
 var _zoneKey = "", _zoneOv = null;
 function zoneOverlay(g){
   if(!ui.zoneMode || ui.zonePts.length===0) return null;
-  var key = JSON.stringify(ui.zonePts)+"|"+ui.zoneClosed+"|"+ui.zoneN+"|"+g.uiVersion+"|"+g.buildings.length+"|"+Math.floor(g.stock.timber);
+  var grab = zoneDrag.i>=0 && zoneDrag.grabbed ? zoneDrag.i : -1;
+  var key = JSON.stringify(ui.zonePts)+"|"+ui.zoneClosed+"|"+ui.zoneN+"|"+grab+"|"+g.uiVersion+"|"+g.buildings.length+"|"+Math.floor(g.stock.timber);
   if(key===_zoneKey) return _zoneOv;
   _zoneKey = key;
-  _zoneOv = { pts:ui.zonePts.slice(), closed:ui.zoneClosed, plan: ui.zoneClosed ? g.planZone(ui.zonePts, ui.zoneN==null ? undefined : ui.zoneN) : null };
+  _zoneOv = { pts:ui.zonePts.slice(), closed:ui.zoneClosed, grab:grab, plan: ui.zoneClosed ? g.planZone(ui.zonePts, ui.zoneN==null ? undefined : ui.zoneN) : null };
   return _zoneOv;
 }
 

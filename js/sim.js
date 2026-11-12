@@ -374,6 +374,7 @@ class GameState {
     this.stock.ox = Math.max(this.stock.ox||0, 1);
     for(let n=0; n<3; n++){
       const f = this.makeFamily(); f.home = camp.id; f.x = spot.x+0.5+n*0.5; f.y = spot.y+0.8;
+      f.founder = true; // survivants du départ : ils ne quittent jamais la seigneurie
     }
     this.toast("Les survivants campent au bord du chemin. Tracez une zone de maisons le long de la route (tiroir Maisons).");
   }
@@ -1474,7 +1475,7 @@ class GameState {
     const homeless=this.families.filter(f=>f.home<0).length;
     a-=Math.min(24, homeless*12);
     const campB=this.buildings.find(b=>b.def==="camp");
-    if(campB) a-=Math.min(12, this.families.filter(f=>f.home===campB.id).length*4); // vie au campement
+    if(campB) a-=Math.min(6, this.families.filter(f=>f.home===campB.id).length*2); // vie au campement (léger)
     a-=(this.taxRate-0.1)*40;
     if(this.policies.tithe) a-=4;
     if(this.policies.freeMarket) a+=3;
@@ -1581,10 +1582,11 @@ class GameState {
         this.toast(f.name+" s'installe dans la seigneurie !","good");
       }
     }
-    if(this.approval<30 && this.families.length>1){
-      // les nouveaux arrivants repartent en premier (les souches fondatrices restent)
-      let f=this.families[0];
-      for(const c of this.families) if(c.id>f.id && c.id<100000) f=c;
+    const leavers=this.families.filter(c=>!c.founder);
+    if(this.approval<30 && this.families.length>1 && leavers.length>0){
+      // les nouveaux arrivants repartent en premier ; les survivants du départ restent toujours
+      let f=leavers[0];
+      for(const c of leavers) if(c.id>f.id && c.id<100000) f=c;
       const fid=f.id;
       this.families=this.families.filter(x=>x.id!==fid);
       for(const o of this.buildings) o.families=o.families.filter(id=>id!==fid);
