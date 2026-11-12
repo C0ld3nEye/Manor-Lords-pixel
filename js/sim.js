@@ -991,7 +991,8 @@ class GameState {
     if(ws.length>b.want && ws.length){
       const sk = this.jobSkill(b) || "build";
       ws.sort((a, c)=>this.jobScore(a, sk) - this.jobScore(c, sk) || c.id - a.id);
-      const v = ws[0]; v.work = -1; this.resetWorker(v);
+      const v = ws[0]; v.work = -1; this.resetWorker(v); this.freeWorker(v);
+      this.toast(this.fullName(v)+" quitte son poste : "+(v.sex==="f" ? "journalière" : "journalier")+", "+(v.sex==="f" ? "elle" : "il")+" bâtira les chantiers.");
     }
     this.uiVersion++;
   }
@@ -1022,7 +1023,7 @@ class GameState {
   leaveJob(v){
     const b = v.work>0 ? this.buildings.find(x=>x.id===v.work) : null;
     if(b && !v.appr) b.want = Math.max(0, Math.min(Number(b.want)||0, this.workersOf(b).length) - 1);
-    v.work = -1; this.resetWorker(v);
+    v.work = -1; this.resetWorker(v); this.freeWorker(v);
   }
   // apprentissage : un adolescent (12-15 ans) par atelier, formé par le meilleur ouvrier du lieu
   canApprentice(v){ const a=this.ageOf(v); return a>=AGE_TEEN && a<AGE_ADULT && !(v.sick>0); }
@@ -1060,7 +1061,23 @@ class GameState {
     for(const v of this.workersOf(b)) if(!best || (v.skills[sk]||0)>(best.skills[sk]||0)) best = v;
     return best;
   }
-  resetWorker(f       ){ f.task=null; f.path=null; f.state="idle"; f.carry=null; f.timer=0; f.cool=0; }
+  resetWorker(f       ){ f.task=null; f.path=null; f.state="idle"; f.carry=null; f.timer=0; f.cool=0; if(f.skills) this.refreshMood(f); }
+  // l'humeur d'un villageois tout de suite (sans attendre le bilan du mois), par exemple quand il change de métier
+  refreshMood(v){
+    const pm = this.personalMood(v, this.buildings.find(b=>b.def==="camp"));
+    v.why = pm.why; v.mood = Math.max(0, Math.min(100, Math.round(this.approval + pm.total)));
+  }
+  // un ouvrier qu'on vient de libérer quitte son poste : vers un chantier s'il y a de quoi faire, sinon chez lui
+  freeWorker(v){
+    if(!this.canWork(v)) return;
+    const sites = this.buildings.filter(s=>!s.done);
+    const job = sites.length ? this.siteJob(v, sites) : null;
+    if(job){ this.doSiteJob(v, job); return; }
+    const home = this.homeOf(v);
+    const spot = home ? this.spotFor(home, v.x, v.y) : null;
+    const p = spot ? this.astar(Math.floor(v.x), Math.floor(v.y), spot.x, spot.y) : null;
+    if(p && p.length){ v.path = p; v.state = "wander"; }
+  }
 
   setTax(v       ){ this.taxRate = Math.max(0, Math.min(1, v)); this.uiVersion++; }
 

@@ -979,6 +979,7 @@ function sheetSite(g, sel){
   if(!sel.mat){
     return h + "<div class='dim' style='font-size:11px'>Les journaliers (adultes sans poste) construisent les chantiers.</div>";
   }
+  if(g.unemployed()===0 && !g.workersOf(sel).length) h += "<div class='bad' style='font-size:12px;margin:4px 0'>Aucun journalier libre : ce chantier n'avance pas. Retirez quelqu'un d'un poste (bouton − d'un bâtiment) pour qu'il construise.</div>";
   h += "<div class='sec'>Matériaux</div>";
   MAT_RES.forEach(function(r){
     var need = sel.mat.need[r]; if(!need) return;
@@ -1294,6 +1295,7 @@ function sheetPeople(g){
   var all = g.villagers, camp = g.buildings.filter(function(b){ return b.def==="camp"; })[0];
   var F = {
     all:   { n:"Tous", f:function(){ return true; } },
+    adult: { n:"Adultes", f:function(v){ var s = g.stageOf(v); return (s==="adult" || s==="elder") && g.ageOf(v)<AGE_RETIRE; } },
     free:  { n:"Journaliers", f:function(v){ return v.work<0 && !v.appr && g.canWork(v); } },
     teen:  { n:"Adolescents", f:function(v){ return g.stageOf(v)==="teen"; } },
     kids:  { n:"Enfants", f:function(v){ var s = g.stageOf(v); return s==="child" || s==="baby"; } },
@@ -1309,6 +1311,27 @@ function sheetPeople(g){
     h += "<button class='chip lnk"+(filt===k?" on":"")+"' data-act='pfilter' data-arg='"+k+"'>"+F[k].n+" · "+n+"</button>";
   });
   h += "</div>";
+  if(filt==="adult"){
+    /* les adultes en âge de travailler, rangés par poste, avec leur niveau dans le métier */
+    var groups = {}, order = [];
+    all.filter(F.adult.f).forEach(function(v){
+      var b = v.work>0 ? g.buildings.filter(function(x){ return x.id===v.work; })[0] : null;
+      var key = b ? "b"+b.id : (g.canWork(v) ? "free" : "weak");
+      if(!groups[key]){ groups[key] = { b:b, key:key, list:[] }; order.push(key); }
+      groups[key].list.push(v);
+    });
+    order.sort(function(a, c){ var r = function(k){ return k==="free" ? 0 : k==="weak" ? 2 : 1; }; return r(a) - r(c); });
+    if(!order.length) h += "<div class='dim'>Personne.</div>";
+    order.forEach(function(k){
+      var G = groups[k], b = G.b, sk = b ? g.jobSkill(b) : null;
+      var title = b ? BUILD_DEFS[b.def].name+(b.done ? "" : " (chantier)") : k==="free" ? "Journaliers · bâtissent les chantiers" : "Trop faibles pour travailler";
+      h += "<div class='fam'><span class='sec' style='margin:0'>"+esc(title)+"</span><span class='dim' style='font-size:11px;flex:1 1 auto'>"+G.list.length+"</span>"
+         + (b ? "<button class='b sm' data-act='bsel' data-arg='"+b.id+"'>Voir</button>" : "")+"</div>";
+      G.list.forEach(function(v){ h += vRow(g, v, g.villagerStatus(v)+(sk && !v.appr ? " · "+skillLevel(v.skills[sk]).toLowerCase() : "")); });
+    });
+    if(!groups.free) h += "<div class='bad' style='font-size:12px;margin-top:6px'>Aucun journalier : personne ne bâtit les chantiers. Retirez quelqu'un d'un poste (bouton − du bâtiment) pour qu'il construise.</div>";
+    return h;
+  }
   if(filt!=="all"){
     var list = all.filter(F[filt].f);
     if(!list.length) h += "<div class='dim'>Personne.</div>";
