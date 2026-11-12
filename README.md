@@ -35,7 +35,7 @@ Un jeu de gestion médiéval en pixel-art, inspiré de Manor Lords. **Zéro dép
 | Recentrer | toucher la minimap (en haut à droite) | clic sur la minimap |
 | Construire | barre du bas → catégorie → bâtiment → toucher la carte | idem |
 | Ouvrir un bâtiment | le toucher | clic |
-| Vitesse | boutons pause et ×1 / ×2 / ×4 en haut | Espace = pause, 1/2/3 |
+| Vitesse | bouton pause et bouton de vitesse en haut (×1 : environ 5 min par mois, pour prendre son temps ; ×4, ×16, ×60 : environ 1 min par année) | Espace = pause, 1/2/3/4 |
 | Annuler (pose, route, panneau) | appui long ou bouton ✕ | clic droit / Échap |
 
 ### L'interface

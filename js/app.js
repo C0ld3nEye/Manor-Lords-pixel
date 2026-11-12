@@ -411,8 +411,9 @@ window.addEventListener("keydown", function(e){
   if(e.key===" "){ e.preventDefault(); togglePause(); }
   if(e.key==="m"){ AudioFX.muted = !AudioFX.muted; flash(AudioFX.muted ? "Son coupé" : "Son activé"); }
   if(e.key==="1") setSpeed(1);
-  if(e.key==="2") setSpeed(2);
-  if(e.key==="3") setSpeed(4);
+  if(e.key==="2") setSpeed(4);
+  if(e.key==="3") setSpeed(16);
+  if(e.key==="4") setSpeed(60);
   if(e.key==="+"||e.key==="="){ cam.zoom = stepZoom(cam.zoom, 1); }
   if(e.key==="-"){ cam.zoom = stepZoom(cam.zoom, -1); }
   if(e.key.toLowerCase()==="t"){ cycleTextSize(); }
@@ -425,6 +426,8 @@ window.addEventListener("keydown", function(e){
 });
 window.addEventListener("keyup", function(e){ keys.delete(e.key.toLowerCase()); });
 
+/* vitesses : ×1 = environ 5 minutes par mois (on prend son temps) ; ×60 = environ 1 minute par année */
+var SPEEDS = [1, 4, 16, 60];
 function setSpeed(s){ game.speed = s; ui.lastSpeed = s; }
 function togglePause(){ if(game.speed===0) game.speed = ui.lastSpeed||1; else { ui.lastSpeed = game.speed; game.speed = 0; } }
 var _txtSize = 0;
@@ -477,7 +480,7 @@ document.addEventListener("click", function(e){
   switch(act){
     /* --- temps --- */
     case "pause": togglePause(); break;
-    case "speedcycle": { var s = g.speed || ui.lastSpeed || 1; setSpeed(s===1 ? 2 : s===2 ? 4 : 1); break; }
+    case "speedcycle": { var s = g.speed || ui.lastSpeed || 1, nx = SPEEDS[0]; for(var si=0; si<SPEEDS.length; si++) if(SPEEDS[si]>s){ nx = SPEEDS[si]; break; } setSpeed(nx); break; }
     /* --- dock / tiroirs / panneaux --- */
     case "cat":
       if(arg==="road"){
@@ -1488,7 +1491,7 @@ function modalHelp(){
      + "<p><b>Rotation</b> : la même céréale deux ans de suite rend moins ; après des pois ou une jachère, davantage. Le <b>fumier</b> des bêtes, épandu avant le labour, remonte la fertilité ; un <b>bœuf</b> accélère le labour. La météo compte : gel tardif, printemps sec, grêle, été pourri. Le panneau d'un champ montre la récolte attendue et pourquoi.</p>";
   h += "<h3>Élevage</h3><p>Tracez un <b>pâturage</b> (tiroir Terres) comme une zone, n'importe où : la clôture coûte du bois, un abri se pose au bord. Achetez des moutons (laine en mai), des vaches (lait après le vêlage, les jeunes taureaux deviennent des bœufs) ou des porcs (glandée en forêt l'automne). Il faut un mâle pour les naissances et un <b>gardien</b> pour traire, tondre et soigner. L'herbe nourrit les bêtes du printemps à l'automne ; l'hiver, il faut du <b>foin</b> (pré de fauche, herbe en trop fauchée en juin, paille du battage) ou de l'avoine. Réglez l'<b>abattage de novembre</b> pour ne garder que ce que vous pourrez nourrir. Une maladie se propage dans un troupeau : abattre les bêtes malades l'arrête.</p>";
   h += "<h3>Croissance</h3><p>Une approbation d'au moins 40 % et une maison libre attirent une nouvelle famille ; les jeunes couples du village qui vivent chez leurs parents passent avant. Les bourgages bien approvisionnés montent de niveau et débloquent des arrière-cours (potager, rucher, atelier…). Le <b>manoir</b> permet de lever l'impôt.</p>";
-  h += "<h3>Commandes</h3><p>Glisser pour déplacer · pincer ou molette pour zoomer · toucher un bâtiment pour l'ouvrir · <b>appui long</b> pour annuler · toucher la minimap pour s'y rendre. Le bandeau des réserves et la date ouvrent le détail. Au clavier : Espace = pause, 1/2/3 = vitesse, ZQSD = caméra, Échap = annuler.</p>";
+  h += "<h3>Commandes</h3><p>Glisser pour déplacer · pincer ou molette pour zoomer · toucher un bâtiment pour l'ouvrir · <b>appui long</b> pour annuler · toucher la minimap pour s'y rendre. Le bandeau des réserves et la date ouvrent le détail. Au clavier : Espace = pause, 1/2/3/4 = vitesse (×1, ×4, ×16, ×60), ZQSD = caméra, Échap = annuler.</p>";
   h += "<h3>Sauvegarde</h3><p>Automatique sur cet appareil (3 emplacements). Le menu permet de copier un code pour continuer sur un autre appareil.</p>";
   return h + "<button class='b gold wide' data-act='modalclose'>Compris</button>";
 }
