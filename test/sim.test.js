@@ -2,7 +2,8 @@
 /* Tests de la simulation (Phase 0 du plan docs/PLAN.md).
    Lancer avec : node test/sim.test.js */
 const assert = require("assert");
-const { GameState, BUILD_DEFS, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, REGION_DEFS, REGION_COST, POLICY_DEFS, POLICY_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, DIFFICULTIES, W, H, T_GRASS, T_FOREST, T_STONE, MONTHS, seasonOf } = require("../js/sim.js");
+const { GameState, BUILD_DEFS, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, REGION_DEFS, REGION_COST, POLICY_DEFS, POLICY_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, DIFFICULTIES, W, H, T_GRASS, T_FOREST, T_STONE, MONTHS, seasonOf, TS, TICKS_PER_DAY, DAYS_PER_MONTH } = require("../js/sim.js");
+const MONTH_TICKS = TICKS_PER_DAY*DAYS_PER_MONTH, YEAR_TICKS = MONTH_TICKS*12;
 
 let passed = 0;
 function test(name, fn){
@@ -124,7 +125,7 @@ test("sauvegarde : aller-retour serialize/load conserve l'état", () => {
   g.place("burgage", s.x, s.y);
   g.toast("test de journal", "good");
   g.treasury = 42; g.taxRate = 0.3; g.approval = 77;
-  for(let i=0;i<500;i++) g.step();
+  for(let i=0;i<500*TS;i++) g.step();
   const data = JSON.parse(JSON.stringify(g.serialize()));
   const g2 = GameState.load(data);
   assert.strictEqual(g2.treasury, g.treasury);
@@ -147,9 +148,9 @@ test("sauvegarde invalide : lève une erreur", () => {
 test("le temps avance avec step()", () => {
   const g = fresh();
   const t0 = { ...g.time };
-  for(let i=0;i<5;i++) g.step();
+  for(let i=0;i<5*TS;i++) g.step();
   assert.ok(g.time.tick > t0.tick);
-  for(let i=0;i<200;i++) g.step();
+  for(let i=0;i<200*TS;i++) g.step();
   assert.ok(g.time.day > 0 || g.time.month > t0.month || g.time.year > t0.year, "les jours avancent");
 });
 
@@ -157,7 +158,7 @@ test("victoire : les 4 objectifs remplis déclenchent victory (mode prospérité
   const g = new GameState(1176, "prosperity", "normal");
   g.objectives.wood = true; g.objectives.happy = true;
   g.objectives.pop = true; g.objectives.manor = true;
-  for(let i=0;i<200 && !g.victory;i++) g.step();
+  for(let i=0;i<200*TS && !g.victory;i++) g.step();
   assert.strictEqual(g.victory, true);
 });
 
@@ -193,7 +194,7 @@ test("production : potager et basse-cour produisent chaque mois", () => {
   const b = legacyHouse(g);
   b.done = true; b.exts = ["garden", "chicken"];
   const veg0 = g.stock.veg, egg0 = g.stock.eggs;
-  for(let i=0;i<160;i++) g.step(); // ~1 mois
+  for(let i=0;i<160*TS;i++) g.step(); // ~1 mois
   assert.ok(g.stock.veg > veg0, "légumes produits");
   assert.ok(g.stock.eggs > egg0, "oeufs produits");
 });
@@ -204,10 +205,10 @@ test("verger ne produit qu'en août-octobre", () => {
   b.done = true; b.exts = ["orchard"];
   g.time.month = 5; // juin : pas de pommes
   const a0 = g.stock.apples;
-  for(let i=0;i<160;i++) g.step();
+  for(let i=0;i<160*TS;i++) g.step();
   assert.strictEqual(g.stock.apples, a0, "pas de récolte en juin");
   g.time.month = 8; // septembre
-  for(let i=0;i<160;i++) g.step();
+  for(let i=0;i<160*TS;i++) g.step();
   assert.ok(g.stock.apples > a0, "récolte en septembre");
 });
 
@@ -215,7 +216,7 @@ test("vêtements : consommation et impact sur l'approbation", () => {
   const g = fresh();
   g.stock.clothes = 0;
   let minAp = 100;
-  for(let i=0;i<1600;i++){ g.step(); minAp = Math.min(minAp, g.approval); }
+  for(let i=0;i<1600*TS;i++){ g.step(); minAp = Math.min(minAp, g.approval); }
   assert.ok(minAp < 60, "approbation pénalisée sans vêtements");
 });
 
@@ -282,7 +283,7 @@ test("brasserie consomme de l'orge pour produire de l'ale", () => {
   const b = legacyHouse(g);
   b.done = true; b.exts = ["brewer"];
   g.stock.barley = 5; g.stock.ale = 0;
-  for(let i=0;i<160;i++) g.step();
+  for(let i=0;i<160*TS;i++) g.step();
   assert.ok(g.stock.ale > 0, "ale produite");
   assert.ok(g.stock.barley < 5, "orge consommée");
 });
@@ -341,7 +342,7 @@ test("comptoir : vend les surplus, crédite trésorerie et richesse", () => {
   g.assign(b.id);
   assert.ok(g.workersOf(b).length > 0, "commerçant affecté");
   const t0 = g.treasury, w0 = g.wealth, bread0 = g.stock.bread;
-  for(let i=0;i<200;i++) g.step(); // ~1 mois
+  for(let i=0;i<200*TS;i++) g.step(); // ~1 mois
   assert.ok(g.treasury > t0, "trésorerie augmentée par les ventes");
   assert.ok(g.wealth > w0, "richesse régionale augmentée");
   assert.ok(g.stock.bread < bread0, "surplus de pain vendu");
@@ -353,7 +354,7 @@ test("prix du marché fluctuent chaque mois", () => {
   const b = placeInCenter(g, "trade");
   b.done = true; g.assign(b.id);
   const p0 = { ...g.prices };
-  for(let i=0;i<400;i++) g.step(); // 2 mois
+  for(let i=0;i<400*TS;i++) g.step(); // 2 mois
   const diff = Object.keys(p0).some(k => g.prices[k] !== p0[k]);
   assert.ok(diff, "au moins un prix a changé");
   for(const k of Object.keys(g.prices)) assert.ok(g.prices[k] >= 1, "prix plancher à 1");
@@ -377,7 +378,7 @@ test("audit : sauvegardes corrompues rejetées sans crash", () => {
     {seed:1, tiles:new Array(W*H).fill(0), roads:[1,2,3]},
   ];
   for(const b of bad){
-    try { const g = GameState.load(b); for(let i=0;i<50;i++) g.step(); }
+    try { const g = GameState.load(b); for(let i=0;i<50*TS;i++) g.step(); }
     catch(e){ /* rejet attendu */ }
   }
   assert.ok(true, "aucune exception non maîtrisée");
@@ -391,7 +392,7 @@ test("audit : noms de familles hostiles stockés sans danger (échappement UI)",
 
 test("audit : charge longue, aucun débordement de log/toasts", () => {
   const g = fresh();
-  for(let i=0;i<10*16*12;i++) g.step(); // 1 an
+  for(let i=0;i<YEAR_TICKS;i++) g.step(); // 1 an
   assert.ok(g.log.length <= 120, "log plafonné");
   assert.ok(g.toasts.length <= 6, "toasts plafonnés");
 });
@@ -431,7 +432,7 @@ test("jalon 1 : bonus de région chaque mois", () => {
   g.treasury = 100; g.wealth = 100;
   g.claimRegion(1); g.claimRegion(2);
   g.stock.berries = 0; g.stock.stone = 0;
-  for(let i=0;i<200;i++) g.step();
+  for(let i=0;i<200*TS;i++) g.step();
   assert.ok(g.stock.berries >= 2, "+2 baies/mois de la région 1");
   assert.ok(g.stock.stone >= 1, "+1 pierre/mois de la région 2");
 });
@@ -447,7 +448,7 @@ test("jalon 1 : sauvegarde persiste les régions", () => {
 test("jalon 2 : le baron entre en scène en 1177 et réclame des régions", () => {
   const g = fresh();
   g.time.year = 1177; g.time.month = 5; g.baron.nextClaim = 0;
-  for(let i=0;i<400 && g.baron.regions.length===0;i++) g.step(); // jusqu'au mois 6
+  for(let i=0;i<400*TS && g.baron.regions.length===0;i++) g.step(); // jusqu'au mois 6
   assert.ok(g.baron.regions.length >= 1, "le baron a réclamé une région");
   assert.ok(g.baron.power >= 1);
   const r = g.baron.regions[0];
@@ -459,7 +460,7 @@ test("jalon 2 : le baron lance un raid après 1178 s'il a du pouvoir", () => {
   g.time.year = 1178; g.time.month = 0;
   g.baron.power = 2; g.baron.nextRaid = 0;
   g.baron.regions = [1,2]; g.baron.nextClaim = 999;
-  for(let i=0;i<800 && !g.pendingEvent;i++) g.step(); // jusqu'au mois 4
+  for(let i=0;i<800*TS && !g.pendingEvent;i++) g.step(); // jusqu'au mois 4
   assert.ok(g.pendingEvent, "raid déclenché");
   assert.ok(/Baron/.test(g.pendingEvent.title));
   assert.strictEqual(g.baron.power, 1, "le raid consomme du pouvoir");
@@ -501,7 +502,7 @@ test("jalon 3 : un soldat détruit un camp de brigands et rapporte du butin", ()
   const u = g.units[0];
   assert.strictEqual(u.state, "guard");
   const t0 = g.treasury;
-  for(let i=0;i<5000 && g.camps.length>0;i++) g.step();
+  for(let i=0;i<5000*TS && g.camps.length>0;i++) g.step();
   assert.strictEqual(g.camps.length, 0, "camp détruit");
   assert.ok(g.treasury > t0, "butin gagné");
 });
@@ -552,7 +553,7 @@ test("jalon 4 : la tour de guet donne +4 approbation et limite les raids", () =>
 test("jalon 4 : menaces aléatoires ne crashent pas la sim", () => {
   const g = fresh();
   g.time.year = 1180;
-  for(let i=0;i<10*16*12;i++) g.step(); // 1 an
+  for(let i=0;i<YEAR_TICKS;i++) g.step(); // 1 an
   assert.ok(g.families.length >= 0 && g.approval >= 0 && g.approval <= 100);
 });
 
@@ -572,7 +573,7 @@ test("phase 5 jalon 1 : 3 décrets activables, effets mensuels", () => {
   assert.strictEqual(g.policies.tithe, true);
   const i0 = g.influence, a0 = 100;
   g.approval = 100;
-  for(let i=0;i<200;i++) g.step(); // 1 mois
+  for(let i=0;i<200*TS;i++) g.step(); // 1 mois
   assert.ok(g.influence > i0, "d\u00eeme rapporte de l'influence");
   g.setPolicy("tithe", false);
   assert.strictEqual(g.policies.tithe, false, "abrogeable");
@@ -634,7 +635,7 @@ test("phase 5 jalon 4 : mercenaire loué contre 25 deniers, disparaît après 6 
   assert.strictEqual(g.treasury, 75);
   assert.strictEqual(g.units.length, 1);
   assert.strictEqual(g.units[0].merc, true);
-  for(let i=0;i<1200 && g.units.length>0;i++) g.step(); // ~6 mois
+  for(let i=0;i<1200*TS && g.units.length>0;i++) g.step(); // ~6 mois
   assert.strictEqual(g.units.length, 0, "mercenaire parti après son contrat");
 });
 
@@ -644,7 +645,7 @@ test("phase 5 jalon 4 : mercenaire attaque un camp comme la milice", () => {
   const b = g.buildings[0];
   g.camps.push({ id:99, x:b.x+1.5, y:b.y+0.5, hp:20, maxHp:20 });
   g.hireMercenary();
-  for(let i=0;i<5000 && g.camps.length>0;i++) g.step();
+  for(let i=0;i<5000*TS && g.camps.length>0;i++) g.step();
   assert.strictEqual(g.camps.length, 0, "camp détruit par le mercenaire");
 });
 
@@ -670,7 +671,7 @@ test("phase 6 : 5 modes et 3 difficultés définis", () => {
 test("phase 6 : mode prospérité = pas de baron ni de camps", () => {
   const g = new GameState(1176, "prosperity", "normal");
   g.time.year = 1180; g.baron.nextClaim = 999; g.baron.nextRaid = 999;
-  for(let i=0;i<10*16*12;i++) g.step(); // 1 an suffit
+  for(let i=0;i<YEAR_TICKS;i++) g.step(); // 1 an suffit
   assert.strictEqual(g.baron.regions.length, 0, "pas de réclamation du baron");
   assert.strictEqual(g.camps.length, 0, "pas de camps");
 });
@@ -679,7 +680,7 @@ test("phase 6 : mode 'edge' démarre avec moins de ressources et gagne en surviv
   const g = new GameState(1176, "edge", "normal");
   assert.ok(g.stock.timber < 15, "ressources réduites au départ");
   g.time.year = 1179;
-  for(let i=0;i<200;i++) g.step();
+  for(let i=0;i<200*TS;i++) g.step();
   assert.strictEqual(g.victory, true, "victoire après 3 ans");
 });
 
@@ -689,7 +690,7 @@ test("phase 6 : mode 'duel' = victoire si toutes les régions à nous, sans camp
   g.claimRegion(1); g.claimRegion(2);
   g.camps.length = 0;
   g.time.year = 1179; g.time.month = 6;
-  for(let i=0;i<300;i++) g.step();
+  for(let i=0;i<300*TS;i++) g.step();
   assert.strictEqual(g.victory, true);
 });
 
@@ -731,7 +732,6 @@ test("phase 6 : sauvegarde v2 persiste mode, difficulté, victoire, défaite", (
 
 /* ---------- étape 3 : chantiers en étapes et parcelles tracées point par point ---------- */
 const { BUILD_STAGES, buildStage, PLOT_FRONT, polyArea, pointInPoly, BUILD_ORDER } = require("../js/sim.js");
-const DAYS_PER_MONTH = 30, TICKS_PER_DAY = 10;
 
 // terrain dégagé dans la région centrale, route horizontale en y=4 (x 16 → 28)
 function zoneSetup(timber){
@@ -844,7 +844,7 @@ test("étape 3 : les journaliers bâtissent les maisons de la zone", () => {
   const g = zoneSetup();
   g.traceZone([[18,5],[24,5],[24,7],[18,7]]);
   const ps = plotsOf(g), seen = new Set();
-  for(let t=0;t<12000 && ps.some(b=>!b.done);t++){ g.step(); for(const b of ps) if(!b.done) seen.add(buildStage(b)); g.pendingEvent=null; }
+  for(let t=0;t<12000*TS && ps.some(b=>!b.done);t++){ g.step(); for(const b of ps) if(!b.done) seen.add(buildStage(b)); g.pendingEvent=null; }
   assert.ok(ps.every(b=>b.done), "maisons achevées");
   assert.ok(seen.has(0) && seen.has(3), "le chantier est passé par plusieurs étapes");
 });
@@ -1060,7 +1060,7 @@ test("étape 4 : le savoir-faire accélère le travail et progresse avec la prat
   v.skills.wood = 100; const fast = g.workTime(v, "chop");
   assert.ok(fast < slow, "un maître abat plus vite qu'un novice ("+fast+" < "+slow+")");
   v.skills.wood = 10;
-  for(let i=0;i<160*6;i++) g.step();
+  for(let i=0;i<MONTH_TICKS*6;i++) g.step();
   assert.ok(v.skills.wood > 15, "après 6 mois au camp, la compétence bois a progressé ("+v.skills.wood+")");
 });
 
@@ -1080,7 +1080,7 @@ test("étape 4 : apprenti — un adolescent par atelier, qui apprend vite auprè
   assert.strictEqual(g.apprenticeOf(b), teen);
   assert.ok(!g.workersOf(b).includes(teen), "l'apprenti n'occupe pas un poste d'ouvrier");
   assert.strictEqual(g.takeApprentice(b2.id, teen2.id), null);
-  for(let i=0;i<160*6;i++) g.step();
+  for(let i=0;i<MONTH_TICKS*6;i++) g.step();
   assert.ok(teen.skills.wood > 25, "apprentie formée par un maître : "+teen.skills.wood);
   assert.ok(teen.skills.wood > teen2.skills.gather + 5, "plus vite qu'un apprenti sans maître ("+teen2.skills.gather+")");
   // à 16 ans, l'apprentie prend sa place d'ouvrière si l'atelier a de la place
@@ -1245,7 +1245,7 @@ test("étape 4 : sauvegarde v4 — villageois, liens et compétences conservés,
   houses(g, 3);
   const b = doneBuilding(g, "woodcutter");
   g.assign(b.id);
-  for(let i=0;i<300;i++) g.step();
+  for(let i=0;i<300*TS;i++) g.step();
   const data = JSON.parse(JSON.stringify(g.serialize()));
   assert.strictEqual(data.v, 5);
   const g2 = GameState.load(data);
@@ -1264,7 +1264,7 @@ test("étape 4 : sauvegarde v4 — villageois, liens et compétences conservés,
   assert.strictEqual(g3.villagers[0].skills.wood, 0);
   assert.strictEqual(g3.villagers[0].health, 100);
   assert.strictEqual(g3.villagers[0].work, -1);
-  for(let i=0;i<200;i++) g3.step();
+  for(let i=0;i<200*TS;i++) g3.step();
 });
 
 test("étape 4 : une ancienne sauvegarde (familles anonymes) est convertie sans rien perdre", () => {
@@ -1288,7 +1288,7 @@ test("étape 4 : une ancienne sauvegarde (familles anonymes) est convertie sans 
   assert.strictEqual(w.length, 1, "le premier adulte garde le métier de sa famille");
   assert.strictEqual(w[0].fam, data.families[0].id);
   assert.strictEqual(w[0].x, 10.5);
-  for(let i=0;i<400;i++) g2.step();
+  for(let i=0;i<400*TS;i++) g2.step();
   assert.ok(g2.villagers.length>=3);
 });
 
@@ -1320,7 +1320,7 @@ function stockHerd(g, b, sp, nf, nm){
   for(let k=0;k<nm;k++) assert.strictEqual(g.buyAnimal(b.id, sp, false), null);
   for(const a of b.herd.an) a.a = LIVESTOCK[sp].adultAt + 12;
 }
-function runMonths(g, n){ for(let i=0;i<n*160;i++){ if(i%160===0) feed(g); g.step(); if(g.pendingEvent) g.resolveEvent(g.pendingEvent.choices.length-1); } }
+function runMonths(g, n){ for(let i=0;i<n*MONTH_TICKS;i++){ if(i%MONTH_TICKS===0) feed(g); g.step(); if(g.pendingEvent) g.resolveEvent(g.pendingEvent.choices.length-1); } }
 
 test("étape 5 : 8 cultures, chacune avec sa saison et son calendrier", () => {
   for(const c of CROP_ORDER){ const cd = CROP_DEFS[c]; assert.ok(CROP_CAL[cd.season], c+" a un calendrier"); assert.ok(typeof cd.of==="string"); }
@@ -1691,7 +1691,7 @@ test("étape 5 : sauvegarde v5 — champs, troupeaux, bœufs et gerbes conservé
   assert.strictEqual(g2.stock.sh_grain, 12); assert.strictEqual(g2.stock.hay, 33);
   assert.strictEqual(g2.pastureCell[p.plot.cells[3]], 1);
   assert.ok(g2.nextA > Math.max(...p.herd.an.map(a=>a.id)));
-  for(let i=0;i<200;i++) g2.step();
+  for(let i=0;i<200*TS;i++) g2.step();
 });
 
 test("étape 5 : une sauvegarde v4 est convertie (jachère semée, bœufs comptés, champs complétés)", () => {
@@ -1712,7 +1712,7 @@ test("étape 5 : une sauvegarde v4 est convertie (jachère semée, bœufs compt�
   assert.deepStrictEqual(w2.hist, []);
   assert.strictEqual(g2.oxen.length, 2); assert.strictEqual(g2.stock.ox, 2);
   assert.strictEqual(g2.stock.hay, 6 + 3*2, "une meule offerte pour l'hiver des bœufs");
-  for(let i=0;i<400;i++) g2.step();
+  for(let i=0;i<400*TS;i++) g2.step();
 });
 
 test("étape 5 : trois ans de ferme et d'élevage — ni exception ni valeur aberrante", () => {
