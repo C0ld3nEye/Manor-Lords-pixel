@@ -2,8 +2,12 @@
 /* Tests de la simulation (Phase 0 du plan docs/PLAN.md).
    Lancer avec : node test/sim.test.js */
 const assert = require("assert");
-const { GameState, BUILD_DEFS, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, REGION_DEFS, REGION_COST, POLICY_DEFS, POLICY_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, DIFFICULTIES, W, H, T_GRASS, T_FOREST, T_STONE, MONTHS, seasonOf, TS, TICKS_PER_DAY, DAYS_PER_MONTH } = require("../js/sim.js");
+const { GameState, BUILD_DEFS, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, REGION_COST, REGION_COLS, REGION_ROWS, POLICY_DEFS, POLICY_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, DIFFICULTIES, W, H, T_GRASS, T_FOREST, T_STONE, T_FORD, MONTHS, seasonOf, TS, TICKS_PER_DAY, DAYS_PER_MONTH } = require("../js/sim.js");
 const MONTH_TICKS = TICKS_PER_DAY*DAYS_PER_MONTH, YEAR_TICKS = MONTH_TICKS*12;
+// La carte est devenue grande (256 × 192). Les tests d'avant étaient écrits pour la petite carte (46 × 34)
+// dont le centre était (23, 17) : on décale leurs coordonnées pour qu'elles tombent autour du départ.
+const OW = 46, OH = 34, DX = Math.floor(W/2) - 23, DY = Math.floor(H/2) - 17;
+const Z = (poly)=>poly.map(q=>[q[0]+DX, q[1]+DY]);
 
 let passed = 0;
 function test(name, fn){
@@ -14,7 +18,13 @@ function test(name, fn){
 function fresh(){ return new GameState(1176, "peace", "normal"); } // mode combat pour les tests baron/camps
 function placeInCenter(g, def){
   g.setFieldSize(3);
-  for(let y=1;y<H-4;y++) for(let x=Math.ceil(W/3)+1;x<Math.floor(2*W/3)-4;x++)
+  if(def==="quarry"){   // sur la grande carte, la pierre n'est pas forcément dans le carré du départ : le gisement à vous le plus proche
+    const c = g.buildings.find(b=>b.def==="camp") || { x:W/2, y:H/2 };
+    const st = []; for(let i=0;i<W*H;i++) if(g.tiles[i]===T_STONE && g.occupied[i]<0 && g.regionOwned(i%W, (i/W)|0)) st.push(i);
+    st.sort((a, b)=>Math.hypot(a%W-c.x, ((a/W)|0)-c.y) - Math.hypot(b%W-c.x, ((b/W)|0)-c.y));
+    for(const i of st) if(g.place(def, i%W, (i/W)|0)===null) return g.buildings[g.buildings.length-1];
+  }
+  for(let y=DY+1;y<DY+OH-4;y++) for(let x=DX+Math.ceil(OW/3)+1;x<DX+Math.floor(2*OW/3)-4;x++)
     if(g.place(def, x, y)===null) return g.buildings[g.buildings.length-1];
   throw new Error("pas de place pour "+def);
 }
@@ -26,7 +36,7 @@ function legacyHouse(g){
 
 
 function freeSpot(g){
-  for(let y=1;y<H-1;y++) for(let x=Math.ceil(W/3)+1;x<Math.floor(2*W/3)-1;x++) // région centrale (id 0, toujours réclamée)
+  for(let y=DY+1;y<DY+OH-1;y++) for(let x=DX+Math.ceil(OW/3)+1;x<DX+Math.floor(2*OW/3)-1;x++) // autour du départ (région possédée)
     if(g.tiles[y*W+x]===T_GRASS && g.occupied[y*W+x]<0) return { x, y };
   throw new Error("aucune tuile libre");
 }
@@ -84,10 +94,8 @@ test("la carrières exige un gisement de pierre", () => {
   g.stock.timber = 50;
   const grass = freeSpot(g);
   assert.ok(g.place("quarry", grass.x, grass.y), "herbe refuse la carrière");
-  g.treasury = 100; g.wealth = 100;
-  g.claimRegion(1); g.claimRegion(2); // accès à toute la carte pour ce test
   let stone = -1;
-  for(let i=0;i<W*H;i++) if(g.tiles[i]===T_STONE){ stone = i; break; }
+  for(let i=0;i<W*H;i++) if(g.tiles[i]===T_STONE && g.occupied[i]<0 && g.regionOwned(i%W, (i/W)|0)){ stone = i; break; }
   assert.strictEqual(g.place("quarry", stone%W, Math.floor(stone/W)), null);
 });
 
@@ -323,9 +331,9 @@ test("route interdite sur bâtiment et eau", () => {
 test("A* emprunte les routes quand c'est plus court", () => {
   const g = fresh();
   // trace une route horizontale longue
-  const x0 = Math.ceil(W/3)+1, xEnd = Math.floor(2*W/3)-2;
-  for(let x=x0;x<=xEnd;x++) g.toggleRoad(x, 17);
-  const pRoad = g.astar(x0, 17, xEnd, 17);
+  const x0 = DX+Math.ceil(OW/3)+1, xEnd = DX+Math.floor(2*OW/3)-2, ry = DY+17-6;
+  for(let x=x0;x<=xEnd;x++){ const i = ry*W+x; g.tiles[i] = T_GRASS; g.occupied[i] = -1; g.toggleRoad(x, ry); }
+  const pRoad = g.astar(x0, ry, xEnd, ry);
   assert.ok(pRoad, "chemin trouvé");
   // le coût total doit être réduit par la route
   let cost = 0;
@@ -354,8 +362,8 @@ test("prix du marché fluctuent chaque mois", () => {
   const b = placeInCenter(g, "trade");
   b.done = true; g.assign(b.id);
   const p0 = { ...g.prices };
-  for(let i=0;i<400*TS;i++) g.step(); // 2 mois
-  const diff = Object.keys(p0).some(k => g.prices[k] !== p0[k]);
+  let diff = false;
+  for(let i=0;i<6*MONTH_TICKS && !diff;i++){ g.step(); g.pendingEvent = null; diff = Object.keys(p0).some(k => g.prices[k] !== p0[k]); }
   assert.ok(diff, "au moins un prix a changé");
   for(const k of Object.keys(g.prices)) assert.ok(g.prices[k] >= 1, "prix plancher à 1");
 });
@@ -397,52 +405,112 @@ test("audit : charge longue, aucun débordement de log/toasts", () => {
   assert.ok(g.toasts.length <= 6, "toasts plafonnés");
 });
 
-test("jalon 1 : 3 régions, seule la 0 est possédée au départ", () => {
+// une case de terre dans une région donnée (pour vérifier qu'on y passe ou non)
+function landIn(g, rid){ for(let i=0;i<W*H;i++) if(g.regionMap[i]===rid && g.tiles[i]===T_GRASS && g.occupied[i]<0) return { x:i%W, y:(i/W)|0 }; return null; }
+function farRegion(g){ const st = g.regions[g.startRegion]; return g.regions.find(r=>r.id!==st.id && !st.nb.includes(r.id)); }
+
+test("grande carte : une vingtaine de régions organiques, seule celle du départ est à vous", () => {
   const g = fresh();
-  assert.strictEqual(REGION_DEFS.length, 3);
-  assert.strictEqual(g.regions[0].owned, true);
-  assert.strictEqual(g.regions[1].owned, false);
-  assert.strictEqual(g.regions[2].owned, false);
-  assert.strictEqual(g.regionOwned(Math.floor(W/2)), true, "le centre est possédé");
-  assert.strictEqual(g.regionOwned(1), false);
-  assert.strictEqual(g.regionOwned(W-1), false);
+  assert.strictEqual(g.regions.length, REGION_COLS*REGION_ROWS);
+  assert.deepStrictEqual(g.regions.filter(r=>r.owned).map(r=>r.id), [g.startRegion]);
+  assert.strictEqual(g.regionOwned(Math.floor(W/2), Math.floor(H/2)), true, "le centre est à vous");
+  assert.strictEqual(g.regionOwned(1, 1), false);
+  assert.strictEqual(g.regionOwned(W-2, H-2), false);
+  const st = g.regions[g.startRegion];
+  assert.strictEqual(st.name, "Val du Cœur");
+  assert.ok(st.n > 3000, "région de départ assez grande ("+st.n+" cases)");
+  assert.ok(st.nb.length>=3, "plusieurs voisines");
+  for(const r of g.regions){ assert.ok(r.n>0 && typeof r.name==="string" && r.name.length>0); for(const k of r.nb) assert.ok(g.regions[k].nb.includes(r.id), "voisinage réciproque"); }
+});
+
+test("grande carte : chaque région est d'un seul tenant", () => {
+  const g = fresh();
+  for(const r of g.regions){
+    const start = (()=>{ for(let i=0;i<W*H;i++) if(g.regionMap[i]===r.id) return i; })();
+    const seen = new Uint8Array(W*H), q = [start]; seen[start] = 1; let n = 1;
+    for(let h=0; h<q.length; h++){ const i = q[h], x = i%W, y = (i/W)|0;
+      for(const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]){ const nx = x+dx, ny = y+dy; if(nx<0||ny<0||nx>=W||ny>=H) continue; const k = ny*W+nx;
+        if(!seen[k] && g.regionMap[k]===r.id){ seen[k] = 1; q.push(k); n++; } } }
+    assert.strictEqual(n, r.n, r.name+" d'un seul tenant");
+  }
+});
+
+test("grande carte : de quoi commencer près du campement (bois, baies, pierre), un gué sur la rivière", () => {
+  for(const seed of [1176, 42, 7, 999, 31337]){
+    const g = new GameState(seed, "prosperity", "normal");
+    const camp = g.buildings.find(b=>b.def==="camp");
+    const near = (t, R)=>{ let n = 0; for(let y=camp.y-R; y<=camp.y+R; y++) for(let x=camp.x-R; x<=camp.x+R; x++) if(x>=0&&y>=0&&x<W&&y<H && g.tiles[y*W+x]===t && g.regionOwned(x, y) && Math.hypot(x-camp.x, y-camp.y)<=R) n++; return n; };
+    assert.ok(near(T_FOREST, 16) >= 20, "un bois à portée (graine "+seed+")");
+    assert.ok(near(2, 17) >= 3, "des baies (graine "+seed+")");
+    assert.ok(near(T_STONE, 27) >= 3, "de la pierre (graine "+seed+")");
+    let fords = 0; for(const t of g.tiles) if(t===T_FORD) fords++;
+    assert.ok(fords >= 6, "des gués");
+    const st = g.regions[g.startRegion]; let f = 0;
+    for(let i=0;i<W*H;i++) if(g.regionMap[i]===st.id && g.tiles[i]===T_FOREST) f++;
+    assert.ok(f/st.n > 0.15 && f/st.n < 0.4, "bois dans la région de départ : "+Math.round(f/st.n*100)+" %");
+    assert.ok(g.deer.length >= 50, "du gibier");
+  }
+});
+
+test("grande carte : on traverse la rivière au gué, pas ailleurs", () => {
+  const g = fresh();
+  for(const r of g.regions) r.owned = true;   // toute la carte, pour suivre la rivière
+  let ford = -1; for(let i=0;i<W*H;i++) if(g.tiles[i]===T_FORD){ ford = i; break; }
+  assert.ok(ford>=0);
+  const fx = ford%W, fy = (ford/W)|0;
+  assert.strictEqual(g.passable(fx, fy), true, "le gué se traverse");
+  let water = -1; for(let i=0;i<W*H;i++) if(g.tiles[i]===4){ water = i; break; }
+  assert.strictEqual(g.passable(water%W, (water/W)|0), false, "l'eau profonde, non");
+  assert.ok(g.canPlace("woodcutter", fx, fy), "on ne bâtit pas sur un gué");
 });
 
 test("jalon 1 : région non réclamée infranchissable et non constructible", () => {
   const g = fresh();
-  assert.strictEqual(g.passable(1, 5), false, "passable refuse la région ouest");
-  const err = g.place("burgage", 1, 5);
-  assert.strictEqual(err, "Région non réclamée");
+  const p = landIn(g, farRegion(g).id);
+  assert.strictEqual(g.passable(p.x, p.y), false, "passable refuse une région qui n'est pas à vous");
+  assert.strictEqual(g.place("burgage", p.x, p.y), "Région non réclamée");
+  assert.strictEqual(g.walkable(p.x, p.y), true, "mais les bêtes sauvages y vont");
 });
 
-test("jalon 1 : réclamation coûte trésorerie + richesse, puis débloque", () => {
+test("jalon 1 : on réclame une région voisine (coût croissant), pas une région lointaine", () => {
   const g = fresh();
+  const st = g.regions[g.startRegion], nb = st.nb[0], far = farRegion(g);
   g.treasury = 10; g.wealth = 100;
-  assert.strictEqual(g.claimRegion(1), false, "trésorerie insuffisante");
-  g.treasury = 100; g.wealth = 100;
-  assert.strictEqual(g.claimRegion(1), true);
-  assert.strictEqual(g.treasury, 100 - REGION_COST.treasury);
-  assert.strictEqual(g.wealth, 100 - REGION_COST.wealth);
-  assert.strictEqual(g.passable(2, 5), true, "région ouest débloquée");
-  assert.strictEqual(g.claimRegion(1), false, "déjà possédée");
+  assert.strictEqual(g.claimRegion(nb), false, "trésorerie insuffisante");
+  g.treasury = 500; g.wealth = 500;
+  assert.strictEqual(g.claimRegion(far.id), false, "une région lointaine ne se réclame pas");
+  const c1 = g.regionCost();
+  assert.deepStrictEqual(c1, REGION_COST);
+  assert.strictEqual(g.claimRegion(nb), true);
+  assert.strictEqual(g.treasury, 500 - c1.treasury);
+  assert.strictEqual(g.wealth, 500 - c1.wealth);
+  const p = landIn(g, nb);
+  assert.strictEqual(g.passable(p.x, p.y), true, "région débloquée");
+  assert.strictEqual(g.claimRegion(nb), false, "déjà possédée");
+  assert.ok(g.regionCost().treasury > c1.treasury, "la suivante coûte plus cher");
 });
 
 test("jalon 1 : bonus de région chaque mois", () => {
   const g = fresh();
-  g.treasury = 100; g.wealth = 100;
-  g.claimRegion(1); g.claimRegion(2);
+  g.treasury = 500; g.wealth = 500;
+  const st = g.regions[g.startRegion];
+  g.regions[st.nb[0]].bonus = { berries:2 }; g.regions[st.nb[1]].bonus = { stone:1 };
+  g.claimRegion(st.nb[0]); g.claimRegion(st.nb[1]);
   g.stock.berries = 0; g.stock.stone = 0;
   for(let i=0;i<200*TS;i++) g.step();
-  assert.ok(g.stock.berries >= 2, "+2 baies/mois de la région 1");
-  assert.ok(g.stock.stone >= 1, "+1 pierre/mois de la région 2");
+  assert.ok(g.stock.berries >= 2, "+2 baies/mois");
+  assert.ok(g.stock.stone >= 1, "+1 pierre/mois");
+  for(const r of g.regions) if(r.id!==g.startRegion) assert.ok(r.bonus && Object.keys(r.bonus).length===1, "chaque région a un bonus");
 });
 
-test("jalon 1 : sauvegarde persiste les régions", () => {
+test("jalon 1 : sauvegarde persiste les régions (leur forme vient de la graine)", () => {
   const g = fresh();
-  g.treasury = 100; g.wealth = 100; g.claimRegion(2);
+  g.treasury = 500; g.wealth = 500; const nb = g.regions[g.startRegion].nb[1]; g.claimRegion(nb);
   const g2 = GameState.load(JSON.parse(JSON.stringify(g.serialize())));
-  assert.strictEqual(g2.regions[2].owned, true);
-  assert.strictEqual(g2.regions[1].owned, false);
+  assert.strictEqual(g2.regions[nb].owned, true);
+  assert.strictEqual(g2.regions.filter(r=>r.owned).length, 2);
+  for(let i=0;i<W*H;i+=97) assert.strictEqual(g2.regionMap[i], g.regionMap[i]);
+  assert.strictEqual(g2.regions[nb].name, g.regions[nb].name);
 });
 
 test("jalon 2 : le baron entre en scène en 1177 et réclame des régions", () => {
@@ -590,7 +658,7 @@ test("phase 5 jalon 1 : influence gagnée en réclamant une région", () => {
   const g = fresh();
   g.treasury = 100; g.wealth = 100;
   const i0 = g.influence;
-  g.claimRegion(1);
+  assert.ok(g.claimRegion(g.regions[g.startRegion].nb[0]));
   assert.ok(g.influence >= i0 + 10);
 });
 
@@ -684,10 +752,11 @@ test("phase 6 : mode 'edge' démarre avec moins de ressources et gagne en surviv
   assert.strictEqual(g.victory, true, "victoire après 3 ans");
 });
 
-test("phase 6 : mode 'duel' = victoire si toutes les régions à nous, sans camps, après 1179", () => {
+test("phase 6 : mode 'duel' = victoire si les terres voisines du départ sont à nous, sans camps, après 1179", () => {
   const g = new GameState(1176, "duel", "hard");
-  g.treasury = 200; g.wealth = 200;
-  g.claimRegion(1); g.claimRegion(2);
+  g.treasury = 5000; g.wealth = 5000;
+  assert.ok(g.goalRegions().length>=4, "le départ et ses voisines");
+  for(const r of g.goalRegions()) if(!r.owned) assert.ok(g.claimRegion(r.id), r.name);
   g.camps.length = 0;
   g.time.year = 1179; g.time.month = 6;
   for(let i=0;i<300*TS;i++) g.step();
@@ -725,9 +794,12 @@ test("phase 6 : sauvegarde v2 persiste mode, difficulté, victoire, défaite", (
   assert.strictEqual(g2.modeId, "fractured");
   assert.strictEqual(g2.diffId, "hard");
   assert.strictEqual(g2.victory, true);
-  // ancienne sauvegarde v1 (sans modeId) -> mode par défaut, ne crash pas
-  const g1 = GameState.load({ v:1, seed:1, tiles:new Array(W*H).fill(0) });
+  // une sauvegarde sans modeId -> mode par défaut, ne plante pas
+  const d1 = JSON.parse(JSON.stringify(g.serialize())); delete d1.modeId; delete d1.diffId;
+  const g1 = GameState.load(d1);
   assert.strictEqual(g1.modeId, "prosperity");
+  // une partie de l'ancienne petite carte ne se charge plus
+  assert.throws(()=>GameState.load({ v:7, seed:1, tiles:new Array(46*34).fill(0) }), /ancienne carte/);
 });
 
 /* ---------- étape 3 : chantiers en étapes et parcelles tracées point par point ---------- */
@@ -736,13 +808,13 @@ const { BUILD_STAGES, buildStage, PLOT_FRONT, polyArea, pointInPoly, BUILD_ORDER
 // terrain dégagé dans la région centrale, route horizontale en y=4 (x 16 → 28)
 function zoneSetup(timber){
   const g = fresh();
-  for(let y=4;y<=11;y++) for(let x=16;x<=28;x++){ const i=y*W+x; g.tiles[i]=T_GRASS; g.occupied[i]=-1; g.roads[i]=0; }
-  for(let x=16;x<=28;x++) g.roads[4*W+x]=1;
+  for(let y=4;y<=11;y++) for(let x=16;x<=28;x++){ const i=(y+DY)*W+x+DX; g.tiles[i]=T_GRASS; g.occupied[i]=-1; g.roads[i]=0; }
+  for(let x=16;x<=28;x++) g.roads[(4+DY)*W+x+DX]=1;
   g.stock.timber = timber===undefined ? 50 : timber;
   return g;
 }
-const RECT = [[18,5],[24,5],[24,8],[18,8]];                 // 6 × 3 cases
-const ORGANIC = [[17,5],[25,5],[24.5,7.25],[23,10],[20,9.5],[17.5,6.75]]; // forme libre, plus profonde au milieu
+const RECT = Z([[18,5],[24,5],[24,8],[18,8]]);                 // 6 × 3 cases
+const ORGANIC = Z([[17,5],[25,5],[24.5,7.25],[23,10],[20,9.5],[17.5,6.75]]); // forme libre, plus profonde au milieu
 function plotsOf(g){ return g.buildings.filter(b=>b.plot); }
 function insideTiles(poly){ const r=[]; for(let y=0;y<H;y++) for(let x=0;x<W;x++) if(pointInPoly(x+0.5,y+0.5,poly)) r.push(y*W+x); return r; }
 
@@ -759,11 +831,11 @@ test("étape 3 : un chantier passe par fondations, charpente, murs, toit", () =>
 
 test("étape 3 : contours refusés (trop peu de points, croisé, sans route, sur route ou bâtiment)", () => {
   const g = zoneSetup();
-  assert.strictEqual(g.planZone([[18,5],[24,5]]).err, "Posez au moins 3 points");
-  assert.strictEqual(g.planZone([[18,5],[24,8],[24,5],[18,8]]).err, "Le contour se croise");
-  assert.strictEqual(g.planZone([[18,6],[24,6],[24,9],[18,9]]).err, "La zone doit longer une route");
-  assert.strictEqual(g.planZone([[18,4],[24,4],[24,7],[18,7]]).err, "La zone empiète sur une route");
-  g.occupied[6*W+20] = 999;
+  assert.strictEqual(g.planZone(Z([[18,5],[24,5]])).err, "Posez au moins 3 points");
+  assert.strictEqual(g.planZone(Z([[18,5],[24,8],[24,5],[18,8]])).err, "Le contour se croise");
+  assert.strictEqual(g.planZone(Z([[18,6],[24,6],[24,9],[18,9]])).err, "La zone doit longer une route");
+  assert.strictEqual(g.planZone(Z([[18,4],[24,4],[24,7],[18,7]])).err, "La zone empiète sur une route");
+  g.occupied[(6+DY)*W+20+DX] = 999;
   assert.strictEqual(g.planZone(RECT).err, "La zone empiète sur un bâtiment");
   assert.strictEqual(g.traceZone(RECT), "La zone empiète sur un bâtiment");
 });
@@ -843,7 +915,7 @@ test("étape 3 : tracer crée des maisons en chantier qui occupent leur parcelle
 
 test("étape 3 : les journaliers bâtissent les maisons de la zone", () => {
   const g = zoneSetup();
-  g.traceZone([[18,5],[24,5],[24,7],[18,7]]);
+  g.traceZone(Z([[18,5],[24,5],[24,7],[18,7]]));
   const ps = plotsOf(g), seen = new Set();
   for(let t=0;t<12000*TS && ps.some(b=>!b.done);t++){ g.step(); for(const b of ps) if(!b.done) seen.add(buildStage(b)); g.pendingEvent=null; }
   assert.ok(ps.every(b=>b.done), "maisons achevées");
@@ -896,7 +968,7 @@ test("étape 3 : sauvegarde v3 des parcelles et de leur contour, démolition lib
   const gm = GameState.load(multi);
   assert.deepStrictEqual(gm.buildings.find(x=>x.id===b.id).exts, ["garden"]);
   assert.strictEqual(gm.stock.timber, multi.stock.timber + EXT_DEFS.orchard.cost.timber);
-  assert.strictEqual(data.v, 7);
+  assert.strictEqual(data.v, 8);
   const g2 = GameState.load(data);
   const b2 = g2.buildings.find(x=>x.id===b.id);
   assert.deepStrictEqual(b2.plot, b.plot);
@@ -915,11 +987,12 @@ test("étape 3 : sauvegarde v3 des parcelles et de leur contour, démolition lib
 
 test("étape 3 : aimant de route — le contour se cale sur le bord et reste droit", () => {
   const g = zoneSetup();                     // route en y=4 : son bord sud est la ligne y=5
-  assert.deepStrictEqual(g.snapZonePoint(19.3, 5.35), [19.25, 5], "collé au bord de la route");
-  assert.deepStrictEqual(g.snapZonePoint(19.3, 5.8), [19.25, 5.75], "trop loin : pas d'aimant");
-  assert.deepStrictEqual(g.snapZonePoint(23.1, 5.55, [19, 5]), [23, 5], "trait parallèle à la route : reste droit");
-  assert.deepStrictEqual(g.snapZonePoint(23.1, 6.4, [19, 5]), [23, 6.5], "on s'en échappe en tirant plus loin");
-  assert.deepStrictEqual(g.snapZonePoint(23.1, 5.55, [19, 7]), [23, 5.5], "pas de résistance loin de la route");
+  const P = (x, y, prev)=>{ const r = g.snapZonePoint(x+DX, y+DY, prev ? [prev[0]+DX, prev[1]+DY] : undefined); return [r[0]-DX, r[1]-DY]; };
+  assert.deepStrictEqual(P(19.3, 5.35), [19.25, 5], "collé au bord de la route");
+  assert.deepStrictEqual(P(19.3, 5.8), [19.25, 5.75], "trop loin : pas d'aimant");
+  assert.deepStrictEqual(P(23.1, 5.55, [19, 5]), [23, 5], "trait parallèle à la route : reste droit");
+  assert.deepStrictEqual(P(23.1, 6.4, [19, 5]), [23, 6.5], "on s'en échappe en tirant plus loin");
+  assert.deepStrictEqual(P(23.1, 5.55, [19, 7]), [23, 5.5], "pas de résistance loin de la route");
 });
 
 test("étape 3 : départ façon Manor Lords — campement, poteau du bœuf, aucune maison", () => {
@@ -1248,7 +1321,7 @@ test("étape 4 : sauvegarde v4 — villageois, liens et compétences conservés,
   g.assign(b.id);
   for(let i=0;i<300*TS;i++) g.step();
   const data = JSON.parse(JSON.stringify(g.serialize()));
-  assert.strictEqual(data.v, 7);
+  assert.strictEqual(data.v, 8);
   const g2 = GameState.load(data);
   assert.strictEqual(g2.villagers.length, g.villagers.length);
   for(const v of g.villagers){
@@ -1268,31 +1341,6 @@ test("étape 4 : sauvegarde v4 — villageois, liens et compétences conservés,
   for(let i=0;i<200*TS;i++) g3.step();
 });
 
-test("étape 4 : une ancienne sauvegarde (familles anonymes) est convertie sans rien perdre", () => {
-  const g = fresh();
-  houses(g, 3);
-  const b = doneBuilding(g, "woodcutter");
-  const data = JSON.parse(JSON.stringify(g.serialize()));
-  // forme v3 : pas de villageois, chaque famille marche et travaille elle-même
-  delete data.villagers; delete data.approvalWhy; data.v = 3;
-  data.families.forEach((f, k)=>{ Object.assign(f, { x:10.5+k, y:12.5, path:null, state:"idle", timer:0, task:null, carry:null, cool:0, work:-1, lastAte:1 }); delete f.fed; });
-  data.families[0].work = b.id;
-  for(const x of data.buildings){ x.families = []; delete x.want; }
-  data.buildings.find(x=>x.id===b.id).families = [data.families[0].id];
-  const g2 = GameState.load(data);
-  assert.strictEqual(g2.families.length, 3);
-  for(const f of g2.families){ assert.ok(g2.membersOf(f.id).length>=1); assert.strictEqual(f.x, undefined, "plus de position sur le foyer"); }
-  const b2 = g2.buildings.find(x=>x.id===b.id);
-  assert.strictEqual(b2.families, undefined);
-  assert.strictEqual(b2.want, 1);
-  const w = g2.workersOf(b2);
-  assert.strictEqual(w.length, 1, "le premier adulte garde le métier de sa famille");
-  assert.strictEqual(w[0].fam, data.families[0].id);
-  assert.strictEqual(w[0].x, 10.5);
-  for(let i=0;i<400*TS;i++) g2.step();
-  assert.ok(g2.villagers.length>=3);
-});
-
 /* ================= étape 5 : agriculture et élevage approfondis ================= */
 const { CROP_CAL, LIVESTOCK, LIVESTOCK_ORDER, PASTURE_MIN, PLOT_MIN, monthsTxt } = require("../js/sim.js");
 function feed(g){ g.stock.berries = 250; g.stock.meat = 250; g.stock.firewood = 250; g.stock.clothes = 50; }
@@ -1300,9 +1348,9 @@ function toMonth(g, m){ g.time.month = m; g.time.day = 0; g.time.tick = 0; }
 function newField(g, crop, n){ g.setFieldSize(n||4); const b = placeInCenter(g, "field"); if(crop) g.setCrop(b.id, crop); return b; }
 function sownField(g, crop, growth){ const b = newField(g, crop); Object.assign(b.f, { sown:true, sownCrop:crop, growth:growth, sownAt:g.monthIdx()-6, cond:1, hits:[] }); return b; }
 function freeBlock(g, w, h){
-  for(let y=2;y<H-h-2;y++) for(let x=Math.ceil(W/3)+2;x<Math.floor(2*W/3)-w-2;x++){
+  for(let y=DY-14;y<DY+OH+14-h;y++) for(let x=DX+Math.ceil(OW/3)-14;x<DX+Math.floor(2*OW/3)+14-w;x++){
     let ok = true;
-    for(let yy=-1; yy<=h && ok; yy++) for(let xx=-1; xx<=w && ok; xx++){ const i=(y+yy)*W+x+xx; if(g.tiles[i]!==T_GRASS || g.occupied[i]>=0 || g.roads[i]) ok = false; }
+    for(let yy=-1; yy<=h && ok; yy++) for(let xx=-1; xx<=w && ok; xx++){ const i=(y+yy)*W+x+xx; if(g.tiles[i]!==T_GRASS || g.occupied[i]>=0 || g.roads[i] || !g.regionOwned(x+xx, y+yy)) ok = false; }
     if(ok) return { x, y };
   }
   throw new Error("pas de bloc libre "+w+"×"+h);
@@ -1695,27 +1743,6 @@ test("étape 5 : sauvegarde v5 — champs, troupeaux, bœufs et gerbes conservé
   for(let i=0;i<200*TS;i++) g2.step();
 });
 
-test("étape 5 : une sauvegarde v4 est convertie (jachère semée, bœufs comptés, champs complétés)", () => {
-  const g = fresh();
-  const a = newField(g, "fallow"), w = newField(g, "wheat");
-  const data = JSON.parse(JSON.stringify(g.serialize()));
-  data.v = 4; delete data.oxen; delete data.nextA; delete data.wx;
-  data.stock.ox = 2;
-  for(const k of ["oats","flax","pulses","milk","wool","hay","manure","sh_grain","sh_barley","sh_oats"]) delete data.stock[k];
-  const fa = data.buildings.find(b=>b.id===a.id).f, fw = data.buildings.find(b=>b.id===w.id).f;
-  for(const f of [fa, fw]) for(const k of Object.keys(f)) if(["fert","plow","sown","growth","harvestP","crop","usedThisYear","usedLastYear"].indexOf(k)<0) delete f[k];
-  Object.assign(fa, { sown:true, plow:1, usedThisYear:true });
-  Object.assign(fw, { sown:true, plow:1, growth:0.4 });
-  const g2 = GameState.load(data);
-  const a2 = g2.buildings.find(b=>b.id===a.id).f, w2 = g2.buildings.find(b=>b.id===w.id).f;
-  assert.strictEqual(a2.sown, false, "la jachère n'est plus semée");
-  assert.strictEqual(w2.sown, true); assert.strictEqual(w2.sownCrop, "wheat"); assert.strictEqual(w2.cond, 1);
-  assert.deepStrictEqual(w2.hist, []);
-  assert.strictEqual(g2.oxen.length, 2); assert.strictEqual(g2.stock.ox, 2);
-  assert.strictEqual(g2.stock.hay, 6 + 3*2, "une meule offerte pour l'hiver des bœufs");
-  for(let i=0;i<400*TS;i++) g2.step();
-});
-
 test("étape 5 : trois ans de ferme et d'élevage — ni exception ni valeur aberrante", () => {
   for(const seed of [3, 41, 1176]){
     const g = new GameState(seed, "prosperity", "normal");
@@ -1919,28 +1946,20 @@ test("étape 5 bis : abandonner un chantier rend ce qui n'a pas été employé",
   assert.strictEqual(g.stock.stone, 9);
 });
 
-test("étape 5 bis : sauvegarde v6 — matériaux, priorité et bœuf mené gardés, anciens chantiers déjà livrés", () => {
+test("étape 5 bis : sauvegarde — matériaux, priorité et bœuf mené gardés, données abîmées corrigées", () => {
   const g = fresh();
   g.stock.timber = 40; g.stock.stone = 10;
   const b = placeInCenter(g, "manor");
   g.setSitePrio(b.id, true);
   quietSteps(g, 60*DAY, ()=>g.oxen.some(o=>o.lead>0 && g.villager(o.lead).task.phase==="bring"));
   const data = JSON.parse(JSON.stringify(g.serialize()));
-  assert.strictEqual(data.v, 7);
+  assert.strictEqual(data.v, 8);
   const g2 = GameState.load(data), b2 = g2.buildings.find(x=>x.id===b.id);
   assert.deepStrictEqual(b2.mat, b.mat);
   assert.strictEqual(b2.prio, true);
   assert.strictEqual(g2.oxen[0].lead, g.oxen[0].lead, "le bœuf est toujours mené par le même journalier");
   quietSteps(g2, 60*DAY, ()=>g2.matFrac(b2)>=1);
   assert.strictEqual(g2.matFrac(b2), 1, "le charroi reprend après le chargement");
-  // une sauvegarde v5 : le coût avait été payé à la pose, le chantier a donc déjà ses matériaux
-  const old = JSON.parse(JSON.stringify(g.serialize()));
-  old.v = 5; for(const x of old.buildings){ delete x.mat; delete x.prio; }
-  for(const o of old.oxen){ delete o.x; delete o.y; delete o.lead; }
-  const g3 = GameState.load(old), b3 = g3.buildings.find(x=>x.id===b.id);
-  assert.deepStrictEqual(b3.mat, { need:{ timber:4, stone:3 }, got:{ timber:4, stone:3 } });
-  assert.strictEqual(g3.reserved("timber"), 0);
-  quietSteps(g3, 200);
   const bad = JSON.parse(JSON.stringify(g.serialize()));
   bad.buildings.find(x=>x.id===b.id).mat = { need:{ timber:"x", stone:3 }, got:{ stone:99 } };
   bad.oxen[0].x = "loin";
@@ -2188,30 +2207,17 @@ test("étape 6 : démolir un atelier rend ce que l'artisan avait apporté", () =
   assert.strictEqual(g.stock.grain, 8);
 });
 
-test("étape 6 : sauvegarde v7 — ateliers et réserves gardés ; un meunier v6 en pleine mouture reprend normalement", () => {
+test("étape 6 : sauvegarde — ateliers et réserves gardés", () => {
   const g = fresh(); houses(g, 3);
   const m = workshop(g, "windmill"); m.inp = 2.5;
   g.stock.flour = 7; g.stock.cheese = 4; g.stock.smoked = 3; g.dearth = 2; g.merchantAt = 40;
   const data = JSON.parse(JSON.stringify(g.serialize()));
-  assert.strictEqual(data.v, 7);
+  assert.strictEqual(data.v, 8);
   const g2 = GameState.load(data);
   const m2 = g2.buildings.find(b=>b.id===m.id);
   assert.strictEqual(m2.inp, 2.5);
   assert.strictEqual(g2.stock.flour, 7); assert.strictEqual(g2.stock.cheese, 4); assert.strictEqual(g2.stock.smoked, 3);
   assert.strictEqual(g2.dearth, 2); assert.strictEqual(g2.merchantAt, 40);
-  // une sauvegarde v6 : pas de farine, un meunier qui « moulait », pas de b.inp
-  const old = JSON.parse(JSON.stringify(data));
-  old.v = 6; delete old.stock.flour; delete old.stock.cheese; delete old.stock.smoked;
-  for(const b of old.buildings) delete b.inp;
-  const mv = old.villagers.find(v=>v.work===m.id); mv.task = { type:"mill" }; mv.state = "work";
-  delete old.dearth; delete old.merchantAt; delete old.spoiled;
-  const g3 = GameState.load(old);
-  assert.strictEqual(g3.stock.flour, 0); assert.strictEqual(g3.stock.cheese, 0);
-  assert.strictEqual(g3.buildings.find(b=>b.id===m.id).inp, 0);
-  assert.strictEqual(g3.villagers.find(v=>v.id===mv.id).task, null);
-  g3.stock.grain = 6;
-  stepsUntil(g3, 30000, ()=>g3.stock.flour>=1);
-  assert.ok(g3.stock.flour>=1, "le moulin reprend avec la farine");
 });
 
 test("étape 6 : trois ans de chaînes de transformation — ni exception ni valeur aberrante", () => {
@@ -2250,7 +2256,8 @@ test("détail : le fermier avance de case en case, sur la case qu'il laboure", (
     g.step(); g.pendingEvent = null;
     if(v.state==="work" && v.task && v.task.type==="plow"){
       const ci = cells.indexOf(Math.floor(v.y)*W + Math.floor(v.x));
-      if(ci>=0){ seen.add(ci); const want = Math.min(n-1, Math.floor(fd.f.plow*n)); if(i%40===0) assert.ok(Math.abs(ci-want)<=2, "sur la case en cours : case "+ci+", labouré "+fd.f.plow.toFixed(2)); }
+      const arrived = Math.hypot(v.x - v.task.gx, v.y - v.task.gy) < 0.3;
+      if(ci>=0 && arrived){ seen.add(ci); const want = Math.min(n-1, Math.floor(fd.f.plow*n)); if(i%40===0) assert.ok(Math.abs(ci-want)<=2, "sur la case en cours : case "+ci+", labouré "+fd.f.plow.toFixed(2)); }
       if(last && (last.x!==v.x || last.y!==v.y)) moved++;
       last = { x:v.x, y:v.y };
     }
