@@ -227,8 +227,8 @@ test("sauvegarde ancienne : ext simple migré en exts", () => {
   assert.deepStrictEqual(g2.buildings[0].exts, ["garden"]);
 });
 
-test("phase 2 : 3 cultures et 3 tailles de champ", () => {
-  assert.deepStrictEqual(CROP_ORDER, ["wheat","barley","fallow"]);
+test("phase 2 / étape 5 : 8 cultures et 3 tailles de champ", () => {
+  assert.deepStrictEqual(CROP_ORDER, ["wheat","rye","barley","oats","flax","peas","hay","fallow"]);
   assert.ok(FIELD_SIZES.length===3);
   assert.strictEqual(CROP_DEFS.wheat.yield, "grain");
   assert.strictEqual(CROP_DEFS.barley.yield, "barley");
@@ -895,7 +895,7 @@ test("étape 3 : sauvegarde v3 des parcelles et de leur contour, démolition lib
   const gm = GameState.load(multi);
   assert.deepStrictEqual(gm.buildings.find(x=>x.id===b.id).exts, ["garden"]);
   assert.strictEqual(gm.stock.timber, multi.stock.timber + EXT_DEFS.orchard.cost.timber);
-  assert.strictEqual(data.v, 4);
+  assert.strictEqual(data.v, 5);
   const g2 = GameState.load(data);
   const b2 = g2.buildings.find(x=>x.id===b.id);
   assert.deepStrictEqual(b2.plot, b.plot);
@@ -1247,7 +1247,7 @@ test("étape 4 : sauvegarde v4 — villageois, liens et compétences conservés,
   g.assign(b.id);
   for(let i=0;i<300;i++) g.step();
   const data = JSON.parse(JSON.stringify(g.serialize()));
-  assert.strictEqual(data.v, 4);
+  assert.strictEqual(data.v, 5);
   const g2 = GameState.load(data);
   assert.strictEqual(g2.villagers.length, g.villagers.length);
   for(const v of g.villagers){
@@ -1290,6 +1290,444 @@ test("étape 4 : une ancienne sauvegarde (familles anonymes) est convertie sans 
   assert.strictEqual(w[0].x, 10.5);
   for(let i=0;i<400;i++) g2.step();
   assert.ok(g2.villagers.length>=3);
+});
+
+/* ================= étape 5 : agriculture et élevage approfondis ================= */
+const { CROP_CAL, LIVESTOCK, LIVESTOCK_ORDER, PASTURE_MIN, monthsTxt } = require("../js/sim.js");
+function feed(g){ g.stock.berries = 250; g.stock.meat = 250; g.stock.firewood = 250; g.stock.clothes = 50; }
+function toMonth(g, m){ g.time.month = m; g.time.day = 0; g.time.tick = 0; }
+function newField(g, crop, n){ g.setFieldSize(n||4); const b = placeInCenter(g, "field"); if(crop) g.setCrop(b.id, crop); return b; }
+function sownField(g, crop, growth){ const b = newField(g, crop); Object.assign(b.f, { sown:true, sownCrop:crop, growth:growth, sownAt:g.monthIdx()-6, cond:1, hits:[] }); return b; }
+function freeBlock(g, w, h){
+  for(let y=2;y<H-h-2;y++) for(let x=Math.ceil(W/3)+2;x<Math.floor(2*W/3)-w-2;x++){
+    let ok = true;
+    for(let yy=-1; yy<=h && ok; yy++) for(let xx=-1; xx<=w && ok; xx++){ const i=(y+yy)*W+x+xx; if(g.tiles[i]!==T_GRASS || g.occupied[i]>=0 || g.roads[i]) ok = false; }
+    if(ok) return { x, y };
+  }
+  throw new Error("pas de bloc libre "+w+"×"+h);
+}
+function newPasture(g, w, h){
+  g.stock.timber = Math.max(g.stock.timber, 60);
+  const r = freeBlock(g, w||5, h||4);
+  const err = g.tracePasture([[r.x,r.y],[r.x+(w||5),r.y],[r.x+(w||5),r.y+(h||4)],[r.x,r.y+(h||4)]]);
+  assert.strictEqual(err, null, "pâturage tracé");
+  const b = g.buildings[g.buildings.length-1]; b.done = true; b.progress = 1;
+  return b;
+}
+function stockHerd(g, b, sp, nf, nm){
+  g.treasury += 1000;
+  for(let k=0;k<nf;k++) assert.strictEqual(g.buyAnimal(b.id, sp, true), null);
+  for(let k=0;k<nm;k++) assert.strictEqual(g.buyAnimal(b.id, sp, false), null);
+  for(const a of b.herd.an) a.a = LIVESTOCK[sp].adultAt + 12;
+}
+function runMonths(g, n){ for(let i=0;i<n*160;i++){ if(i%160===0) feed(g); g.step(); if(g.pendingEvent) g.resolveEvent(g.pendingEvent.choices.length-1); } }
+
+test("étape 5 : 8 cultures, chacune avec sa saison et son calendrier", () => {
+  for(const c of CROP_ORDER){ const cd = CROP_DEFS[c]; assert.ok(CROP_CAL[cd.season], c+" a un calendrier"); assert.ok(typeof cd.of==="string"); }
+  assert.strictEqual(CROP_DEFS.wheat.season, "winter");
+  assert.strictEqual(CROP_DEFS.rye.season, "winter");
+  for(const c of ["barley","oats","flax","peas"]) assert.strictEqual(CROP_DEFS[c].season, "spring");
+  assert.strictEqual(CROP_DEFS.hay.season, "meadow");
+  assert.ok(CROP_DEFS.peas.fertCost<0, "les pois rechargent le sol");
+  assert.ok(CROP_DEFS.rye.hardy, "le seigle est rustique");
+  for(const c of ["wheat","rye","barley","oats"]) assert.ok(CROP_DEFS[c].sheaf, c+" : moissonné en gerbes");
+  assert.strictEqual(monthsTxt([8,9]), "sept.–oct.");
+});
+
+test("étape 5 : un nouveau champ propose la prochaine culture qu'on pourra semer", () => {
+  const g = fresh();
+  toMonth(g, 2); assert.strictEqual(newField(g).f.crop, "peas");
+  toMonth(g, 6); assert.strictEqual(newField(g).f.crop, "wheat");
+});
+
+test("étape 5 : le blé d'hiver se laboure à l'automne ; l'orge au printemps", () => {
+  const g = fresh();
+  const farm = doneBuilding(g, "farm"); g.assign(farm.id);
+  const v = g.workersOf(farm)[0];
+  const wheat = newField(g, "wheat");
+  toMonth(g, 2);
+  assert.strictEqual(g.farmJob(v), null, "pas de blé d'hiver en mars");
+  const barley = newField(g, "barley");
+  assert.deepStrictEqual(g.farmJob(v), { type:"plow", bid:barley.id });
+  g.setCrop(barley.id, "fallow");
+  toMonth(g, 8);
+  assert.deepStrictEqual(g.farmJob(v), { type:"plow", bid:wheat.id });
+  wheat.f.plow = 1;
+  assert.deepStrictEqual(g.farmJob(v), { type:"sow", bid:wheat.id });
+});
+
+test("étape 5 : cycle de l'orge — labour, semailles, pousse, moisson en gerbes, battage l'hiver", () => {
+  const g = fresh(); feed(g);
+  const farm = doneBuilding(g, "farm"); g.assign(farm.id); g.assign(farm.id);
+  const f = newField(g, "barley");
+  toMonth(g, 2);
+  runMonths(g, 3);
+  assert.ok(f.f.sown, "semé au printemps");
+  assert.strictEqual(f.f.sownCrop, "barley");
+  runMonths(g, 6);   // jusqu'en décembre
+  assert.ok(f.f.hist.length===1 && f.f.hist[0].crop==="barley" && f.f.hist[0].q>0, "moisson notée dans l'historique");
+  assert.ok(g.log.some(l=>/Moisson de l'orge : \d+ gerbes/.test(l.text)), "moisson en gerbes");
+  assert.ok(g.stock.barley>0, "le battage a commencé ("+g.stock.barley+")");
+  runMonths(g, 3);
+  assert.ok(g.stock.sh_barley < f.f.hist[0].q, "les gerbes sont battues l'hiver");
+  assert.ok(g.stock.barley >= f.f.hist[0].q*0.9, "autant d'orge que de gerbes ("+g.stock.barley+")");
+});
+
+test("étape 5 : rotation — même céréale deux ans de suite, après des pois, après une jachère", () => {
+  const g = fresh();
+  const b = newField(g, "wheat"), f = b.f, cd = CROP_DEFS.wheat;
+  const at = (prev)=>{ f.prev = prev; f.prevAt = g.monthIdx()-12; return g.rotationMul(f, cd)[0]; };
+  assert.strictEqual(at("wheat"), 0.8);
+  assert.strictEqual(at("barley"), 0.92);
+  assert.strictEqual(at("peas"), 1.15);
+  f.prev = "flax"; assert.strictEqual(g.rotationMul(f, CROP_DEFS.flax)[0], 0.7);
+  f.prev = null; f.rested = true; assert.strictEqual(g.rotationMul(f, cd)[0], 1.1);
+  f.rested = false; f.prev = "peas"; f.prevAt = g.monthIdx()-12;
+  const good = g.forecast(b).qty; f.prev = "wheat";
+  assert.ok(good > g.forecast(b).qty, "après des pois, la prévision est meilleure");
+});
+
+test("étape 5 : les pois rechargent le sol, le blé l'épuise ; récoltes livrées au bon endroit", () => {
+  const g = fresh();
+  const p = sownField(g, "peas", 1), w = sownField(g, "wheat", 1);
+  p.f.fert = 0.5; w.f.fert = 0.8;
+  const pq = g.harvestField(p), wq = g.harvestField(w);
+  assert.ok(Math.abs(p.f.fert - 0.6) < 1e-9, "pois : +0,10");
+  assert.ok(Math.abs(w.f.fert - 0.6) < 1e-9, "blé : −0,20");
+  assert.ok(pq>0 && g.stock.pulses>=pq, "pois et fèves en réserve");
+  assert.ok(wq>0 && g.stock.sh_grain>=wq && g.stock.grain===0, "le blé arrive en gerbes, pas encore en grain");
+  assert.ok(!p.f.sown && p.f.prev==="peas" && p.f.hist.length===1);
+  assert.ok(g.threshOne(), "battage possible");
+  assert.strictEqual(g.stock.grain, 1);
+});
+
+test("étape 5 : le fumier épandu monte la fertilité, puis vient le labour", () => {
+  const g = fresh();
+  const farm = doneBuilding(g, "farm"); g.assign(farm.id);
+  const v = g.workersOf(farm)[0];
+  const b = newField(g, "wheat"); b.f.fert = 0.4;
+  toMonth(g, 8); g.stock.manure = 20;
+  const job = g.farmJob(v);
+  assert.strictEqual(job.type, "spread");
+  const t = Object.assign({}, job);
+  for(let i=0; i<2000 && !b.f.dunged; i++) g.fieldWork(v, t);
+  assert.ok(b.f.dunged, "fumure faite");
+  assert.ok(b.f.fert > 0.5, "fertilité montée ("+b.f.fert.toFixed(2)+")");
+  assert.ok(g.stock.manure < 20, "fumier consommé");
+  assert.strictEqual(g.farmJob(v).type, "plow");
+});
+
+test("étape 5 : les bœufs accélèrent le labour", () => {
+  const g = fresh();
+  const farm = doneBuilding(g, "farm"); g.assign(farm.id);
+  const v = g.workersOf(farm)[0];
+  const b = newField(g, "wheat"); toMonth(g, 8);
+  assert.ok(g.workingOxen()>=1 && g.plowMul()>1, "le bœuf du départ tire la charrue");
+  g.fieldWork(v, { type:"plow", bid:b.id }); const withOx = b.f.plow;
+  b.f.plow = 0; g.oxen = []; g.syncOx();
+  g.fieldWork(v, { type:"plow", bid:b.id });
+  assert.ok(withOx > b.f.plow*1.4, "plus vite avec un bœuf");
+});
+
+test("étape 5 : le gel tardif abîme les jeunes pousses, le seigle résiste mieux", () => {
+  const g = fresh();
+  const w = sownField(g, "wheat", 0.3), r = sownField(g, "rye", 0.3);
+  withRnd(g, 0.01, ()=>g.farmMonth(2));
+  assert.ok(w.f.cond < r.f.cond && r.f.cond < 1, "blé "+w.f.cond+" / seigle "+r.f.cond);
+  assert.strictEqual(w.f.hits[0][0], "Gel tardif");
+  assert.ok(g.log.some(l=>/Gel tardif/.test(l.text)));
+});
+
+test("étape 5 : la grêle hache un champ et la prévision baisse ; le printemps sec ralentit la pousse", () => {
+  const g = fresh();
+  const b = sownField(g, "barley", 0.5);
+  const before = g.forecast(b).qty;
+  withRnd(g, 0.01, ()=>g.farmMonth(6));
+  assert.ok(g.forecast(b).qty < before*0.75, "grêle : "+before+" → "+g.forecast(b).qty);
+  withRnd(g, 0.2, ()=>g.farmMonth(3));
+  assert.strictEqual(g.wx, "drought");
+  toMonth(g, 4); b.f.growth = 0.2;
+  g.step(); const dry = b.f.growth - 0.2;
+  g.wx = null; g.weather = "clear"; b.f.growth = 0.2; g.step();
+  assert.ok(dry < (b.f.growth - 0.2)*0.5, "pousse ralentie par la sécheresse");
+});
+
+test("étape 5 : une récolte oubliée attend, puis pourrit sur pied", () => {
+  const g = fresh();
+  const b = sownField(g, "barley", 1);
+  toMonth(g, 10);
+  assert.ok(g.harvestable(b), "encore récoltable avec un mois de retard");
+  const q0 = g.forecast(b).qty;
+  withRnd(g, 0.99, ()=>g.farmMonth(10));
+  assert.ok(g.forecast(b).qty < q0, "le grain tombe");
+  withRnd(g, 0.99, ()=>g.farmMonth(11));
+  assert.ok(!b.f.sown, "perdue");
+  assert.ok(g.log.some(l=>/pourri sur pied/.test(l.text)));
+});
+
+test("étape 5 : le pré de fauche reprend au printemps et se fauche en juin", () => {
+  const g = fresh();
+  const farm = doneBuilding(g, "farm"); g.assign(farm.id);
+  const v = g.workersOf(farm)[0];
+  toMonth(g, 2);
+  const b = newField(g, "hay");
+  assert.ok(b.f.sown, "pré établi en mars, sans labour");
+  b.f.growth = 1; toMonth(g, 5); b.f.sownAt = g.monthIdx()-3;
+  assert.deepStrictEqual(g.farmJob(v), { type:"mow", bid:b.id });
+  const h0 = g.stock.hay;
+  g.harvestField(b);
+  assert.ok(g.stock.hay > h0+20, "foin rentré ("+g.stock.hay+")");
+});
+
+test("étape 5 : pâturage tracé librement — abri au bord, clôture payée, cases franchissables", () => {
+  const g = fresh();
+  g.stock.timber = 40;
+  const r = freeBlock(g, 5, 4);
+  const pts = [[r.x,r.y],[r.x+5,r.y],[r.x+5,r.y+4],[r.x,r.y+4]];
+  const plan = g.planPasture(pts);
+  assert.strictEqual(plan.err, null);
+  assert.strictEqual(plan.n, 20);
+  assert.strictEqual(plan.cost, 1 + Math.ceil(18/8));
+  assert.strictEqual(g.tracePasture(pts), null);
+  assert.strictEqual(g.stock.timber, 40 - plan.cost);
+  const b = g.buildings[g.buildings.length-1];
+  assert.strictEqual(b.def, "pasture");
+  assert.strictEqual(b.plot.cells[0], b.y*W+b.x, "l'abri est la première case");
+  assert.strictEqual(b.plot.cells.length, 20);
+  for(const i of b.plot.cells) assert.strictEqual(g.occupied[i], b.id);
+  assert.ok(!g.passable(b.x, b.y), "on ne traverse pas l'abri");
+  const c = b.plot.cells[5]; assert.ok(g.passable(c%W, (c/W)|0), "on traverse l'herbe");
+  assert.ok(g.canPlace("woodcutter", c%W, (c/W)|0), "on ne bâtit pas dans un pâturage");
+  assert.ok(/trop petit/.test(g.planPasture([[1+r.x,r.y+5],[r.x+2,r.y+5],[r.x+2,r.y+6]]).err || "trop petit"));
+  const r2 = freeBlock(g, 1, 2);
+  assert.ok(/trop petit/.test(g.planPasture([[r2.x,r2.y],[r2.x+1,r2.y],[r2.x+1,r2.y+2],[r2.x,r2.y+2]]).err));
+  assert.ok(/empiète/.test(g.planPasture(pts).err), "pas sur un autre pâturage");
+});
+
+test("étape 5 : acheter des bêtes — une espèce par pâturage, payée en deniers", () => {
+  const g = fresh();
+  const b = newPasture(g);
+  b.done = false;
+  assert.ok(/chantier/.test(g.buyAnimal(b.id, "sheep", true)));
+  b.done = true; g.treasury = 3;
+  assert.ok(/deniers/.test(g.buyAnimal(b.id, "sheep", true)));
+  g.treasury = 20;
+  assert.strictEqual(g.buyAnimal(b.id, "sheep", true), null);
+  assert.strictEqual(g.treasury, 16);
+  assert.strictEqual(b.herd.sp, "sheep");
+  assert.ok(/moutons/.test(g.buyAnimal(b.id, "cattle", true)), "pas de vaches avec les moutons");
+  assert.strictEqual(g.sellAnimal(b.id), null);
+  assert.strictEqual(b.herd.an.length, 0);
+});
+
+test("étape 5 : agnelage au printemps s'il y a un bélier ; aucun sans mâle", () => {
+  const g = fresh();
+  const a = newPasture(g), b = newPasture(g);
+  stockHerd(g, a, "sheep", 4, 1); stockHerd(g, b, "sheep", 4, 0);
+  withRnd(g, 0.05, ()=>g.herdMonth(2));
+  assert.strictEqual(a.herd.an.length, 9, "4 agneaux");
+  assert.strictEqual(b.herd.an.length, 4, "pas de bélier, pas d'agneaux");
+  assert.ok(g.log.some(l=>/Agnelage/.test(l.text)));
+});
+
+test("étape 5 : l'hiver, les bêtes mangent le foin ; sans foin, elles dépérissent", () => {
+  const g = fresh();
+  const b = newPasture(g, 6, 5);
+  stockHerd(g, b, "cattle", 3, 1);
+  g.stock.hay = 100; g.stock.oats = 0;
+  withRnd(g, 0.5, ()=>g.herdMonth(0));
+  assert.strictEqual(b.herd.fed, 1);
+  assert.strictEqual(g.stock.hay, 100 - 4 - g.oxen.length, "1 foin par vache et par bœuf");
+  g.stock.hay = 0;
+  withRnd(g, 0.1, ()=>g.herdMonth(0));
+  assert.strictEqual(b.herd.fed, 0);
+  assert.ok(b.herd.an.length < 4, "des vaches meurent de faim");
+  assert.ok(g.log.some(l=>/Faute de foin/.test(l.text)));
+  g.stock.oats = 10;
+  assert.strictEqual(g.takeFodder(3), 3, "l'avoine remplace le foin");
+  assert.strictEqual(g.stock.oats, 8);
+});
+
+test("étape 5 : l'herbe en trop est fauchée en juin ; trop de bêtes, l'herbe manque", () => {
+  const g = fresh();
+  const b = newPasture(g, 6, 5);
+  stockHerd(g, b, "sheep", 2, 0); g.assign(b.id);
+  const h0 = g.stock.hay;
+  withRnd(g, 0.5, ()=>g.herdMonth(5));
+  assert.ok(g.stock.hay > h0 && b.herd.last.hay > 0, "fenaison");
+  const c = newPasture(g, 2, 2);
+  stockHerd(g, c, "cattle", 8, 1);
+  withRnd(g, 0.5, ()=>g.herdMonth(6));
+  assert.ok(c.herd.fed < 0.5, "pâturage trop petit pour 9 vaches");
+  assert.ok(/herbe trop courte/.test(g.pastureStatus(c)));
+});
+
+test("étape 5 : la maladie se propage dans le troupeau ; abattre les malades l'arrête", () => {
+  const g = fresh();
+  const b = newPasture(g, 6, 5);
+  stockHerd(g, b, "sheep", 9, 1);
+  b.herd.an[0].s = 3;
+  withRnd(g, 0.01, ()=>g.herdMonth(6));
+  const sick = b.herd.an.filter(a=>a.s>0).length;
+  assert.ok(sick>=3, "contagion ("+sick+" malades)");
+  const n = b.herd.an.length, meat = g.stock.meat;
+  assert.strictEqual(g.cullSick(b.id), null);
+  assert.strictEqual(b.herd.an.filter(a=>a.s>0).length, 0);
+  assert.strictEqual(b.herd.an.length, n - sick);
+  assert.strictEqual(g.stock.meat, meat, "viande des bêtes malades perdue");
+});
+
+test("étape 5 : abattre donne de la viande ; abattage de novembre selon la consigne", () => {
+  const g = fresh();
+  const b = newPasture(g, 6, 5);
+  stockHerd(g, b, "pig", 6, 2);
+  const m0 = g.stock.meat;
+  assert.strictEqual(g.slaughter(b.id), null);
+  assert.strictEqual(g.stock.meat, m0 + LIVESTOCK.pig.meat);
+  assert.strictEqual(b.herd.an.filter(a=>!a.f).length, 1, "le verrat en trop part le premier");
+  g.setKeep(b.id, 4);
+  const m1 = g.stock.meat;
+  withRnd(g, 0.5, ()=>g.herdMonth(10));
+  assert.strictEqual(b.herd.an.length, 4);
+  assert.ok(b.herd.an.some(a=>!a.f), "on garde un verrat pour la reproduction");
+  assert.ok(g.stock.meat > m1 + 8);
+  assert.ok(g.log.some(l=>/Abattage de novembre/.test(l.text)));
+});
+
+test("étape 5 : tonte en mai, lait des vaches qui ont vêlé, le tailleur file la laine", () => {
+  const g = fresh();
+  const s = newPasture(g, 5, 4); stockHerd(g, s, "sheep", 3, 1); g.assign(s.id);
+  withRnd(g, 0.5, ()=>g.herdMonth(4));
+  assert.ok(g.stock.wool >= 3, "tonte : "+g.stock.wool);
+  const c = newPasture(g, 5, 4); stockHerd(g, c, "cattle", 2, 1); g.assign(c.id);
+  c.herd.an[0].lac = 5;
+  withRnd(g, 0.5, ()=>g.herdMonth(6));
+  assert.ok(g.stock.milk > 0, "lait");
+  assert.strictEqual(c.herd.an[0].lac, 4);
+  // le tailleur : un vêtement avec une mesure de fibre, la moitié sans
+  const h = legacyHouse(g); h.done = true; h.exts = ["tailor"];
+  g.stock.wool = 5; g.stock.clothes = 0;
+  g.onMonth();
+  assert.strictEqual(g.stock.wool, 4);
+  for(const f of g.families) f.clothCool = -10;   // personne ne s'habille ce mois-ci
+  g.stock.wool = 0; g.stock.flax = 0; const cl = g.stock.clothes;
+  g.onMonth();
+  assert.ok(Math.abs(g.stock.clothes - cl - 0.5) < 1e-9, "rapiéçage sans fibre : moitié moins");
+});
+
+test("étape 5 : glandée — le porcher mène les porcs en forêt, ils s'engraissent", () => {
+  const g = fresh();
+  const b = newPasture(g, 4, 4);
+  stockHerd(g, b, "pig", 3, 1); g.assign(b.id);
+  if(g.forestNear(b, 9)<0){ const i = (b.y+5)*W+b.x; g.tiles[i] = T_FOREST; g.treeWood[i] = 8; }
+  withRnd(g, 0.5, ()=>g.herdMonth(8));
+  assert.ok(b.herd.out>=0, "en forêt");
+  assert.ok(/glandée/.test(g.pastureStatus(b)));
+  assert.ok(b.herd.an.every(a=>a.fat>0.3));
+  const m0 = g.stock.meat;
+  g.slaughter(b.id);
+  assert.ok(g.stock.meat > m0 + LIVESTOCK.pig.meat, "un porc gras donne plus de viande");
+});
+
+test("étape 5 : un jeune taureau de trop est dressé en bœuf de trait", () => {
+  const g = fresh();
+  const b = newPasture(g, 6, 5);
+  stockHerd(g, b, "cattle", 2, 1);
+  b.herd.an.push(g.makeAnimal("cattle", false, LIVESTOCK.cattle.adultAt-1));
+  const ox0 = g.oxen.length;
+  withRnd(g, 0.9, ()=>g.herdMonth(6));
+  assert.strictEqual(g.oxen.length, ox0+1);
+  assert.strictEqual(g.stock.ox, ox0+1);
+  assert.strictEqual(b.herd.an.length, 3);
+});
+
+test("étape 5 : les bœufs mangent du foin l'hiver et s'affaiblissent sans", () => {
+  const g = fresh();
+  g.stock.hay = 0; g.stock.oats = 0;
+  withRnd(g, 0.5, ()=>g.herdMonth(0));
+  assert.strictEqual(g.oxen[0].h, 70);
+  withRnd(g, 0.5, ()=>g.herdMonth(1));
+  assert.strictEqual(g.workingOxen(), 0, "trop faible pour labourer");
+  assert.strictEqual(g.plowMul(), 1);
+  g.treasury = 25; assert.ok(g.buyOx()); assert.strictEqual(g.oxen.length, 2);
+  assert.ok(g.retireOx()); assert.strictEqual(g.stock.ox, 1);
+});
+
+test("étape 5 : le marchand de bestiaux propose un troc contre du bois", () => {
+  const g = fresh();
+  const b = newPasture(g);
+  g.stock.timber = 50;
+  withRnd(g, 0.1, ()=>g.livestockFair());
+  const ev = g.pendingEvent;
+  assert.ok(ev && ev.fair, "le marchand passe");
+  g.resolveEvent(0);
+  assert.strictEqual(g.stock.timber, 50 - ev.fair.wood);
+  assert.strictEqual(b.herd.an.length, ev.fair.lot.length);
+  assert.strictEqual(b.herd.sp, ev.fair.sp);
+});
+
+test("étape 5 : démolir un pâturage vend les bêtes et libère les cases", () => {
+  const g = fresh();
+  const b = newPasture(g);
+  stockHerd(g, b, "sheep", 3, 1);
+  const t0 = g.treasury, cells = b.plot.cells.slice();
+  g.demolish(b.id);
+  assert.strictEqual(g.treasury, t0 + 4*LIVESTOCK.sheep.sell);
+  for(const i of cells){ assert.strictEqual(g.occupied[i], -1); assert.strictEqual(g.pastureCell[i], 0); }
+});
+
+test("étape 5 : sauvegarde v5 — champs, troupeaux, bœufs et gerbes conservés", () => {
+  const g = fresh();
+  const f = sownField(g, "rye", 0.4); f.f.hits = [["Grêle", -30]]; f.f.hist = [{ y:1176, crop:"peas", q:20 }]; f.f.prev = "peas";
+  const p = newPasture(g); stockHerd(g, p, "pig", 2, 1); g.setKeep(p.id, 2); p.herd.an[0].s = 2; p.herd.an[1].fat = 0.6;
+  g.stock.sh_grain = 12; g.stock.hay = 33; g.stock.manure = 7;
+  const g2 = GameState.load(JSON.parse(JSON.stringify(g.serialize())));
+  const f2 = g2.buildings.find(b=>b.id===f.id), p2 = g2.buildings.find(b=>b.id===p.id);
+  assert.deepStrictEqual(f2.f, f.f);
+  assert.deepStrictEqual(p2.herd.an, p.herd.an);
+  assert.strictEqual(p2.herd.keep, 2);
+  assert.deepStrictEqual(p2.plot, p.plot);
+  assert.strictEqual(g2.oxen.length, g.oxen.length);
+  assert.strictEqual(g2.stock.sh_grain, 12); assert.strictEqual(g2.stock.hay, 33);
+  assert.strictEqual(g2.pastureCell[p.plot.cells[3]], 1);
+  assert.ok(g2.nextA > Math.max(...p.herd.an.map(a=>a.id)));
+  for(let i=0;i<200;i++) g2.step();
+});
+
+test("étape 5 : une sauvegarde v4 est convertie (jachère semée, bœufs comptés, champs complétés)", () => {
+  const g = fresh();
+  const a = newField(g, "fallow"), w = newField(g, "wheat");
+  const data = JSON.parse(JSON.stringify(g.serialize()));
+  data.v = 4; delete data.oxen; delete data.nextA; delete data.wx;
+  data.stock.ox = 2;
+  for(const k of ["oats","flax","pulses","milk","wool","hay","manure","sh_grain","sh_barley","sh_oats"]) delete data.stock[k];
+  const fa = data.buildings.find(b=>b.id===a.id).f, fw = data.buildings.find(b=>b.id===w.id).f;
+  for(const f of [fa, fw]) for(const k of Object.keys(f)) if(["fert","plow","sown","growth","harvestP","crop","usedThisYear","usedLastYear"].indexOf(k)<0) delete f[k];
+  Object.assign(fa, { sown:true, plow:1, usedThisYear:true });
+  Object.assign(fw, { sown:true, plow:1, growth:0.4 });
+  const g2 = GameState.load(data);
+  const a2 = g2.buildings.find(b=>b.id===a.id).f, w2 = g2.buildings.find(b=>b.id===w.id).f;
+  assert.strictEqual(a2.sown, false, "la jachère n'est plus semée");
+  assert.strictEqual(w2.sown, true); assert.strictEqual(w2.sownCrop, "wheat"); assert.strictEqual(w2.cond, 1);
+  assert.deepStrictEqual(w2.hist, []);
+  assert.strictEqual(g2.oxen.length, 2); assert.strictEqual(g2.stock.ox, 2);
+  assert.strictEqual(g2.stock.hay, 6 + 3*2, "une meule offerte pour l'hiver des bœufs");
+  for(let i=0;i<400;i++) g2.step();
+});
+
+test("étape 5 : trois ans de ferme et d'élevage — ni exception ni valeur aberrante", () => {
+  for(const seed of [3, 41, 1176]){
+    const g = new GameState(seed, "prosperity", "normal");
+    g.stock.timber = 80; g.treasury = 200;
+    const farm = doneBuilding(g, "farm"); g.assign(farm.id); g.assign(farm.id);
+    for(const c of ["wheat","barley","peas","hay","fallow"]) newField(g, c, 3);
+    const p = newPasture(g, 5, 4); stockHerd(g, p, LIVESTOCK_ORDER[seed%3], 3, 1); g.assign(p.id);
+    runMonths(g, 36);
+    for(const k of Object.keys(g.stock)) assert.ok(isFinite(g.stock[k]) && g.stock[k]>=0, k+" = "+g.stock[k]);
+    for(const b of g.fields()) for(const k of ["fert","growth","plow","cond"]) assert.ok(isFinite(b.f[k]), k);
+    for(const a of p.herd.an) assert.ok(isFinite(a.a) && a.a>=0);
+    assert.ok(g.fields().some(b=>b.f.hist.length>0), "des récoltes ont eu lieu (graine "+seed+")");
+  }
 });
 
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));

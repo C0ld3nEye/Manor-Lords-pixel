@@ -48,8 +48,8 @@ const BUILD_DEFS                              = {
   forager:   { id:"forager",   name:"Cabane de cueilleuses", icon:"🍒", w:1,h:1, cost:{timber:2}, fam:2, skill:"gather", radius:6, instant:false, desc:"Cueille des baies (mars → novembre)." },
   hunter:    { id:"hunter",    name:"Camp de chasse",  icon:"🏹", w:1,h:1, cost:{timber:2}, fam:2, skill:"hunt", radius:10, instant:false, desc:"Chasse le gibier des forêts : viande, toute l'année." },
   quarry:    { id:"quarry",    name:"Carrière",        icon:"🪨", w:1,h:1, cost:{timber:2}, fam:1, skill:"stone", onStone:true, instant:false, desc:"À poser SUR un gisement de pierre. S'épuise avec le temps." },
-  farm:      { id:"farm",      name:"Ferme",           icon:"🚜", w:2,h:2, cost:{timber:3}, fam:2, skill:"farm", instant:false, desc:"Travaille les champs : labour/semailles au printemps, moisson en septembre." },
-  field:     { id:"field",     name:"Champ",           icon:"🌾", w:4,h:4, uiSize:true, cost:{}, fam:0, instant:true,  desc:"Gratuit. Rendement selon la fertilité du sol (visible en mode pose). Jachère conseillée." },
+  farm:      { id:"farm",      name:"Ferme",           icon:"🚜", w:2,h:2, cost:{timber:3}, fam:2, skill:"farm", instant:false, desc:"Ses fermiers travaillent les champs au fil des saisons (fumure, labour, semailles, moisson, fauche) et battent les gerbes l'hiver." },
+  field:     { id:"field",     name:"Champ",           icon:"🌾", w:4,h:4, uiSize:true, cost:{}, fam:0, instant:true,  desc:"Gratuit. Rendement selon la fertilité du sol (visible en mode pose), la météo et la rotation des cultures." },
   windmill:  { id:"windmill",  name:"Moulin",          icon:"💨", w:2,h:2, cost:{timber:2,stone:2}, fam:1, skill:"craft", instant:false, desc:"Transforme le grain en pain (meilleur variété alimentaire)." },
   granary:   { id:"granary",   name:"Grange",          icon:"🏚️", w:1,h:1, cost:{timber:2}, fam:0, instant:false, desc:"Réduit fortement le pourrissement des denrées." },
   storehouse:{ id:"storehouse",name:"Entrepôt",        icon:"📦", w:1,h:1, cost:{timber:2}, fam:0, instant:false, desc:"+150 de capacité de stockage pour chaque ressource." },
@@ -59,17 +59,19 @@ const BUILD_DEFS                              = {
   tower:     { id:"tower",     name:"Tour de guet",   icon:"\ud83d\udde1\ufe0f", w:1,h:1, cost:{timber:2,stone:3}, fam:0, instant:false, desc:"+4 approbation, repousse les raids (réduit le pillage de moitié)." },
   wall:      { id:"wall",      name:"Rempart",        icon:"⬛", w:1,h:1, cost:{stone:2}, fam:0, instant:false, wall:true, desc:"Mur défensif : les brigands ne passent pas dessus (case infranchissable)." },
   manor:     { id:"manor",     name:"Manoir",          icon:"🏰", w:2,h:2, cost:{timber:4,stone:3}, fam:0, instant:false, desc:"Permet de lever l'impôt (curseur dans le panneau du manoir)." },
+  // étape 5 : enclos tracé librement (coût selon la longueur de clôture), un abri et un gardien
+  pasture:   { id:"pasture",   name:"Pâturage",        icon:"🐑", w:1,h:1, cost:{timber:1}, fam:1, skill:"herd", instant:false, buildRate:3, zone:true, desc:"Enclos tracé librement : l'herbe nourrit un troupeau (moutons, vaches ou porcs) du printemps à l'automne ; l'hiver, il faut du foin. Un gardien soigne les bêtes, trait, tond." },
 };
 const BUILD_ORDER = ["woodcutter","forager","hunter","quarry","farm","field","windmill","granary","storehouse","market","trade","church","tower","wall","manor"];
 
-const FOOD_TYPES = ["berries","meat","bread","eggs","veg","apples","honey"];
+const FOOD_TYPES = ["berries","meat","bread","eggs","veg","apples","honey","pulses","milk"];
 
 const EXT_DEFS = {
   garden:  { id:"garden",  name:"Potager",            cost:{timber:1},           lvl:1, desc:"+0,5 légume par mois." },
   chicken: { id:"chicken", name:"Basse-cour",         cost:{timber:1},           lvl:1, desc:"+0,5 œuf par mois." },
   orchard: { id:"orchard", name:"Verger",             cost:{timber:2},           lvl:1, desc:"+1 pomme par mois (août → octobre). Nourrit aussi la famille." },
   beehive: { id:"beehive", name:"Rucher",             cost:{timber:2},           lvl:1, desc:"+0,5 miel par mois (avril → septembre)." },
-  tailor:  { id:"tailor",  name:"Atelier du tailleur",cost:{timber:2},           lvl:2, desc:"Produit 1 vêtement par mois. Requiert le niveau 2." },
+  tailor:  { id:"tailor",  name:"Atelier du tailleur",cost:{timber:2},           lvl:2, desc:"1 vêtement par mois avec de la laine ou du lin, moitié moins sans fibre. Requiert le niveau 2." },
   brewer:  { id:"brewer",  name:"Brasserie",          cost:{timber:2,stone:1},   lvl:2, desc:"Produit 1 chope d'ale par mois. Requiert le niveau 2." },
 };
 const EXT_ORDER = ["garden","chicken","orchard","beehive","tailor","brewer"];
@@ -132,13 +134,70 @@ function cleanPoly(p){
   return out;
 }
 
+/* ---------- \u00e9tape 5 : cultures et calendrier agricole ----------
+   season : "winter" (sem\u00e9e \u00e0 l'automne, moissonn\u00e9e l'\u00e9t\u00e9 suivant), "spring" (sem\u00e9e au printemps),
+            "meadow" (pr\u00e9 : pas de labour, on fauche), "rest" (jach\u00e8re).
+   yield  : ressource produite ; sheaf : les c\u00e9r\u00e9ales sont moissonn\u00e9es en gerbes, battues ensuite \u00e0 la ferme.
+   mul    : rendement relatif ; fertCost : ce que la culture prend au sol (n\u00e9gatif : elle le recharge). */
 const CROP_DEFS = {
-  wheat:  { id:"wheat",  name:"Bl\u00e9",     icon:"\ud83c\udf3e", yield:"grain",  fertCost:0.20, desc:"Bl\u00e9 -> grain -> pain (moulin). \u00c9puise le sol." },
-  barley: { id:"barley", name:"Orge",     icon:"\ud83c\udf33", yield:"barley", fertCost:0.10, desc:"Orge -> brasserie -> ale. Moins \u00e9puisant." },
-  fallow: { id:"fallow", name:"Jach\u00e8re", icon:"\ud83d\udfe4", yield:null,   fertCost:-0.12, desc:"Repos du sol : fertilit\u00e9 restaur\u00e9e." },
+  wheat:  { id:"wheat", of:"du blé d'hiver",  name:"Bl\u00e9 d'hiver",   short:"Bl\u00e9",    icon:"\ud83c\udf3e", yield:"grain",  sheaf:"sh_grain",  season:"winter", fertCost:0.20, mul:1.0, cereal:true,
+            desc:"Sem\u00e9 \u00e0 l'automne, moissonn\u00e9 l'\u00e9t\u00e9 suivant. Grain \u2192 moulin \u2192 pain. \u00c9puise le sol." },
+  rye:    { id:"rye", of:"du seigle",    name:"Seigle",        short:"Seigle", icon:"\ud83c\udf3e", yield:"grain",  sheaf:"sh_grain",  season:"winter", fertCost:0.12, mul:0.85, cereal:true, hardy:true,
+            desc:"C\u00e9r\u00e9ale d'hiver rustique : r\u00e9siste au gel et aux sols pauvres, rend un peu moins que le bl\u00e9." },
+  barley: { id:"barley", of:"de l'orge", name:"Orge",          short:"Orge",   icon:"\ud83c\udf3e", yield:"barley", sheaf:"sh_barley", season:"spring", fertCost:0.10, mul:1.0, cereal:true,
+            desc:"Sem\u00e9e au printemps. Orge \u2192 brasserie \u2192 ale." },
+  oats:   { id:"oats", of:"de l'avoine",   name:"Avoine",        short:"Avoine", icon:"\ud83c\udf31", yield:"oats",   sheaf:"sh_oats",   season:"spring", fertCost:0.08, mul:1.0, cereal:true,
+            desc:"Sem\u00e9e au printemps. Fourrage riche pour l'hiver des b\u00eates (1 avoine vaut 1,5 foin)." },
+  flax:   { id:"flax", of:"du lin",   name:"Lin",           short:"Lin",    icon:"\ud83e\udebb", yield:"flax",   season:"spring", fertCost:0.15, mul:0.5,
+            desc:"Sem\u00e9 au printemps, arrach\u00e9 l'\u00e9t\u00e9. Fibre pour le tailleur. Ne le remettez pas deux ans de suite." },
+  peas:   { id:"peas", of:"des pois et fèves",   name:"Pois et f\u00e8ves", short:"Pois",   icon:"\ud83e\udedb", yield:"pulses", season:"spring", fertCost:-0.10, mul:0.8,
+            desc:"Sem\u00e9s au printemps. Une nourriture qui se garde, et ils rechargent le sol." },
+  hay:    { id:"hay", of:"du pré",    name:"Pr\u00e9 de fauche", short:"Pr\u00e9",    icon:"\ud83c\udf3f", yield:"hay",    season:"meadow", fertCost:0, mul:1.2,
+            desc:"Pas de labour : l'herbe repousse seule chaque printemps, on la fauche en juin-juillet. Foin pour l'hiver des b\u00eates." },
+  fallow: { id:"fallow", of:"de la jachère", name:"Jach\u00e8re",       short:"Jach\u00e8re", icon:"\ud83d\udfe4", yield:null,    season:"rest",   fertCost:-0.12, mul:0,
+            desc:"Repos du sol : la fertilit\u00e9 remonte, davantage si un troupeau p\u00e2ture \u00e0 c\u00f4t\u00e9 (fumier)." },
 };
-const CROP_ORDER = ["wheat","barley","fallow"];
+const CROP_ORDER = ["wheat","rye","barley","oats","flax","peas","hay","fallow"];
+// mois (0 = janvier) o\u00f9 l'on laboure, s\u00e8me, o\u00f9 la culture pousse (et \u00e0 quelle vitesse), o\u00f9 on la r\u00e9colte
+const CROP_CAL = {
+  winter: { plow:[7,8,9],    sow:[8,9], grow:{ 8:0.5, 9:0.5, 10:0.5, 2:1, 3:1, 4:1, 5:1 }, harvest:[6,7,8] },
+  spring: { plow:[9,10,2,3], sow:[2,3], grow:{ 3:1, 4:1, 5:1, 6:1, 7:0.6 },               harvest:[7,8,9] },
+  meadow: { plow:[],         sow:[],    grow:{ 3:1.3, 4:1.3, 5:1.3 },                     harvest:[5,6] },
+  rest:   { plow:[],         sow:[],    grow:{},                                          harvest:[] },
+};
+const GROW_RATE = 0.0016;   // pousse par tick \u00e0 pleine vitesse : environ 4 mois pour m\u00fbrir
+const SHEAF_RES = { sh_grain:"grain", sh_barley:"barley", sh_oats:"oats" };   // gerbes \u2192 grain battu
 const FIELD_SIZES = [3,4,6];
+const MONTHS_ABBR = ["janv.","f\u00e9vr.","mars","avril","mai","juin","juil.","ao\u00fbt","sept.","oct.","nov.","d\u00e9c."];
+// \u00ab sept.\u2013oct. \u00bb pour une suite de mois
+function monthsTxt(list){
+  if(!list || !list.length) return "\u2014";
+  return list.length===1 ? MONTHS_ABBR[list[0]] : MONTHS_ABBR[list[0]]+"\u2013"+MONTHS_ABBR[list[list.length-1]];
+}
+
+/* ---------- \u00e9tape 5 : \u00e9levage ----------
+   area : cases d'herbe par b\u00eate adulte (un petit compte pour moiti\u00e9) ; fodder : foin par b\u00eate et par mois d'hiver ;
+   adultAt / life : en mois ; litter : port\u00e9es possibles ; birthP : chance qu'une femelle mette bas dans l'ann\u00e9e ;
+   mort : mortalit\u00e9 mensuelle d'une b\u00eate malade ; manure : fumier par b\u00eate et par mois pass\u00e9 \u00e0 l'abri. */
+const LIVESTOCK = {
+  sheep:  { id:"sheep",  name:"Moutons", one:"mouton", ones:"moutons", icon:"\ud83d\udc11", f:"Brebis", fs:"brebis", m:"B\u00e9lier", ms:"b\u00e9liers",
+            young:"Agneau", youngs:"agneaux", area:0.5, fodder:0.25, adultAt:12, life:120, buy:4, sell:2, meat:1.5, litter:[1,1,2], birthP:0.85,
+            mort:0.12, manure:0.25, disease:"la gale", birth:"Agnelage", job:["Berger","Berg\u00e8re"], shelter:"Bergerie",
+            desc:"Laine \u00e0 la tonte de mai, un peu de viande. Peu exigeants en foin." },
+  cattle: { id:"cattle", name:"Vaches", one:"vache", ones:"vaches", icon:"\ud83d\udc04", f:"Vache", fs:"vaches", m:"Taureau", ms:"taureaux",
+            young:"Veau", youngs:"veaux", area:1.0, fodder:1.0, adultAt:24, life:180, buy:12, sell:6, meat:4, litter:[1], birthP:0.7,
+            mort:0.08, manure:1.0, disease:"la fi\u00e8vre aphteuse", birth:"V\u00ealage", job:["Vacher","Vach\u00e8re"], shelter:"\u00c9table",
+            desc:"Lait toute l'ann\u00e9e apr\u00e8s un v\u00ealage, beaucoup de fumier ; les jeunes taureaux deviennent des b\u0153ufs. Gros mangeurs de foin." },
+  pig:    { id:"pig",    name:"Porcs", one:"porc", ones:"porcs", icon:"\ud83d\udc16", f:"Truie", fs:"truies", m:"Verrat", ms:"verrats",
+            young:"Porcelet", youngs:"porcelets", area:0.5, fodder:0.4, adultAt:10, life:96, buy:4, sell:2, meat:3, litter:[2,3,4], birthP:0.5,
+            mort:0.15, manure:0.4, disease:"le rouget", birth:"Mise bas", job:["Porcher","Porch\u00e8re"], shelter:"Soue",
+            desc:"Prolifiques ; l'automne, le porcher les m\u00e8ne en for\u00eat manger les glands (gland\u00e9e) : ils s'engraissent pour l'abattage de novembre." },
+};
+const LIVESTOCK_ORDER = ["sheep","cattle","pig"];
+const GRASS = [0, 0, 0.7, 1.1, 1.2, 1.1, 1.0, 0.9, 0.9, 0.8, 0.6, 0];   // herbe des p\u00e2turages selon le mois
+const WINTER_MONTHS = [11, 0, 1];                                          // les b\u00eates mangent du foin
+function isWinterMonth(m){ return m===11 || m===0 || m===1; }
+const PASTURE_MIN = 4, PASTURE_MAX = 90;
 
 const REGION_DEFS = [
   { id:0, name:"Vallée du Cœur",   bonus:null,          desc:"Votre terre natale (au centre). Déjà à vous." },
@@ -180,7 +239,8 @@ const SETTLEMENT_LEVELS = [
   { name:"Bourg", minPop:20 },
   { name:"Ville", minPop:40 },
 ];
-const RES_ICONS                        = { timber:"🪵", firewood:"🔥", stone:"🪨", grain:"🌾", bread:"🍞", berries:"🍒", meat:"🍗", eggs:"🥚", veg:"🥕", apples:"🍎", honey:"🍯", clothes:"👕", ale:"🍺", barley:"🌾", ox:"🐂" };
+const RES_ICONS                        = { timber:"🪵", firewood:"🔥", stone:"🪨", grain:"🌾", bread:"🍞", berries:"🍒", meat:"🍗", eggs:"🥚", veg:"🥕", apples:"🍎", honey:"🍯", clothes:"👕", ale:"🍺", barley:"🌾", ox:"🐂",
+  oats:"🌱", flax:"🪻", pulses:"🫛", milk:"🥛", wool:"🧶", hay:"🌿", manure:"🟫", sh_grain:"🎋", sh_barley:"🎋", sh_oats:"🎋" };
 
 /* ---------- étape 4 : villageois individuels ---------- */
 const SURNAMES = ["Lefèvre","Charpentier","Dubois","Meunier","Fournier","Mercier","Bouvier","Berger","Tisserand","Lebrun",
@@ -204,8 +264,9 @@ const SKILL_DEFS = {
   craft:  { id:"craft",  name:"Artisanat" },
   trade:  { id:"trade",  name:"Commerce" },
   build:  { id:"build",  name:"Construction" },
+  herd:   { id:"herd",   name:"Élevage" },
 };
-const SKILL_ORDER = ["farm","wood","gather","hunt","stone","craft","trade","build"];
+const SKILL_ORDER = ["farm","wood","gather","hunt","stone","craft","trade","build","herd"];
 const SKILL_LEVELS = ["Novice","Initié","Compagnon","Confirmé","Maître"]; // tranches de 20 points
 function skillLevel(s){ return SKILL_LEVELS[Math.max(0, Math.min(4, Math.floor((Number(s)||0)/20)))]; }
 // métier exercé dans chaque bâtiment (masculin, féminin)
@@ -240,6 +301,7 @@ const JOB_TITLES = {
                                                                                                                                
 
 const WORK_TIME                        = { chop:14, gather:14, hunt:12, mine:20 };
+const FIELD_TASKS = { plow:1, spread:1, sow:1, harvest:1, mow:1 };   // étape 5 : travaux des champs
 
 class GameState {
   seed       ; rnd           ;
@@ -277,7 +339,7 @@ class GameState {
     this.baron = { name:"Baron von Graufeld", regions:[], power:0, nextClaim:6, nextRaid:10 };
     this.influence = 0;
     this.policies = { tithe:false, freeMarket:false, militiaService:false };
-    this.prices = { bread:2, clothes:3, ale:2, apples:1, honey:4, meat:1, berries:1 };
+    this.prices = { bread:2, clothes:3, ale:2, apples:1, honey:4, meat:1, berries:1, wool:2 };
     this.occupied = new Int32Array(W*H).fill(-1);
     this.buildings = []; this.nextB = 1;
     this.families = []; this.nextF = 1;      // foyers (une maison, une marmite)
@@ -286,7 +348,11 @@ class GameState {
     this.deer = []; this.nextD = 1; this.deerTimer = 0;
     this.camps = []; this.nextC = 1;
     this.units = []; this.nextU = 1;
-    this.stock = { timber:15, firewood:12, stone:0, grain:0, bread:6, berries:40, meat:25, eggs:0, veg:0, apples:0, honey:0, clothes:2, ale:0, barley:0, ox:0 };
+    this.stock = { timber:15, firewood:12, stone:0, grain:0, bread:6, berries:40, meat:25, eggs:0, veg:0, apples:0, honey:0, clothes:2, ale:0, barley:0, ox:0,
+                   oats:0, flax:0, pulses:0, milk:0, wool:0, hay:6, manure:0, sh_grain:0, sh_barley:0, sh_oats:0 };   // une petite meule de foin pour le bœuf
+    this.oxen = []; this.nextA = 1;           // étape 5 : bœufs de trait ; identifiants des bêtes
+    this.wx = null;                            // étape 5 : aléa agricole du mois (drought | wet | null)
+    this.pastureCell = new Uint8Array(W*H);   // étape 5 : cases de pâturage (franchissables)
     this.capBase = 300; this.capPer = 150;
     this.time = { tick:0, day:0, month:2, year:1176 }; // mars 1176
     this.approval = 62; this.treasury = 0; this.taxRate = 0.15;
@@ -404,7 +470,8 @@ class GameState {
     const camp = this.makeBuilding("camp", spot.x, spot.y); camp.done = true; camp.progress = 1;
     if(free(spot.x+2, spot.y)){ const post = this.makeBuilding("oxpost", spot.x+2, spot.y); post.done = true; post.progress = 1; }
     for(let k=-3; k<=5; k++) if(free(spot.x+k, spot.y+1)) this.roads[(spot.y+1)*W+spot.x+k] = 1;
-    this.stock.ox = Math.max(this.stock.ox||0, 1);
+    this.oxen = [this.makeOx(60)];   // un bœuf de cinq ans au poteau
+    this.syncOx();
     // trois familles de survivants : un couple avec un adolescent et un enfant, un jeune couple avec un petit,
     // un ancien avec un jeune adulte encore célibataire et un adolescent
     const kinds = ["family", "young", "elder"];
@@ -441,7 +508,7 @@ class GameState {
     const b          = { id:this.nextB++, def, x, y, w:d.w, h:d.h, done:false, progress:0, want:0, lvl:1, exts:[], monthsGood:0, f:null };
     if(def==="field"){
       let s=0; for(let yy=0;yy<d.h;yy++) for(let xx=0;xx<d.w;xx++) s += this.soil[(y+yy)*W+(x+xx)];
-      b.f = { fert: Math.min(1, s/(d.w*d.h)), plow:0, sown:false, growth:0, harvestP:0, crop:"wheat", usedThisYear:false, usedLastYear:false };
+      b.f = this.normField({ fert: Math.min(1, s/(d.w*d.h)), crop:this.defaultCrop() });
     }
     this.buildings.push(b);
     for(let yy=0;yy<d.h;yy++) for(let xx=0;xx<d.w;xx++) this.occupied[(y+yy)*W+(x+xx)] = b.id;
@@ -489,7 +556,8 @@ class GameState {
   bestSkill(v){ let k="build", m=-1; for(const s of SKILL_ORDER){ const x=v.skills[s]||0; if(x>m){ m=x; k=s; } } return k; }
   jobTitle(v){
     const b = v.work>0 ? this.buildings.find(x=>x.id===v.work) : null;
-    const t = b && JOB_TITLES[b.def];
+    // étape 5 : le gardien d'un pâturage prend le nom de ses bêtes (berger, vacher, porcher)
+    const t = b && (b.def==="pasture" ? (LIVESTOCK[b.herd && b.herd.sp] || { job:["Gardien","Gardienne"] }).job : JOB_TITLES[b.def]);
     return t ? t[v.sex==="f" ? 1 : 0] : null;
   }
   // vitesse de travail : 0,75 pour un novice, 1,25 pour un maître ; moins pour un ancien, un apprenti, un malade
@@ -662,6 +730,19 @@ class GameState {
     for(const v of this.villagers) if(v.work===b.id){ v.work=-1; v.appr=false; this.resetWorker(v); }
     for(const f of this.families) if(f.home===b.id) f.home = -1;
     this.buildings.splice(idx,1);
+    // un pâturage démoli : la clôture est remboursée à moitié, les bêtes sont vendues
+    if(b.def==="pasture"){
+      if(b.plot) this.stock.timber += Math.floor(this.pastureCost(b.plot.cells)/2);
+      const h = b.herd, ld = h && LIVESTOCK[h.sp];
+      if(ld && h.an.length){
+        const earn = h.an.reduce((s, a)=>s + (a.a>=ld.adultAt ? ld.sell : ld.sell/2), 0);
+        this.treasury += Math.round(earn);
+        this.toast("Pâturage démoli : "+h.an.length+" "+(h.an.length>1 ? ld.ones : ld.one)+" vendu"+(h.an.length>1?"s":"")+" (+"+Math.round(earn)+" 💰).");
+      } else this.toast("Pâturage démoli (moitié de la clôture remboursée)");
+      this.markPastures();
+      this.uiVersion++;
+      return;
+    }
     this.toast(d.name+" démoli (moitié du coût remboursée)");
   }
 
@@ -944,19 +1025,652 @@ class GameState {
 
   setTax(v       ){ this.taxRate = Math.max(0, Math.min(1, v)); this.uiVersion++; }
 
+  /* ================= étape 5 : bœufs de trait ================= */
+  makeOx(age){ return { id:this.nextA++, a:age, h:100 }; }
+  syncOx(){ this.stock.ox = this.oxen.length; }
   buyOx(){
-    if(this.treasury < 20){ this.toast("Il faut 20 deniers pour acheter un boeuf.","bad"); return false; }
-    this.treasury -= 20; this.stock.ox += 1;
-    this.toast("Un boeuf rejoint l'écurie ! Labour et transport accélérés.","good");
+    if(this.treasury < 20){ this.toast("Il faut 20 deniers pour acheter un bœuf.","bad"); return false; }
+    this.treasury -= 20; this.oxen.push(this.makeOx(36)); this.syncOx();
+    this.toast("Un bœuf de trois ans rejoint l'attelage ! Les labours iront plus vite.","good");
     this.uiVersion++;
     return true;
   }
+  // réforme le plus vieux bœuf : il finit chez le boucher
+  retireOx(){
+    if(!this.oxen.length) return false;
+    const o = this.oxen.reduce((a, b)=>b.a>a.a ? b : a);
+    this.oxen.splice(this.oxen.indexOf(o), 1); this.syncOx();
+    this.stock.meat = Math.min(this.capFor("meat"), (this.stock.meat||0) + 4);
+    this.toast("Le plus vieux bœuf ("+Math.floor(o.a/12)+" ans) est réformé : +4 🍗.");
+    this.uiVersion++;
+    return true;
+  }
+  // bœufs en état de tirer la charrue (adultes, pas affaiblis)
+  workingOxen(){ return this.oxen.filter(o=>o.h>=50 && o.a>=24).length; }
   oxSpeed(){ return 1 + Math.min(3, this.stock.ox) * 0.6; }
+  // un attelage accélère le labour : ×1,5 avec un bœuf, ×2 avec deux
+  plowMul(){ return 1 + 0.5*Math.min(2, this.workingOxen()); }
+
+  /* ================= étape 5 : les champs ================= */
+  // culture proposée pour un nouveau champ : la prochaine qu'on pourra semer
+  defaultCrop(){ const m = this.time.month; return (m>=4 && m<=9) ? "wheat" : "peas"; }
+  // remet d'aplomb l'état d'un champ (nouveau champ ou ancienne sauvegarde)
+  normField(f){
+    const num = (v, d)=>typeof v==="number" && isFinite(v) ? v : d;
+    const cl = (v, a, b, d)=>Math.max(a, Math.min(b, num(v, d)));
+    f.fert = cl(f.fert, 0.2, 1, 0.6);
+    if(!CROP_DEFS[f.crop]) f.crop = "wheat";
+    f.sown = !!f.sown;
+    if(f.sown){ if(!CROP_DEFS[f.sownCrop]) f.sownCrop = f.crop; } else delete f.sownCrop;
+    f.plow = cl(f.plow, 0, 1, 0);
+    f.sowP = cl(f.sowP, 0, 1, f.sown ? 1 : 0);
+    f.dungP = cl(f.dungP, 0, 1, 0);
+    f.dunged = !!f.dunged;
+    f.growth = cl(f.growth, 0, 1, 0);
+    f.harvestP = cl(f.harvestP, 0, 1, 0);
+    f.cond = cl(f.cond, 0.1, 1.2, 1);
+    f.hist = Array.isArray(f.hist) ? f.hist.filter(h=>h && CROP_DEFS[h.crop] && num(h.y, null)!==null && num(h.q, null)!==null).slice(-4) : [];
+    f.hits = Array.isArray(f.hits) ? f.hits.filter(h=>Array.isArray(h) && typeof h[0]==="string" && num(h[1], null)!==null).slice(-4) : [];
+    f.prev = CROP_DEFS[f.prev] ? f.prev : null;
+    f.prevAt = num(f.prevAt, -999);
+    // (sauvegarde d'avant l'étape 5 : on semait en mars-avril, on suppose avril dernier)
+    f.sownAt = num(f.sownAt, (this.time.month>=3 ? this.time.year : this.time.year-1)*12 + 3);
+    f.stubAt = num(f.stubAt, -999);
+    f.rested = !!f.rested;
+    f.grazed = !!f.grazed;
+    f.usedThisYear = !!f.usedThisYear; f.usedLastYear = !!f.usedLastYear;
+    return f;
+  }
+  // culture en terre (figée une fois semée), sinon culture prévue
+  liveCrop(f){ return CROP_DEFS[(f && f.sown && f.sownCrop) || (f && f.crop)] || CROP_DEFS.wheat; }
+  cropCal(cd){ return CROP_CAL[cd && cd.season] || CROP_CAL.rest; }
   setCrop(bid       , crop       ){
     const b=this.buildings.find(x=>x.id===bid);
-    if(!b || b.def!=="field" || !CROP_DEFS[crop]) return false;
-    if(b.f && b.f.sown && b.f.growth>0) return false;
-    b.f.crop = crop; this.uiVersion++; return true;
+    if(!b || b.def!=="field" || !b.f || !CROP_DEFS[crop]) return false;
+    if(b.f.sown) return false;   // la culture en terre ne change plus jusqu'à la récolte
+    b.f.crop = crop;
+    if(crop==="hay" && (this.time.month===2 || this.time.month===3)) this.establishMeadow(b);
+    this.uiVersion++; return true;
+  }
+  // un pré de fauche reprend chaque printemps, sans labour ni semailles
+  establishMeadow(b){
+    const f = b.f;
+    f.sown = true; f.sownCrop = "hay"; f.growth = 0; f.harvestP = 0; f.cond = 1; f.hits = []; f.sownAt = this.monthIdx();
+    f.plow = 0; f.sowP = 0; f.usedThisYear = true;
+  }
+  // la récolte peut-elle se faire ce mois-ci ? (un mois de retard reste possible, à perte)
+  harvestable(b){
+    const f = b && b.f;
+    if(!f || !f.sown || f.growth<0.5) return false;
+    const cal = this.cropCal(this.liveCrop(f)), m = this.time.month;
+    if(!cal.harvest.length || this.monthIdx() - f.sownAt < 3) return false;
+    const last = cal.harvest[cal.harvest.length-1], late = m===(last+1)%12;
+    if(f.growth>=0.85) return cal.harvest.includes(m) || late;
+    return m===last || late;   // pas tout à fait mûre : on se résigne à récolter en fin de saison
+  }
+  // la fertilité utile : le seigle se contente de sols pauvres, l'herbe d'un pré aussi
+  fertEff(f, cd){ return cd.hardy ? 0.5 + 0.5*f.fert : cd.season==="meadow" ? 0.6 + 0.4*f.fert : f.fert; }
+  // effet de la culture précédente sur ce champ
+  rotationMul(f, cd){
+    if(!cd.yield || cd.season==="meadow") return [1, ""];
+    if(f.rested) return [1.1, "Après une jachère"];
+    const p = (f.prev && f.prevAt >= this.monthIdx()-20) ? CROP_DEFS[f.prev] : null;
+    if(!p || p.season==="meadow" || p.season==="rest") return [1, ""];
+    if(p.id==="peas") return cd.id==="peas" ? [1, ""] : [1.15, "Après des pois"];
+    if(cd.id==="flax" && p.id==="flax") return [0.7, "Lin deux ans de suite"];
+    if(cd.cereal && p.id===cd.id) return [0.8, "Même céréale deux ans de suite"];
+    if(cd.cereal && p.cereal) return [0.92, "Céréale après céréale"];
+    return [1, ""];
+  }
+  // rendement attendu d'un champ (final : à la moisson, avec la pousse réelle)
+  forecast(b, final){
+    const f = b && b.f;
+    if(!f) return { qty:0, parts:[], unit:null };
+    const cd = this.liveCrop(f);
+    if(!cd.yield) return { qty:0, parts:[], unit:null };
+    const n = b.w*b.h, fe = this.fertEff(f, cd), rot = this.rotationMul(f, cd);
+    const cond = f.sown ? f.cond : 1, gr = final ? Math.min(1, f.growth) : 1;
+    const qty = Math.max(0, Math.round(n*4*cd.mul*fe*rot[0]*cond*gr));
+    const parts = [["Fertilité", fe]];
+    if(rot[0]!==1) parts.push([rot[1], rot[0]]);
+    if(f.sown && Math.abs(cond-1)>0.005) parts.push(["État de la culture", cond]);
+    if(final && gr<0.999) parts.push(["Pas tout à fait mûr", gr]);
+    return { qty, parts, unit: cd.sheaf || cd.yield };
+  }
+  // moisson terminée : gerbes (céréales) ou récolte directe, historique, sol, remise à zéro
+  harvestField(b){
+    const f = b.f, cd = this.liveCrop(f), q = this.forecast(b, true).qty;
+    const key = cd.sheaf || cd.yield;
+    if(key) this.stock[key] = Math.min(this.capFor(key), (this.stock[key]||0) + q);
+    const verb = cd.season==="meadow" ? "Fauche du pré" : cd.id==="flax" ? "Arrachage du lin" : cd.cereal ? "Moisson "+cd.of : "Récolte des pois et fèves";
+    this.toast(verb+" : "+q+(cd.sheaf ? " gerbes à battre 🎋" : " "+(RES_ICONS[cd.yield]||"")), "good");
+    f.hist.push({ y:this.time.year, crop:cd.id, q });
+    if(f.hist.length>4) f.hist.shift();
+    f.prev = cd.id; f.prevAt = this.monthIdx(); f.stubAt = this.monthIdx();
+    f.fert = Math.max(0.2, Math.min(1, f.fert - cd.fertCost));
+    f.sown = false; delete f.sownCrop;
+    f.growth = 0; f.harvestP = 0; f.plow = 0; f.sowP = 0; f.dungP = 0; f.dunged = false; f.cond = 1; f.hits = [];
+    f.usedThisYear = true; f.rested = false;
+    this.uiVersion++;
+    return q;
+  }
+  sheafTotal(){ return Object.keys(SHEAF_RES).reduce((s, k)=>s + (this.stock[k]||0), 0); }
+  // battage : une gerbe donne une mesure de grain et un peu de paille (comptée dans le foin)
+  threshOne(){
+    const keys = Object.keys(SHEAF_RES).filter(k=>(this.stock[k]||0)>0 && (this.stock[SHEAF_RES[k]]||0) < this.capFor(SHEAF_RES[k]));
+    if(!keys.length) return false;
+    keys.sort((a, b)=>(this.stock[b]||0) - (this.stock[a]||0));
+    const k = keys[0], res = SHEAF_RES[k], q = Math.min(1, this.stock[k]);
+    this.stock[k] -= q;
+    this.stock[res] = Math.min(this.capFor(res), (this.stock[res]||0) + q);
+    this.stock.hay = Math.min(this.capFor("hay"), (this.stock.hay||0) + 0.25*q);
+    return true;
+  }
+  // le travail le plus urgent pour un fermier : moisson/fauche, puis fumure, labour et semailles, sinon battage
+  farmJob(v){
+    const m = this.time.month;
+    let best = null, bd = Infinity, bp = 9;
+    for(const fd of this.fields()){
+      const f = fd.f, cd = this.liveCrop(f), cal = this.cropCal(cd);
+      let type = null, pr = 9;
+      if(this.harvestable(fd)){ type = cd.season==="meadow" ? "mow" : "harvest"; pr = 0; }
+      else if(!f.sown && (cd.season==="winter" || cd.season==="spring")){
+        if(f.plow<1 && cal.plow.includes(m)){
+          if(!f.dunged && (this.stock.manure||0)>=1 && f.fert<0.95){ type = "spread"; pr = 2; }
+          else { type = "plow"; pr = 1; }
+        } else if(f.plow>=1 && cal.sow.includes(m)){ type = "sow"; pr = 1; }
+      }
+      if(!type) continue;
+      const d = Math.hypot(fd.x+fd.w/2-v.x, fd.y+fd.h/2-v.y);
+      if(pr<bp || (pr===bp && d<bd)){ bp = pr; bd = d; best = { type, bid:fd.id }; }
+    }
+    if(best) return best;
+    if(this.sheafTotal()>=0.5 && this.threshRoom()) return { type:"thresh" };
+    return null;
+  }
+  threshRoom(){ return Object.keys(SHEAF_RES).some(k=>(this.stock[k]||0)>0 && (this.stock[SHEAF_RES[k]]||0) < this.capFor(SHEAF_RES[k])); }
+  // vitesse d'un travail des champs, à la mesure de la taille du champ (un 4×4 sert de repère)
+  fieldRate(fd, base){ return base*16/Math.max(1, fd.w*fd.h); }
+  // une étape du travail d'un champ (labour, fumure, semailles, moisson, fauche)
+  fieldWork(v, t){
+    const fd = t.bid!==undefined ? this.buildings.find(x=>x.id===t.bid) : null;
+    const stop = (c)=>{ v.task=null; v.state="idle"; v.cool=c; };
+    if(!fd || !fd.f){ stop(5); return; }
+    const f = fd.f, m = this.time.month, cal = this.cropCal(this.liveCrop(f)), sk = this.skillMul(v, "farm");
+    if(t.type==="harvest" || t.type==="mow"){
+      if(!this.harvestable(fd)){ stop(10); return; }
+      f.harvestP = Math.min(1, f.harvestP + this.fieldRate(fd, t.type==="mow" ? 0.01 : 0.008)*sk*(this.wx==="wet" ? 0.6 : 1));
+      if(f.harvestP>=1){ this.harvestField(fd); stop(5); }
+      return;
+    }
+    if(f.sown || (t.type==="sow" ? !cal.sow.includes(m) : !cal.plow.includes(m))){ stop(10); return; }
+    if(t.type==="spread"){
+      if(f.dunged || (this.stock.manure||0)<1){ stop(3); return; }
+      f.dungP = Math.min(1, f.dungP + this.fieldRate(fd, 0.02)*sk);
+      if(f.dungP>=1){
+        const n = fd.w*fd.h, use = Math.min(this.stock.manure, n*0.5);
+        this.stock.manure -= use;
+        f.fert = Math.min(1, f.fert + use/n*0.3);
+        f.dunged = true;
+        stop(3);
+      }
+    } else if(t.type==="plow"){
+      f.plow = Math.min(1, f.plow + this.fieldRate(fd, 0.008)*sk*this.plowMul());
+      if(f.plow>=1) stop(5);
+    } else if(t.type==="sow"){
+      if(f.plow<1){ stop(5); return; }
+      f.sowP = Math.min(1, f.sowP + this.fieldRate(fd, 0.02)*sk);
+      if(f.sowP>=1){
+        const cd = this.liveCrop(f);
+        f.sown = true; f.sownCrop = cd.id; f.growth = 0; f.harvestP = 0; f.cond = 1; f.hits = []; f.sownAt = this.monthIdx();
+        f.usedThisYear = true;
+        this.toast("Semailles faites : "+cd.name.toLowerCase()+".", "good");
+        stop(5);
+      }
+    }
+  }
+  // en quelques mots, où en est un champ (pour l'interface)
+  fieldStatus(b){
+    const f = b.f; if(!f) return "";
+    const cd = this.liveCrop(f), cal = this.cropCal(cd);
+    if(cd.season==="rest") return "Jachère : le sol se repose";
+    if(f.sown){
+      if(this.harvestable(b)) return cd.name+" · "+(cd.season==="meadow" ? "prêt à faucher" : "prêt à moissonner")+(f.harvestP>0 ? " ("+Math.round(f.harvestP*100)+" %)" : "");
+      if(f.growth>=0.85) return cd.name+" · mûr, "+(cd.season==="meadow" ? "fauche" : "moisson")+" en "+monthsTxt(cal.harvest);
+      return cd.name+" · "+(isWinterMonth(this.time.month) && !cal.grow[this.time.month] ? "repos d'hiver ("+Math.round(f.growth*100)+" %)" : "pousse "+Math.round(f.growth*100)+" %");
+    }
+    if(cd.season==="meadow") return cd.name+" · l'herbe reprendra en mars";
+    if(f.plow>=1) return cd.name+" · labouré, semailles en "+monthsTxt(cal.sow);
+    if(f.plow>0) return cd.name+" · labour "+Math.round(f.plow*100)+" %";
+    return cd.name+" · labour en "+monthsTxt(cal.plow.slice().sort((a, c)=>((a+12-7)%12)-((c+12-7)%12)));
+  }
+  farmStatus(b){
+    const names = { plow:"labour", spread:"fumure", sow:"semailles", harvest:"moisson", mow:"fauche", thresh:"battage" };
+    const cur = [];
+    for(const v of this.workersOf(b)){ const n = v.task && names[v.task.type]; if(n && cur.indexOf(n)<0) cur.push(n); }
+    if(cur.length) return cur.join(" et ").replace(/^./, c=>c.toUpperCase())+" en cours";
+    return this.fields().length ? "Rien à faire aux champs pour l'instant" : "Aucun champ : posez-en autour";
+  }
+
+  /* ---------- étape 5 : la météo des champs, mois après mois ---------- */
+  farmMonth(m){
+    const r = this.rnd, fs = this.fields();
+    this.wx = null;
+    const hit = (b, label, pct)=>{
+      const f = b.f; f.cond = Math.max(0.1, f.cond*(1-pct));
+      f.hits.push([label, -Math.round(pct*100)]); if(f.hits.length>4) f.hits.shift();
+    };
+    // le pré de fauche reprend en mars
+    if(m===2) for(const b of fs) if(b.f.crop==="hay" && !b.f.sown) this.establishMeadow(b);
+    const sown = fs.filter(b=>b.f.sown);
+    const young = sown.filter(b=>{ const cd = this.liveCrop(b.f); return cd.season==="spring" || (cd.season==="winter" && b.f.growth>0) || cd.season==="meadow"; });
+    const roll = r();
+    if((m===2 || m===3) && roll<0.12){
+      // gel tardif : les jeunes pousses souffrent ; le seigle résiste
+      let n = 0;
+      for(const b of young){ const cd = this.liveCrop(b.f); hit(b, "Gel tardif", cd.hardy ? 0.06 : cd.id==="peas" ? 0.2 : cd.season==="meadow" ? 0.05 : 0.14); n++; }
+      if(n) this.toast("❄️ Gel tardif : les jeunes pousses ont souffert dans "+n+" champ"+(n>1?"s":"")+".", "bad");
+    } else if((m===3 || m===4) && roll<0.26){
+      // printemps sec : la pousse ralentit ce mois-ci
+      this.wx = "drought";
+      for(const b of sown){ const cd = this.liveCrop(b.f); hit(b, "Printemps sec", cd.season==="winter" ? 0.04 : 0.08); }
+      if(sown.length) this.toast("☀️ Printemps sec : les champs ont soif, la pousse ralentit.", "bad");
+    } else if(m>=5 && m<=7 && roll<0.06){
+      // grêle : un ou deux champs hachés
+      const tg = sown.filter(b=>this.liveCrop(b.f).yield && b.f.growth>0.2);
+      for(let k=0; k<(r()<0.3 ? 2 : 1) && tg.length; k++){
+        const b = tg.splice(Math.floor(r()*tg.length), 1)[0], pct = 0.3 + r()*0.25;
+        hit(b, "Grêle", pct);
+        this.toast("🌩️ La grêle s'abat sur le champ de "+this.liveCrop(b.f).name.toLowerCase()+" (−"+Math.round(pct*100)+" %).", "bad");
+      }
+    } else if((m===6 || m===7) && this.weather==="rain" && roll<0.5){
+      // été pourri : la moisson traîne, le grain mûr germe sur pied
+      this.wx = "wet";
+      let n = 0;
+      for(const b of sown){ const cd = this.liveCrop(b.f); if(cd.cereal && b.f.growth>0.6){ hit(b, "Été pourri", 0.07); n++; } }
+      if(n) this.toast("🌧️ Été pourri : la moisson traîne et le grain germe sur pied.", "bad");
+    } else if((m===0 || m===1) && roll<0.1){
+      // hiver rigoureux : le blé d'hiver souffre, le seigle tient bon
+      let n = 0;
+      for(const b of sown){ const cd = this.liveCrop(b.f); if(cd.season==="winter"){ hit(b, "Hiver rigoureux", cd.hardy ? 0.03 : 0.12); n++; } }
+      if(n) this.toast("❄️ Hiver rigoureux : le blé d'hiver souffre, le seigle tient bon.", "bad");
+    } else if(this.weather==="clear" && roll>0.75){
+      // un mois idéal : la culture se porte un peu mieux
+      for(const b of sown) if(this.cropCal(this.liveCrop(b.f)).grow[m]) b.f.cond = Math.min(1.15, b.f.cond + 0.03);
+    }
+    // récolte en retard : le grain tombe, puis tout est perdu
+    for(const b of sown){
+      const f = b.f, cd = this.liveCrop(f), cal = this.cropCal(cd);
+      if(!cal.harvest.length || this.monthIdx() - f.sownAt < 4) continue;
+      const last = cal.harvest[cal.harvest.length-1];
+      const lost = m===(last+2)%12 || (m===(last+1)%12 && f.growth<0.5);
+      if(!lost && m===(last+1)%12){ hit(b, "Récolte en retard", 0.35); this.toast("La récolte "+cd.of+" attend trop : le grain tombe. Il faut plus de fermiers.", "bad"); }
+      else if(lost){
+        this.toast(f.growth<0.5 ? "La culture "+cd.of+" n'a pas mûri à temps : elle est perdue." : "La récolte "+cd.of+" a pourri sur pied, faute de bras.", "bad");
+        f.prev = cd.id; f.prevAt = this.monthIdx();
+        f.sown = false; delete f.sownCrop; f.growth = 0; f.harvestP = 0; f.plow = 0; f.sowP = 0; f.dunged = false; f.cond = 1; f.hits = [];
+      }
+    }
+    // jachère pâturée : un troupeau à côté y laisse son fumier
+    if(m>=2 && m<=10){
+      const herds = this.pastures().filter(p=>p.done && p.herd.an.length);
+      for(const b of fs){
+        b.f.grazed = false;
+        if(b.f.crop!=="fallow" || b.f.sown) continue;
+        if(herds.some(p=>Math.abs(p.x-(b.x+b.w/2))<=10 && Math.abs(p.y-(b.y+b.h/2))<=10)){ b.f.fert = Math.min(1, b.f.fert + 0.015); b.f.grazed = true; }
+      }
+    }
+    // prévision de récolte au début de l'été
+    if(m===5){
+      const list = fs.filter(b=>b.f.sown && this.liveCrop(b.f).cereal);
+      if(list.length){
+        const avg = list.reduce((s, b)=>s + b.f.cond, 0)/list.length;
+        this.toast("Prévisions de moisson : "+(avg>=1 ? "belle année" : avg>=0.85 ? "année moyenne" : "mauvaise année")+" ("+list.reduce((s, b)=>s + this.forecast(b).qty, 0)+" gerbes attendues).", avg>=0.85 ? "info" : "bad");
+      }
+    }
+  }
+
+  /* ================= étape 5 : pâturages et troupeaux ================= */
+  pastures(){ return this.buildings.filter(b=>b.def==="pasture" && b.herd); }
+  markPastures(){
+    this.pastureCell = new Uint8Array(W*H);
+    for(const b of this.buildings){
+      if(b.def!=="pasture" || !b.plot) continue;
+      for(let k=1; k<b.plot.cells.length; k++) if(this.occupied[b.plot.cells[k]]===b.id) this.pastureCell[b.plot.cells[k]] = 1;
+    }
+  }
+  // longueur de clôture d'un ensemble de cases (en bords de case)
+  perimeterOf(cells){
+    const set = new Set(cells); let n = 0;
+    for(const i of cells){ const x=i%W, y=(i/W)|0; for(const d of DIRS4){ const nx=x+d[0], ny=y+d[1]; if(!(nx>=0&&ny>=0&&nx<W&&ny<H && set.has(ny*W+nx))) n++; } }
+    return n;
+  }
+  pastureCost(cells){ return 1 + Math.ceil(this.perimeterOf(cells)/8); }
+  // Découpe un contour libre en pâturage SANS rien modifier (sert aussi d'aperçu).
+  planPasture(pts){
+    const fail = (err, extra)=>Object.assign({ cells:[], plots:[], err, poly:null, cost:0, anchor:-1, n:0 }, extra||{});
+    if(!Array.isArray(pts) || pts.length<3) return fail("Posez au moins 3 points");
+    const poly = pts.map(q=>[Math.max(0, Math.min(W, Math.round(Number(q[0])*SNAP)/SNAP)),
+                             Math.max(0, Math.min(H, Math.round(Number(q[1])*SNAP)/SNAP))]);
+    if(poly.some(q=>!isFinite(q[0]) || !isFinite(q[1]))) return fail("Contour invalide");
+    if(selfIntersects(poly)) return fail("Le contour se croise", { poly });
+    let x0=W, y0=H, x1=0, y1=0;
+    for(const q of poly){ x0=Math.min(x0,q[0]); y0=Math.min(y0,q[1]); x1=Math.max(x1,q[0]); y1=Math.max(y1,q[1]); }
+    const inside = [];
+    for(let y=Math.max(0,Math.floor(y0)); y<Math.min(H,Math.ceil(y1)); y++) for(let x=Math.max(0,Math.floor(x0)); x<Math.min(W,Math.ceil(x1)); x++){
+      if(!pointInPoly(x+0.5, y+0.5, poly)) continue;
+      const i=y*W+x;
+      if(this.roads[i]) return fail("Le pâturage empiète sur une route", { poly });
+      if(this.occupied[i]>=0) return fail("Le pâturage empiète sur un bâtiment ou un champ", { poly });
+      if(this.tiles[i]!==T_GRASS) return fail("Terrain impropre dans l'enclos (eau, forêt ou rocher)", { poly });
+      if(!this.regionOwned(x)) return fail("Région non réclamée", { poly });
+      inside.push(i);
+    }
+    if(inside.length<PASTURE_MIN) return fail("Pâturage trop petit ("+PASTURE_MIN+" cases au moins)", { poly, n:inside.length });
+    if(inside.length>PASTURE_MAX) return fail("Pâturage trop grand ("+PASTURE_MAX+" cases au plus)", { poly, n:inside.length });
+    // l'abri : une case du bord, ouverte sur un passage, au plus près d'une route (sinon du village)
+    const set = new Set(inside), roadCells = [];
+    for(let i=0;i<W*H;i++) if(this.roads[i]) roadCells.push(i);
+    const camp = this.buildings[0];
+    let anchor = -1, best = Infinity;
+    for(const i of inside){
+      const x=i%W, y=(i/W)|0;
+      let open = false;
+      for(const d of DIRS4){ const nx=x+d[0], ny=y+d[1]; if(nx>=0&&ny>=0&&nx<W&&ny<H && !set.has(ny*W+nx) && this.passable(nx, ny)) open = true; }
+      if(!open) continue;
+      let sc = Infinity;
+      for(const ri of roadCells) sc = Math.min(sc, Math.abs(ri%W - x) + Math.abs(((ri/W)|0) - y));
+      if(!roadCells.length) sc = camp ? Math.abs(camp.x-x)+Math.abs(camp.y-y) : 0;
+      if(sc<best){ best = sc; anchor = i; }
+    }
+    if(anchor<0) return fail("L'enclos doit s'ouvrir sur un passage", { poly });
+    const cells = [anchor].concat(inside.filter(i=>i!==anchor));
+    const cost = this.pastureCost(cells);
+    const info = { poly, cells, plots:[{ cells, dir:-1, poly:cleanPoly(poly) }], cost, anchor, n:inside.length };
+    if((this.stock.timber||0) < cost) return fail("Bois insuffisant : la clôture demande "+cost+" 🪵", Object.assign({ limited:true }, info));
+    return Object.assign({ err:null }, info);
+  }
+  // Trace le pâturage : clôture et abri en chantier, bâtis par les journaliers.
+  tracePasture(pts){
+    const plan = this.planPasture(pts);
+    if(plan.err) return plan.err;
+    this.stock.timber -= plan.cost;
+    const a = plan.anchor;
+    const b = this.makeBuilding("pasture", a%W, (a/W)|0);
+    b.plot = { cells:plan.cells.slice(), dir:-1, poly:cleanPoly(plan.poly) };
+    b.herd = this.newHerd();
+    for(const i of plan.cells) this.occupied[i] = b.id;
+    this.markPastures();
+    this.toast("Pâturage tracé ("+(plan.cells.length-1)+" cases d'herbe) : les journaliers posent la clôture et l'abri.", "good");
+    this.uiVersion++;
+    return null;
+  }
+  newHerd(){ return { sp:null, an:[], keep:null, fed:1, out:-1, last:{} }; }
+  // troupeau d'une sauvegarde : espèce connue, bêtes vérifiées une à une
+  normHerd(h){
+    const num = (v)=>typeof v==="number" && isFinite(v);
+    const o = this.newHerd();
+    if(!h || typeof h!=="object") return o;
+    o.sp = LIVESTOCK[h.sp] ? h.sp : null;
+    if(o.sp && Array.isArray(h.an)) for(const a of h.an.slice(0, 400)){
+      if(!a || typeof a!=="object" || !num(a.a)) continue;
+      o.an.push({ id:num(a.id) ? a.id : 0, a:Math.max(0, Math.round(a.a)), f:a.f ? 1 : 0, s:num(a.s) ? Math.max(0, Math.min(6, Math.round(a.s))) : 0,
+                  fat:num(a.fat) ? Math.max(0, Math.min(1, a.fat)) : 0, lac:num(a.lac) ? Math.max(0, Math.min(12, Math.round(a.lac))) : 0 });
+    }
+    if(!o.an.length && !LIVESTOCK[h.sp]) o.sp = null;
+    o.keep = num(h.keep) ? Math.max(0, Math.min(200, Math.round(h.keep))) : null;
+    o.fed = num(h.fed) ? Math.max(0, Math.min(1, h.fed)) : 1;
+    o.out = Number.isInteger(h.out) && h.out>=0 && h.out<W*H ? h.out : -1;
+    o.last = h.last && typeof h.last==="object" ? h.last : {};
+    return o;
+  }
+  makeAnimal(sp, female, age){ return { id:this.nextA++, a:Math.max(0, Math.round(age)), f:female ? 1 : 0, s:0, fat:0, lac:0 }; }
+  isGrown(sp, a){ const d = LIVESTOCK[sp]; return !!d && a.a>=d.adultAt; }
+  herdEq(h){ const d = LIVESTOCK[h.sp]; return d ? h.an.reduce((s, a)=>s + (a.a>=d.adultAt ? 1 : 0.5), 0) : 0; }
+  grassCells(b){ return b.plot ? Math.max(0, b.plot.cells.length-1) : 0; }   // l'abri ne compte pas
+  // bêtes (adultes) que l'herbe nourrit ce mois-ci, jachères voisines comprises
+  pastureCap(b, m){
+    const d = b.herd && LIVESTOCK[b.herd.sp]; if(!d) return 0;
+    let fallow = 0;
+    for(const fd of this.fields()) if(fd.f.crop==="fallow" && !fd.f.sown && Math.abs(b.x-(fd.x+fd.w/2))<=10 && Math.abs(b.y-(fd.y+fd.h/2))<=10) fallow += fd.w*fd.h;
+    return (this.grassCells(b) + fallow*0.5)/d.area*GRASS[m];
+  }
+  keeperOf(b){ return this.workersOf(b).find(v=>this.canWork(v)) || null; }
+  // forêt la plus proche de l'abri (glandée des porcs), -1 s'il n'y en a pas à portée
+  forestNear(b, R){
+    let best = -1, bd = Infinity;
+    for(let y=Math.max(0,b.y-R); y<=Math.min(H-1,b.y+R); y++) for(let x=Math.max(0,b.x-R); x<=Math.min(W-1,b.x+R); x++){
+      const i = y*W+x;
+      if(this.tiles[i]!==T_FOREST || this.treeWood[i]<=0) continue;
+      const d = Math.hypot(x-b.x, y-b.y);
+      if(d<=R && d<bd){ bd = d; best = i; }
+    }
+    return best;
+  }
+  // prend du fourrage dans les réserves : le foin d'abord, puis l'avoine (1 avoine = 1,5 foin)
+  takeFodder(need){
+    let got = Math.min(this.stock.hay||0, need);
+    this.stock.hay -= got;
+    if(got<need){ const o = Math.min(this.stock.oats||0, (need-got)/1.5); this.stock.oats -= o; got += o*1.5; }
+    return got;
+  }
+  // fourrage nécessaire par mois d'hiver (bœufs compris)
+  winterNeed(){
+    let n = this.oxen.length;
+    for(const b of this.pastures()){ const d = LIVESTOCK[b.herd.sp]; if(d) n += this.herdEq(b.herd)*d.fodder; }
+    return n;
+  }
+  fodderStock(){ return (this.stock.hay||0) + 1.5*(this.stock.oats||0); }
+  // quelle bête abattre (ou vendre) d'abord : les mâles adultes en trop, puis les plus vieux
+  pickCull(h){
+    const d = LIVESTOCK[h.sp]; if(!d || !h.an.length) return null;
+    const males = h.an.filter(a=>!a.f && a.a>=d.adultAt).sort((a, b)=>b.a-a.a);
+    if(males.length>1) return males[0];
+    const pool = h.an.filter(a=>a.f || a.a<d.adultAt || males.length!==1 || a!==males[0]);
+    return (pool.length ? pool : h.an).slice().sort((a, b)=>b.a-a.a)[0];
+  }
+  pastureOf(bid){ const b = this.buildings.find(x=>x.id===bid); return b && b.def==="pasture" && b.herd ? b : null; }
+  buyAnimal(bid, sp, female){
+    const b = this.pastureOf(bid); if(!b) return "Pâturage introuvable";
+    if(!b.done) return "La clôture est encore en chantier";
+    const d = LIVESTOCK[sp]; if(!d) return "Espèce inconnue";
+    const h = b.herd;
+    if(h.sp && h.sp!==sp && h.an.length) return "Ce pâturage accueille déjà des "+LIVESTOCK[h.sp].ones;
+    if(this.treasury<d.buy) return "Il faut "+d.buy+" deniers";
+    this.treasury -= d.buy; h.sp = sp;
+    h.an.push(this.makeAnimal(sp, female, d.adultAt + 4 + Math.floor(this.rnd()*24)));
+    this.toast(d.icon+" "+(female ? d.f+" achetée" : d.m+" acheté")+" pour "+d.buy+" 💰.", "good");
+    this.uiVersion++;
+    return null;
+  }
+  sellAnimal(bid){
+    const b = this.pastureOf(bid); if(!b || !b.herd.an.length) return "Aucune bête à vendre";
+    const h = b.herd, d = LIVESTOCK[h.sp], a = this.pickCull(h);
+    const p = a.a>=d.adultAt ? d.sell : Math.max(1, Math.round(d.sell/2));
+    h.an.splice(h.an.indexOf(a), 1);
+    this.treasury += p;
+    this.toast(d.icon+" Une bête vendue au marché : +"+p+" 💰.");
+    this.uiVersion++;
+    return null;
+  }
+  // viande d'une bête abattue (rien pour une bête malade, plus pour un porc engraissé)
+  meatOf(d, a){ return a.s>0 ? 0 : d.meat*(a.a>=d.adultAt ? 1 : 0.5) + (a.fat||0)*3; }
+  slaughter(bid){
+    const b = this.pastureOf(bid); if(!b || !b.herd.an.length) return "Aucune bête à abattre";
+    const h = b.herd, d = LIVESTOCK[h.sp], a = this.pickCull(h), q = this.meatOf(d, a);
+    h.an.splice(h.an.indexOf(a), 1);
+    this.stock.meat = Math.min(this.capFor("meat"), (this.stock.meat||0) + q);
+    this.toast(d.icon+" Une bête abattue : "+(q>0 ? "+"+(Math.round(q*10)/10)+" 🍗." : "malade, sa viande est perdue."));
+    this.uiVersion++;
+    return null;
+  }
+  // abattre les bêtes malades arrête la contagion (leur viande est perdue)
+  cullSick(bid){
+    const b = this.pastureOf(bid); if(!b) return "Pâturage introuvable";
+    const h = b.herd, d = LIVESTOCK[h.sp], n = h.an.filter(a=>a.s>0).length;
+    if(!n) return "Aucune bête malade";
+    h.an = h.an.filter(a=>!(a.s>0));
+    this.toast(d.icon+" "+n+" bête"+(n>1?"s":"")+" malade"+(n>1?"s":"")+" abattue"+(n>1?"s":"")+" : la contagion s'arrête là.");
+    this.uiVersion++;
+    return null;
+  }
+  // combien de bêtes garder pour l'hiver (abattage de novembre) ; null : on garde tout
+  setKeep(bid, n){
+    const b = this.pastureOf(bid); if(!b) return;
+    b.herd.keep = (n===null || n===undefined || !isFinite(n)) ? null : Math.max(0, Math.min(200, Math.round(n)));
+    this.uiVersion++;
+  }
+  setKeepOxen(on){ this.keepCalves = !!on; this.uiVersion++; }
+  pastureStatus(b){
+    const h = b.herd, d = h && LIVESTOCK[h.sp];
+    if(!b.done) return "Clôture en chantier : "+BUILD_STAGES[buildStage(b)].name.toLowerCase()+" ("+Math.round(b.progress*100)+" %)";
+    if(!d || !h.an.length) return "Vide : achetez des bêtes";
+    const n = h.an.length, sick = h.an.filter(a=>a.s>0).length;
+    let s = n+" "+(n>1 ? d.ones : d.one);
+    if(h.out>=0) s += " · glandée en forêt";
+    else if(isWinterMonth(this.time.month)) s += " · au foin";
+    else s += h.fed<0.95 ? " · herbe trop courte" : " · herbe suffisante";
+    if(sick) s += " · "+sick+" malade"+(sick>1?"s":"");
+    return s;
+  }
+  // le gardien : il va et vient parmi ses bêtes (en forêt pendant la glandée)
+  herdWork(v, t){
+    const b = t.bid!==undefined ? this.buildings.find(x=>x.id===t.bid) : null;
+    if(!b || !b.herd || !b.herd.an.length || !b.plot){ v.task=null; v.state="idle"; v.cool=20; return; }
+    t.n = (t.n||0) + 1;
+    if(t.n>320 && !t.pt){ v.task=null; v.state="idle"; v.cool=10; return; }
+    if(t.wait>0){ t.wait--; return; }
+    if(!t.pt){
+      let i;
+      if(b.herd.out>=0){ const ox = (b.herd.out%W), oy = ((b.herd.out/W)|0); i = Math.max(0, Math.min(H-1, oy + Math.floor(this.rnd()*3)-1))*W + Math.max(0, Math.min(W-1, ox + Math.floor(this.rnd()*3)-1)); }
+      else i = b.plot.cells.length>1 ? b.plot.cells[1+Math.floor(this.rnd()*(b.plot.cells.length-1))] : b.plot.cells[0];
+      t.pt = { x:(i%W)+0.25+this.rnd()*0.5, y:((i/W)|0)+0.4+this.rnd()*0.5 };
+    }
+    const tx = t.pt.x - v.x, ty = t.pt.y - v.y, dist = Math.hypot(tx, ty);
+    if(dist<0.06){ t.pt = null; t.wait = 30 + Math.floor(this.rnd()*60); return; }
+    const st = Math.min(0.1, dist); v.x += tx/dist*st; v.y += ty/dist*st;
+  }
+
+  /* ---------- étape 5 : la vie des troupeaux, mois après mois ---------- */
+  herdMonth(m){
+    const r = this.rnd, winter = isWinterMonth(m);
+    // 1) les bœufs de trait passent en premier pour le foin
+    for(const o of this.oxen.slice()){
+      o.a++;
+      if(winter){ const got = this.takeFodder(1); o.h = Math.max(0, Math.min(100, o.h + (got>=0.999 ? 10 : -30*(1-got)))); }
+      else o.h = Math.min(100, o.h + 15);
+      this.stock.manure = Math.min(this.capFor("manure"), (this.stock.manure||0) + (winter ? 1 : 0.5));
+      let why = null;
+      if(o.h<=0) why = "de faim";
+      else if(o.a>168 && r()<0.08) why = "de vieillesse";
+      if(why){ this.oxen.splice(this.oxen.indexOf(o), 1); this.toast("🐂 Un bœuf meurt "+why+" ("+Math.floor(o.a/12)+" ans).", "bad"); }
+    }
+    if(winter && this.oxen.some(o=>o.h<60) && !this._oxWarned){ this._oxWarned = true; this.toast("🐂 Les bœufs manquent de foin et s'affaiblissent.", "bad"); }
+    if(!winter) this._oxWarned = false;
+    this.syncOx();
+    // 2) chaque troupeau
+    for(const b of this.pastures()){
+      const h = b.herd, d = LIVESTOCK[h.sp];
+      h.out = -1;
+      if(!d || !h.an.length || !b.done){ h.fed = 1; h.last = {}; continue; }
+      const keeper = this.keeperOf(b), sk = keeper ? (keeper.skills.herd||0) : 0, skf = 0.8 + sk/250;
+      const L = { born:0, starved:0, old:0, sickDead:0, wool:0, milk:0, hay:0, culled:0, meat:0, ox:0, fell:0 };
+      const eq = this.herdEq(h), cap = this.pastureCap(b, m);
+      // a) nourriture : herbe, foin l'hiver, glands à l'automne pour les porcs
+      let fed = 1;
+      if(winter){ const need = eq*d.fodder; fed = need>0 ? Math.min(1, this.takeFodder(need)/need) : 1; }
+      else {
+        if(h.sp==="pig" && m>=8 && m<=10 && keeper){ const fo = this.forestNear(b, 9); if(fo>=0) h.out = fo; }
+        if(h.out>=0){ for(const a of h.an) a.fat = Math.min(1, (a.fat||0) + 0.34); }
+        else fed = eq>0 ? Math.min(1, cap/eq) : 1;
+        // fenaison : l'herbe en trop est fauchée en juin et juillet
+        // (le gardien fauche seul : environ une botte pour trois cases d'herbe libre, dix au plus par mois)
+        if((m===5 || m===6) && keeper && cap>eq){ L.hay = Math.round(Math.min(10, (cap-eq)*d.area/GRASS[m]*0.3*skf)*10)/10; this.stock.hay = Math.min(this.capFor("hay"), (this.stock.hay||0) + L.hay); }
+      }
+      h.fed = Math.round(fed*100)/100;
+      // b) fumier : ramassé à l'abri l'hiver, laissé sur l'herbe le reste de l'année
+      this.stock.manure = Math.min(this.capFor("manure"), (this.stock.manure||0) + eq*d.manure*(winter ? 1 : 0.3));
+      if(!winter){ const g = 0.01*eq*d.area/Math.max(1, this.grassCells(b)); for(let k=1; k<b.plot.cells.length; k++){ const i = b.plot.cells[k]; this.soil[i] = Math.min(1, this.soil[i] + g); } }
+      // c) maladie : déclaration, contagion, guérison ou mort
+      const sick0 = h.an.filter(a=>a.s>0).length;
+      if(!sick0){
+        let p = 0.008 + (fed<0.8 ? 0.015 : 0) + (!keeper ? 0.012 : 0) + (cap<eq && !winter ? 0.012 : 0) + (this.weather==="rain" ? 0.004 : 0);
+        p *= Math.min(1, h.an.length/5) * (1 - sk/250);
+        // contagion depuis un troupeau voisin de la même espèce
+        if(this.pastures().some(o=>o!==b && o.herd.sp===h.sp && o.herd.an.some(a=>a.s>0) && Math.abs(o.x-b.x)+Math.abs(o.y-b.y)<=8)) p += 0.15;
+        if(r()<p){
+          const a = h.an[Math.floor(r()*h.an.length)]; a.s = 2 + Math.floor(r()*2);
+          this.toast(d.icon+" "+d.disease.charAt(0).toUpperCase()+d.disease.slice(1)+" se déclare chez les "+d.ones+" ! Abattez les bêtes malades ou espérez qu'elle passe.", "bad");
+        }
+      } else {
+        const spread = 0.35*sick0/h.an.length*(keeper ? 1 - sk/200 : 1.2);
+        for(const a of h.an) if(!(a.s>0) && r()<spread) a.s = -(2 + Math.floor(r()*2));   // tombe malade (compté le mois prochain)
+      }
+      for(const a of h.an.slice()){
+        if(a.s>0){
+          if(r() < d.mort*(fed<0.8 ? 1.5 : 1)*(keeper ? 1 - sk/300 : 1.3)){ h.an.splice(h.an.indexOf(a), 1); L.sickDead++; continue; }
+          a.s--;
+        } else if(a.s<0) a.s = -a.s;
+      }
+      // d) âge, faim, vieillesse
+      for(const a of h.an.slice()){
+        a.a++;
+        if(winter && a.fat) a.fat = Math.round(a.fat*0.7*100)/100;   // un porc gras maigrit l'hiver
+        const frail = a.a<d.adultAt/2 || a.a>d.life ? 1.5 : 1;
+        if(fed<0.6 && r() < (0.6-fed)*0.5*frail){ h.an.splice(h.an.indexOf(a), 1); L.starved++; continue; }
+        if(a.a>d.life && r()<0.2){ h.an.splice(h.an.indexOf(a), 1); L.old++; continue; }
+        // un jeune taureau de trop est dressé à l'attelage : un bœuf de plus
+        if(h.sp==="cattle" && !a.f && a.a===d.adultAt && this.keepCalves!==false && h.an.some(o=>o!==a && !o.f && o.a>=d.adultAt)){
+          h.an.splice(h.an.indexOf(a), 1); this.oxen.push(this.makeOx(a.a)); L.ox++;
+        }
+      }
+      // e) naissances : au printemps (et à la fin de l'été pour les truies), s'il y a un mâle et de quoi manger
+      if((m===2 || (h.sp==="pig" && m===7)) && fed>=0.7){
+        const male = h.an.some(a=>!a.f && a.a>=d.adultAt && !(a.s>0));
+        if(male){
+          const crowd = this.pastureCap(b, 5) < eq*1.2 ? 0.5 : 1;
+          for(const a of h.an.slice()){
+            if(!a.f || a.a<d.adultAt || a.s>0 || a.a>d.life-6) continue;
+            if(r() < d.birthP*(keeper ? 1 : 0.6)*(0.9 + sk/500)*crowd){
+              const n = d.litter[Math.floor(r()*d.litter.length)];
+              for(let k=0; k<n; k++) h.an.push(this.makeAnimal(h.sp, r()<0.5, 0));
+              L.born += n;
+              if(h.sp==="cattle") a.lac = 10;
+            }
+          }
+        }
+      }
+      // f) produits : lait des vaches qui ont vêlé, laine à la tonte de mai
+      for(const a of h.an){
+        if(h.sp==="cattle" && a.lac>0){ if(keeper && !(a.s>0)) L.milk += 1.5*skf*(fed>=0.6 ? 1 : 0.5); a.lac--; }
+        if(h.sp==="sheep" && m===4 && keeper && a.a>=d.adultAt && !(a.s>0)) L.wool += skf;
+      }
+      if(L.milk) this.stock.milk = Math.min(this.capFor("milk"), (this.stock.milk||0) + L.milk);
+      if(L.wool) this.stock.wool = Math.min(this.capFor("wool"), (this.stock.wool||0) + L.wool);
+      // g) abattage de novembre : on ne garde que ce que le foin nourrira
+      if(m===10 && h.keep!==null && h.keep!==undefined){
+        while(h.an.length>h.keep){
+          const a = this.pickCull(h); if(!a) break;
+          L.meat += this.meatOf(d, a); L.culled++;
+          h.an.splice(h.an.indexOf(a), 1);
+        }
+        if(L.meat) this.stock.meat = Math.min(this.capFor("meat"), (this.stock.meat||0) + L.meat);
+      }
+      h.last = { m, born:L.born, dead:L.starved+L.old+L.sickDead, wool:Math.round(L.wool*10)/10, milk:Math.round(L.milk*10)/10, hay:L.hay, culled:L.culled };
+      // h) ce que le seigneur doit savoir
+      if(L.born) this.toast(d.icon+" "+d.birth+" : "+L.born+" "+(L.born>1 ? d.youngs : d.young.toLowerCase())+" au pâturage.", "good");
+      if(L.wool>=1) this.toast(d.icon+" Tonte des moutons : "+Math.round(L.wool)+" 🧶.", "good");
+      if(L.ox) this.toast("🐂 Un jeune taureau est dressé à l'attelage : un bœuf de plus.", "good");
+      if(L.culled) this.toast(d.icon+" Abattage de novembre : "+L.culled+" "+(L.culled>1 ? d.ones : d.one)+" (+"+Math.round(L.meat)+" 🍗).", "good");
+      if(L.starved) this.toast(d.icon+" Faute "+(winter ? "de foin" : "d'herbe")+", "+L.starved+" "+(L.starved>1 ? d.ones+" sont morts" : d.one+" est mort")+".", "bad");
+      if(L.sickDead) this.toast(d.icon+" "+d.disease.charAt(0).toUpperCase()+d.disease.slice(1)+" emporte "+L.sickDead+" "+(L.sickDead>1 ? d.ones : d.one)+".", "bad");
+    }
+    this.syncOx();
+    // avertissement d'automne : assez de foin pour l'hiver ?
+    if(m===9){
+      const need = this.winterNeed()*3, have = this.fodderStock();
+      if(need>0 && have<need) this.toast("⚠️ Fourrage : il en faudra environ "+Math.ceil(need)+" pour l'hiver, vous en avez "+Math.floor(have)+". Fauchez, gardez de l'avoine ou réduisez les troupeaux en novembre.", "bad");
+    }
   }
 
   buyExtension(bid       , ext       ){
@@ -991,11 +1705,43 @@ class GameState {
       this.stock.timber=Math.floor(this.stock.timber*(1-0.15*fort));
       this.toast("Les cavaliers pillent la seigneurie !"+(fort<1?" (la tour en a limité les dégâts)":""),"bad"); }
     else if(c.act==="payBandits"){ this.treasury -= (c.amount||0); this.toast("Les brigands s'éloignent, bourse plus légère.","good"); }
+    else if(c.act==="fairWood" || c.act==="fairCoin") this.fairDeal(ev.fair, c.act==="fairWood");
+    else if(c.act==="fairNo") this.toast("Le marchand de bestiaux reprend la route.");
     else if(c.act==="hideBandits"){ for(const k of ["berries","meat","bread","eggs","veg"]) this.stock[k]=Math.floor(this.stock[k]*0.8);
       this.stock.timber=Math.floor(this.stock.timber*0.9); this.toast("Les brigands pillent la seigneurie et repartent.","bad"); }
     this.pendingEvent = null;
     this.approval = Math.max(0, Math.min(100, this.approval));
     this.uiVersion++;
+  }
+
+  // étape 5 : au printemps, un marchand de bestiaux passe parfois (troc contre du bois, ou deniers)
+  livestockFair(){
+    if(this.pendingEvent) return;
+    const ps = this.pastures().filter(b=>b.done);
+    if(!ps.length || this.rnd()>=0.6) return;
+    const empty = ps.find(b=>!b.herd.an.length);
+    const b = empty || ps[Math.floor(this.rnd()*ps.length)];
+    const sp = b.herd.an.length ? b.herd.sp : LIVESTOCK_ORDER[Math.floor(this.rnd()*LIVESTOCK_ORDER.length)];
+    const d = LIVESTOCK[sp];
+    const lot = sp==="cattle" ? [1,0] : [1,1,0];   // 1 = femelle
+    const coin = Math.round(lot.length*d.buy*0.8), wood = Math.round(lot.length*d.buy*0.9)+2;
+    const nf = lot.filter(x=>x).length, nm = lot.length-nf;
+    const what = nf+" "+(nf>1 ? d.fs : d.f.toLowerCase())+" et "+nm+" "+(nm>1 ? d.ms : d.m.toLowerCase());
+    this.pendingEvent = { title:"Un marchand de bestiaux",
+      text:"Un marchand mène ses bêtes à la foire. Il vous propose "+what+" pour votre pâturage, contre "+wood+" bois d'œuvre ou "+coin+" deniers.",
+      fair:{ bid:b.id, sp, lot, wood, coin },
+      choices:[ { label:"Troquer contre "+wood+" 🪵", act:"fairWood", disabled:this.stock.timber<wood },
+                { label:"Payer "+coin+" 💰", act:"fairCoin", disabled:this.treasury<coin },
+                { label:"Passer son chemin", act:"fairNo" } ] };
+  }
+  fairDeal(fair, wood){
+    const b = fair && this.pastureOf(fair.bid), d = fair && LIVESTOCK[fair.sp];
+    if(!b || !d || (b.herd.an.length && b.herd.sp!==fair.sp)){ this.toast("Le pâturage n'est plus libre : le marchand repart."); return; }
+    if(wood){ if(this.stock.timber<fair.wood) return; this.stock.timber -= fair.wood; }
+    else { if(this.treasury<fair.coin) return; this.treasury -= fair.coin; }
+    b.herd.sp = fair.sp;
+    for(const f of fair.lot) b.herd.an.push(this.makeAnimal(fair.sp, !!f, d.adultAt + 4 + Math.floor(this.rnd()*18)));
+    this.toast(d.icon+" Marché conclu : "+fair.lot.length+" "+d.ones+" rejoignent le pâturage.", "good");
   }
 
   /* ---------- régions ---------- */
@@ -1069,7 +1815,7 @@ class GameState {
   }
   roadAt(x       , y       ){ return x>=0&&y>=0&&x<W&&y<H && this.roads[y*W+x]===1; }
   passableCost(x       , y       ){
-    return this.roadAt(x,y) ? 0.4 : 1.0;
+    return this.roadAt(x,y) ? 0.4 : (this.pastureCell[y*W+x] ? 1.6 : 1.0);
   }
 
   /* ---------- pathfinding ---------- */
@@ -1080,6 +1826,7 @@ class GameState {
     if(this.tiles[i]===T_WATER) return false;
     const ob=this.occupied[i];
     if(ob>=0){
+      if(this.pastureCell[i]) return true;   // étape 5 : on traverse un pâturage (barrières), pas son abri
       const b=this.buildings.find(b=>b.id===ob);
       if(b && b.def==="wall" && b.done) return false; // rempart infranchissable
       return false;
@@ -1295,20 +2042,19 @@ class GameState {
         break;
       }
       case "farm":{
-        const fs=this.fields();
-        if(m===2 || m===3){ // mars-avril : labour + semailles
-          let target              =null, td=Infinity;
-          for(const fd of fs){ if(fd.f && fd.f.plow<1){ const d=Math.hypot(fd.x-f.x,fd.y-f.y); if(d<td){td=d;target=fd;} } }
-          if(target && target.f){ this.sendToBuilding(f, target, {type:"plow", bid:target.id}); return; }
-          f.cool=40; return;
-        }
-        if(m===8 || m===9){ // septembre-octobre : moisson
-          let target              =null, td=Infinity;
-          for(const fd of fs){ if(fd.f && fd.f.sown && fd.f.growth>0.85 && fd.f.harvestP<1){ const d=Math.hypot(fd.x-f.x,fd.y-f.y); if(d<td){td=d;target=fd;} } }
-          if(target && target.f){ this.sendToBuilding(f, target, {type:"harvest", bid:target.id}); return; }
-          f.cool=40; return;
-        }
-        f.cool=60; return;
+        // étape 5 : le travail du moment (moisson, fauche, fumure, labour, semailles), sinon le battage à la ferme
+        const job = this.farmJob(f);
+        if(!job){ f.cool=40; return; }
+        if(job.type==="thresh"){ this.sendToBuilding(f, b, {type:"thresh"}); return; }
+        const fd = this.buildings.find(x=>x.id===job.bid);
+        if(fd) this.sendToBuilding(f, fd, job); else f.cool=20;
+        return;
+      }
+      case "pasture":{
+        // étape 5 : le gardien rejoint ses bêtes
+        if(!b.herd || !b.herd.an.length){ f.cool=60; return; }
+        this.sendToBuilding(f, b, {type:"herd", bid:b.id});
+        return;
       }
       case "windmill":{
         if(this.stock.grain>0 && this.stock.bread<this.capFor("bread")){
@@ -1346,7 +2092,7 @@ class GameState {
           f.path=null;
           const t=f.task;
           if(!t){ f.state="idle"; break; }
-          if(t.type==="build"||t.type==="plow"||t.type==="harvest"||t.type==="mill"||t.type==="stall"){ f.state="work"; f.timer=0; }
+          if(t.type==="build"||t.type==="mill"||t.type==="stall"||FIELD_TASKS[t.type]||t.type==="thresh"||t.type==="herd"){ f.state="work"; f.timer=0; }
           else { f.state="work"; f.timer=this.workTime(f, t.type); }
         }
         break;
@@ -1371,7 +2117,7 @@ class GameState {
     const t=f.task; if(!t){ f.state="idle"; return; }
     const b = f.work>0 ? this.buildings.find(x=>x.id===f.work) : null;
     // chaque moment passé à l'ouvrage fait progresser le savoir-faire correspondant (bilan mensuel)
-    const sk = t.type==="build" ? "build" : (t.type==="plow" || t.type==="harvest") ? "farm" : t.type==="mill" ? "craft"
+    const sk = t.type==="build" ? "build" : (FIELD_TASKS[t.type] || t.type==="thresh") ? "farm" : t.type==="herd" ? "herd" : t.type==="mill" ? "craft"
              : (t.type==="stall" || t.type==="trade") ? "trade" : (this.jobSkill(b) || "build");
     this.noteWork(f, sk);
     switch(t.type){
@@ -1396,31 +2142,22 @@ class GameState {
         }
         break;
       }
-      case "plow":{
-        const fd = t.bid!==undefined ? this.buildings.find(x=>x.id===t.bid) : null;
-        if(!fd || !fd.f){ f.task=null; f.state="idle"; break; }
-        if(this.time.month>3){ f.task=null; f.state="idle"; f.cool=10; break; }
-        fd.f.plow = Math.min(1, fd.f.plow + 0.005*this.skillMul(f, "farm"));
-        if(fd.f.plow>=1 && !fd.f.sown && this.time.month<=3){
-          fd.f.sown=true; fd.f.usedThisYear=true;
-          this.toast("Les semailles sont faites !","good");
-          f.task=null; f.state="idle"; f.cool=5;
-        } else if(fd.f.plow>=1){ f.task=null; f.state="idle"; f.cool=5; }
+      case "plow": case "spread": case "sow": case "harvest": case "mow":{
+        this.fieldWork(f, t);
         break;
       }
-      case "harvest":{
-        const fd = t.bid!==undefined ? this.buildings.find(x=>x.id===t.bid) : null;
-        if(!fd || !fd.f || !fd.f.sown || (this.time.month!==8 && this.time.month!==9)){ f.task=null; f.state="idle"; f.cool=10; break; }
-        fd.f.harvestP = Math.min(1, fd.f.harvestP + 0.008*this.skillMul(f, "farm"));
-        if(fd.f.harvestP>=1){
-          const cd = CROP_DEFS[fd.f.crop] || CROP_DEFS.wheat;
-          const yieldQty = Math.round(fd.w*fd.h*4*fd.f.fert*fd.f.growth);
-          if(cd.yield) this.stock[cd.yield] = Math.min(this.capFor(cd.yield), this.stock[cd.yield] + yieldQty);
-          this.toast("Moisson de "+cd.name.toLowerCase()+" : "+yieldQty+" "+(RES_ICONS[cd.yield]||""),"good");
-          fd.f.sown=false; fd.f.growth=0; fd.f.plow=0; fd.f.harvestP=0;
-          fd.f.fert = Math.max(0.2, Math.min(1, fd.f.fert - cd.fertCost));
-          f.task=null; f.state="idle"; f.cool=5;
+      case "thresh":{
+        // battage au fléau, à la ferme
+        f.timer++;
+        if(f.timer>=Math.round(8/this.skillMul(f, "farm"))){
+          f.timer=0;
+          if(!this.threshOne()){ f.task=null; f.state="idle"; f.cool=20; }
+          else if(this.farmJob(f) && this.farmJob(f).type!=="thresh"){ f.task=null; f.state="idle"; f.cool=0; }   // un travail des champs passe avant
         }
+        break;
+      }
+      case "herd":{
+        this.herdWork(f, t);
         break;
       }
       case "mill":{
@@ -1837,14 +2574,12 @@ class GameState {
   step(){
     const t=this.time;
     t.tick++;
-    // croissance des cultures (mai → août)
-    if(t.month>=4 && t.month<=7){
-      for(const b of this.buildings){
-        if(b.done && b.def==="field" && b.f && b.f.sown && b.f.growth<1){
-          const wMul = this.weather==="rain" ? 0.7 : 1;
-          b.f.growth = Math.min(1, b.f.growth + 0.0016*wMul);
-        }
-      }
+    // croissance des cultures : selon le calendrier de chaque culture, la pluie et la sécheresse
+    const wMul = (this.weather==="rain" ? 1.1 : this.weather==="snow" ? 0 : 1) * (this.wx==="drought" ? 0.4 : 1);
+    for(const b of this.buildings){
+      if(!b.done || b.def!=="field" || !b.f || !b.f.sown || b.f.growth>=1) continue;
+      const k = this.cropCal(this.liveCrop(b.f)).grow[t.month];
+      if(k) b.f.growth = Math.min(1, b.f.growth + GROW_RATE*k*wMul);
     }
     for(const v of this.villagers) this.stepVillager(v);
     // cerfs
@@ -1887,7 +2622,7 @@ class GameState {
   onYear(){
     for(const b of this.fields()){
       const f=b.f; if(!f) continue;
-      if(!f.usedThisYear) f.fert=Math.min(1, f.fert+0.12); // jachère (champ non semé cette année)
+      if(!f.usedThisYear){ f.fert=Math.min(1, f.fert+0.12); f.rested=true; } // jachère (ni semé ni récolté cette année)
       f.usedLastYear=f.usedThisYear; f.usedThisYear=false;
     }
   }
@@ -1902,6 +2637,9 @@ class GameState {
       this.weather = r<0.18 ? "rain" : r<0.30 ? "fog" : "clear";
     }
     this.weatherT = 0;
+    // ----- étape 5 : aléas des champs, puis la vie des troupeaux (lait, laine, naissances, foin) -----
+    this.farmMonth(m);
+    this.herdMonth(m);
     // production des extensions de cour
     const summer = m>=7 && m<=9;
     const beeSeason = m>=3 && m<=8;
@@ -1913,7 +2651,12 @@ class GameState {
         if(e==="chicken") this.stock.eggs=Math.min(this.capFor("eggs"), this.stock.eggs+0.5*yf);
         if(e==="orchard" && summer) this.stock.apples=Math.min(this.capFor("apples"), this.stock.apples+1*yf);
         if(e==="beehive" && beeSeason) this.stock.honey=Math.min(this.capFor("honey"), this.stock.honey+0.5*yf);
-        if(e==="tailor")  this.stock.clothes=Math.min(this.capFor("clothes"), this.stock.clothes+1*yf);
+        if(e==="tailor"){
+          // étape 5 : le tailleur file la laine ou le lin ; sans fibre, il rapièce (moitié moins)
+          const want=1*yf, w=Math.min(this.stock.wool||0, want), fl=Math.min(this.stock.flax||0, want-w);
+          this.stock.wool-=w; this.stock.flax-=fl;
+          this.stock.clothes=Math.min(this.capFor("clothes"), this.stock.clothes + w + fl + (want-w-fl)*0.5);
+        }
         if(e==="brewer"){ const nb=Math.min(this.stock.barley, yf); if(nb>=1 || (nb>0 && yf<1)){ this.stock.barley-=nb; this.stock.ale=Math.min(this.capFor("ale"), this.stock.ale+nb); } }
       }
     }
@@ -1990,7 +2733,8 @@ class GameState {
     const aleRatio=this.families.length>0?drunk/this.families.length:1;
     // pourrissement
     const spoil=this.buildings.some(b=>b.done&&b.def==="granary")?0.03:0.10;
-    for(const k of FOOD_TYPES) this.stock[k]=Math.max(0,this.stock[k]*(1-spoil));
+    // étape 5 : le lait tourne vite (pas encore de laiterie), les pois secs se gardent
+    for(const k of FOOD_TYPES) this.stock[k]=Math.max(0,this.stock[k]*(1-(k==="milk" ? 0.5 : k==="pulses" ? spoil*0.3 : spoil)));
     // effets des décrets actifs
     if(this.policies.tithe){ this.influence += 8; }
     if(this.policies.freeMarket){ this.wealth += 6; }
@@ -2183,6 +2927,7 @@ class GameState {
           { label:"Refuser (approbation −12, récoltes confisquées)", act:"refuseTax" },
         ]};
     }
+    if(m===3) this.livestockFair();
     if(m===4 && this.time.year>=1177 && this.rnd()<0.55){
       const amount=Math.max(8, Math.round(6+this.families.length*1.5));
       this.pendingEvent={ title:"Des brigands en vue !",
@@ -2265,6 +3010,8 @@ class GameState {
   }
   workStatus(b         )       {
     const d=BUILD_DEFS[b.def];
+    if(b.def==="pasture") return this.pastureStatus(b);
+    if(b.def==="field") return this.fieldStatus(b);
     if(!b.done) return "En construction : "+BUILD_STAGES[buildStage(b)].name.toLowerCase()+" ("+Math.round(b.progress*100)+" %)";
     const nw = d.fam>0 ? this.workersOf(b).length : 0;
     if(d.fam>0 && nw===0) return (Number(b.want)||0)>0 ? "En attente d'un adulte libre" : "Aucun ouvrier";
@@ -2273,7 +3020,7 @@ class GameState {
       case "forager": return !this.berrySeason() ? "Repos d'hiver" : (this.findBerryNear(b)<0 ? "Plus de baies à portée" : "Cueillette en cours");
       case "hunter": return this.findDeerNear(b) ? "Chasse en cours" : "Aucun gibier à portée";
       case "quarry": { const i=b.y*W+b.x; return this.stoneAmt[i]<=0 ? "Carrière épuisée" : "Extraction en cours"; }
-      case "farm": return "Ferme ("+this.fields().length+" champ(s))";
+      case "farm": return this.farmStatus(b);
       case "windmill": return this.stock.grain>0 ? "Mouture du grain" : "En attente de grain";
       case "market": return nw>0 ? "Étals tenus" : "Marché inactif";
       case "trade": return nw>0 ? "Comptoir actif (ventes auto)" : "Comptoir inactif";
@@ -2353,7 +3100,7 @@ class GameState {
   }
   serialize(){
     return {
-      v:4, // v4 : villageois individuels (villagers), foyers sans position ; v3 : parcelles de bourgage (b.plot)
+      v:5, // v5 : champs détaillés (b.f), pâturages (b.herd), bœufs (oxen) ; v4 : villageois ; v3 : parcelles de bourgage (b.plot)
       seed:this.seed,
       modeId:this.modeId,
       weather:this.weather,
@@ -2387,6 +3134,10 @@ class GameState {
       victory:this.victory,
       pendingEvent:this.pendingEvent,
       winterWarned:this.winterWarned,
+      oxen:this.oxen,
+      nextA:this.nextA,
+      wx:this.wx,
+      keepCalves:this.keepCalves,
     };
   }
   static load(data    )          {
@@ -2410,13 +3161,14 @@ class GameState {
         const cells = p && Array.isArray(p.cells) ? p.cells.filter(i=>Number.isInteger(i) && i>=0 && i<W*H) : [];
         if(cells.length===0 || cells[0]!==b.y*W+b.x) delete b.plot;
         else {
-          b.plot = { cells, dir: Number.isInteger(p.dir) && p.dir>=0 && p.dir<4 ? p.dir : 2 };
+          b.plot = { cells, dir: b.def==="pasture" ? -1 : Number.isInteger(p.dir) && p.dir>=0 && p.dir<4 ? p.dir : 2 };
           if(Array.isArray(p.poly) && p.poly.length>=3 && p.poly.every(q=>Array.isArray(q) && q.length===2 && q.every(v=>typeof v==="number" && isFinite(v)) && q[0]>=0 && q[0]<=W && q[1]>=0 && q[1]<=H))
             b.plot.poly = p.poly.map(q=>[q[0], q[1]]);
         }
       }
+      if(b.def==="pasture") b.herd = g.normHerd(b.herd);
       return b;
-    });
+    }).filter(b=>b.def!=="pasture" || (b.plot && b.plot.cells.length>=2));
     g.families = Array.isArray(data.families) ? data.families.filter(f=>f && typeof f==="object" && num(f.id)) : [];
     for(const f of g.families){ if(typeof f.name!=="string") f.name = "Famille ?"; if(!num(f.home)) f.home = -1; }
     g.deer = Array.isArray(data.deer) ? data.deer : [];
@@ -2429,6 +3181,11 @@ class GameState {
     if(data.time && num(data.time.tick) && num(data.time.day) && num(data.time.month) && num(data.time.year)){
       g.time = { tick:Math.max(0,data.time.tick), day:Math.max(0,data.time.day),
                  month:Math.max(0,Math.min(11,data.time.month)), year:Math.max(0,data.time.year) };
+    }
+    // étape 5 : champs (anciennes sauvegardes : la jachère n'est plus labourée ni semée)
+    for(const b of g.buildings) if(b.def==="field"){
+      b.f = g.normField(b.f && typeof b.f==="object" ? b.f : {});
+      if(b.f.crop==="fallow" && b.f.sown){ b.f.sown=false; delete b.f.sownCrop; b.f.plow=0; b.f.sowP=0; b.f.growth=0; b.f.harvestP=0; b.f.usedThisYear=false; }
     }
     if(typeof data.approval==="number") g.approval = data.approval;
     if(typeof data.treasury==="number") g.treasury = data.treasury;
@@ -2461,6 +3218,21 @@ class GameState {
     g.nextF = Math.max(0, ...g.families.map(f=>num(f.id)?f.id:0)) + 1;
     g.loadVillagers(data);
     g.nextD = Math.max(0, ...g.deer.map(d=>num(d.id)?d.id:0)) + 1;
+    // étape 5 : bœufs (une sauvegarde v4 n'avait qu'un nombre), identifiants des bêtes, aléa du mois
+    if(Array.isArray(data.oxen)) g.oxen = data.oxen.filter(o=>o && num(o.a)).map(o=>({ id:num(o.id) ? o.id : 0, a:Math.max(0, Math.round(o.a)), h:num(o.h) ? Math.max(0, Math.min(100, o.h)) : 100 }));
+    else { g.oxen = []; for(let k=0; k<Math.max(0, Math.min(20, Math.floor(num(g.stock.ox) ? g.stock.ox : 0))); k++) g.oxen.push({ id:0, a:60, h:100 }); }
+    let na = Math.max(0, num(data.nextA) ? data.nextA : 0);
+    for(const o of g.oxen) na = Math.max(na, o.id+1);
+    for(const b of g.buildings) if(b.herd) for(const a of b.herd.an) na = Math.max(na, a.id+1);
+    g.nextA = Math.max(1, na);
+    for(const o of g.oxen) if(!o.id) o.id = g.nextA++;
+    for(const b of g.buildings) if(b.herd) for(const a of b.herd.an) if(!a.id) a.id = g.nextA++;
+    g.syncOx();
+    // une sauvegarde d'avant l'étape 5 n'a pas de foin : une meule pour que ses bœufs passent l'hiver
+    if(!data.stock || !num(data.stock.hay)) g.stock.hay = 6 + 3*g.oxen.length;
+    g.wx = data.wx==="drought" || data.wx==="wet" ? data.wx : null;
+    if(data.keepCalves===false) g.keepCalves = false;
+    for(const k of Object.keys(g.stock)) if(!num(g.stock[k])) g.stock[k] = 0;
     // reconstruit l'occupation du sol à partir des bâtiments (bornes vérifiées)
     g.occupied = new Int32Array(W*H).fill(-1);
     for(const b of g.buildings){
@@ -2471,11 +3243,12 @@ class GameState {
       }
       if(b.plot) for(const i of b.plot.cells) if(g.occupied[i]<0) g.occupied[i] = b.id;
     }
+    g.markPastures();
     return g;
   }
 }
 
 if(typeof module!=="undefined" && module.exports){
-  module.exports = { SKILL_DEFS, SKILL_ORDER, SKILL_LEVELS, skillLevel, FOOD_NEED, AGE_TEEN, AGE_ADULT, AGE_ELDER, AGE_RETIRE, STAGE_NAMES, JOB_TITLES, NAMES_M, NAMES_F, SURNAMES, BUILD_STAGES, buildStage, DIRS4, PLOT_FRONT, polyArea, pointInPoly, GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
+  module.exports = { CROP_CAL, GROW_RATE, SHEAF_RES, LIVESTOCK, LIVESTOCK_ORDER, GRASS, PASTURE_MIN, PASTURE_MAX, monthsTxt, isWinterMonth, MONTHS_ABBR, SKILL_DEFS, SKILL_ORDER, SKILL_LEVELS, skillLevel, FOOD_NEED, AGE_TEEN, AGE_ADULT, AGE_ELDER, AGE_RETIRE, STAGE_NAMES, JOB_TITLES, NAMES_M, NAMES_F, SURNAMES, BUILD_STAGES, buildStage, DIRS4, PLOT_FRONT, polyArea, pointInPoly, GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
     T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf, REGION_DEFS, REGION_COST, POLICY_DEFS, POLICY_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, MODE_BY_ID, DIFFICULTIES, DIFF_BY_ID };
 }
