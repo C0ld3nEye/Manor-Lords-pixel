@@ -1192,6 +1192,7 @@ class GameState {
     }
     if(d.instant || d.id==="field"){ b.done = true; b.progress = 1; }
     else this.initMat(b, d.cost);
+    this.enclosedCheck();   // étape 8 : prévenir tout de suite si la pose enferme un bâtiment
     this.uiVersion++;
     return null;
   }
@@ -1366,6 +1367,7 @@ class GameState {
     const nb = plan.plots.length;
     this.toast(nb+" parcelle"+(nb>1?"s":"")+" tracée"+(nb>1?"s":"")+" : les journaliers bâtissent les maisons."
       +(plan.limited?" (bois insuffisant pour toute la zone)":""), "good");
+    this.enclosedCheck();
     this.uiVersion++;
     return null;
   }
@@ -2583,6 +2585,7 @@ class GameState {
     for(const i of plan.cells) this.occupied[i] = b.id;
     b.done = true; b.progress = 1;
     this.toast("Champ tracé ("+plan.n+" cases, fertilité "+Math.round(plan.fert*100)+" %).", "good");
+    this.enclosedCheck();
     this.uiVersion++;
     return null;
   }
@@ -2939,6 +2942,7 @@ class GameState {
     for(const i of plan.cells) this.occupied[i] = b.id;
     this.markPastures();
     this.toast("Pâturage tracé ("+(plan.cells.length-1)+" cases d'herbe) : les journaliers posent la clôture et l'abri.", "good");
+    this.enclosedCheck();
     this.uiVersion++;
     return null;
   }
@@ -3548,15 +3552,83 @@ class GameState {
     return null;
   }
   // trouve une case praticable adjacente au bâtiment (pour y travailler)
+  /* étape 8 : quelles cases franchissables sont reliées entre elles (composantes), recalculé seulement quand un
+     bâtiment est posé ou démoli, ou une région réclamée. Avant, un villageois visait la case libre la plus proche
+     d'un bâtiment même enfermée (par exemple entre un chantier, une grange et le manoir) : il n'y arrivait jamais,
+     attendait, recommençait, et des chantiers restaient bloqués des années avec des journaliers désœuvrés. */
+  reachMap(){
+    const sig = this.nextB+"|"+this.buildings.length+"|"+this.regions.filter(r=>r.owned).length;
+    let R = this._reach;
+    if(R && R.sig===sig) return R.comp;
+    const comp = (R && R.comp.length===W*H) ? R.comp : new Int32Array(W*H);
+    comp.fill(-1);
+    const q = new Int32Array(W*H);
+    let label = 0;
+    for(let i0=0;i0<W*H;i0++){
+      if(comp[i0]>=0 || !this.passable(i0%W, (i0/W)|0)) continue;
+      let h = 0, t = 0; q[t++] = i0; comp[i0] = label;
+      while(h<t){
+        const i = q[h++], x = i%W, y = (i/W)|0;
+        for(let k=0;k<4;k++){
+          const nx = x+DIRS4[k][0], ny = y+DIRS4[k][1];
+          if(nx<0||ny<0||nx>=W||ny>=H) continue;
+          const n = ny*W+nx;
+          if(comp[n]<0 && this.passable(nx, ny)){ comp[n] = label; q[t++] = n; }
+        }
+      }
+      label++;
+    }
+    try{ Object.defineProperty(this, "_reach", { value:{ sig, comp }, writable:true, enumerable:false, configurable:true }); }catch(e){ this._reach = { sig, comp }; }
+    return comp;
+  }
+  // composante de la case où se tient quelqu'un (ou d'une case voisine s'il est dans un bâtiment) ; -1 : inconnue
+  compAt(fx, fy){
+    const comp = this.reachMap(), x = Math.floor(fx), y = Math.floor(fy);
+    if(x>=0 && y>=0 && x<W && y<H && comp[y*W+x]>=0) return comp[y*W+x];
+    for(const d of DIRS4){ const nx = x+d[0], ny = y+d[1]; if(nx>=0 && ny>=0 && nx<W && ny<H && comp[ny*W+nx]>=0) return comp[ny*W+nx]; }
+    return -1;
+  }
+  // étape 8 : chaque mois, un bâtiment que plus personne ne peut atteindre (enfermé par des maisons, des champs, des
+  // remparts posés ensuite) est signalé — dans son panneau, et d'un message la première fois. Avant, ses ouvriers
+  // allaient et venaient sans jamais rien rapporter, sans que rien ne l'explique.
+  enclosedCheck(){
+    const cnt = new Map();
+    for(const v of this.villagers){ const c = this.compAt(v.x, v.y); if(c>=0) cnt.set(c, (cnt.get(c)||0) + 1); }
+    let main = -1, mc = 0;
+    cnt.forEach((n, c)=>{ if(n>mc){ mc = n; main = c; } });
+    if(main<0) return 0;
+    const comp = this.reachMap();
+    let n = 0;
+    for(const b of this.buildings){
+      const d = BUILD_DEFS[b.def];
+      if(!b.done || !d || b.def==="field" || b.def==="wall" || b.def==="pasture") continue;
+      const needed = d.fam>0 || b.def==="storehouse" || b.def==="granary" || (b.def==="burgage" && this.houseFamily(b));
+      if(!needed){ delete b.enclosed; continue; }
+      let ok = false;
+      for(let r=1; r<=3 && !ok; r++) for(let yy=b.y-r; yy<=b.y+b.h-1+r && !ok; yy++) for(let xx=b.x-r; xx<=b.x+b.w-1+r && !ok; xx++){
+        if(xx<0||yy<0||xx>=W||yy>=H) continue;
+        if(comp[yy*W+xx]===main) ok = true;
+      }
+      if(ok){ delete b.enclosed; continue; }
+      n++;
+      if(!b.enclosed){
+        b.enclosed = true;
+        this.toast((b.def==="burgage" ? "Une maison" : d.name)+" n'a plus aucun accès : personne ne peut l'atteindre. Dégagez un passage (une route, une case libre).", "bad");
+      }
+    }
+    return n;
+  }
+  // une case libre au bord du bâtiment, la plus proche, ET qu'on peut atteindre depuis (fx, fy)
   spotFor(b         , fx       , fy       )         {
     if(!isFinite(b.x)||!isFinite(b.y)||!isFinite(b.w)||!isFinite(b.h)||b.w>W||b.h>H) return null;
     let best         =null, bd=Infinity;
+    const cmap = this.reachMap(), cf = this.compAt(fx, fy);
     for(let r=1;r<=3;r++){
       for(let yy=Math.max(0,b.y-r); yy<=Math.min(H-1,b.y+b.h-1+r); yy++){
         for(let xx=Math.max(0,b.x-r); xx<=Math.min(W-1,b.x+b.w-1+r); xx++){
           const edge = (xx===Math.max(0,b.x-r)||xx===Math.min(W-1,b.x+b.w-1+r)||yy===Math.max(0,b.y-r)||yy===Math.min(H-1,b.y+b.h-1+r));
           if(!edge) continue;
-          if(this.passable(xx,yy)){
+          if(this.passable(xx,yy) && (cf<0 || cmap[yy*W+xx]===cf)){
             const d=Math.hypot(xx-fx,yy-fy);
             if(d<bd){ bd=d; best={x:xx,y:yy}; }
           }
@@ -3850,6 +3922,7 @@ class GameState {
     let best = null, bd = Infinity;
     const sx = site.x+site.w/2, sy = site.y+site.h/2;
     for(const d of this.depotsFor(r)){
+      if(!this.spotFor(d, x, y)) continue;   // étape 8 : un dépôt qu'on ne peut pas atteindre ne sert à rien
       const cx = d.x+d.w/2, cy = d.y+d.h/2;
       const k = Math.hypot(cx-x, cy-y) + Math.hypot(sx-cx, sy-cy);
       if(k<bd){ bd = k; best = d; }
@@ -3917,6 +3990,11 @@ class GameState {
   siteJob(f, sites){
     const plow = this.plowing();
     for(const s of this.sitesByOrder(sites, f.x, f.y)){
+      // étape 8 : un chantier enfermé (aucune case libre reliée autour) est passé, et signalé une fois
+      if(!this.spotFor(s, f.x, f.y)){
+        if(!s.unreach && this.compAt(f.x, f.y)>=0){ s.unreach = true; this.toast("Le chantier ("+(BUILD_DEFS[s.def] ? BUILD_DEFS[s.def].name.toLowerCase() : s.def)+") est enfermé : personne ne peut l'atteindre. Dégagez un passage ou démolissez-le.", "bad"); }
+        continue;
+      }
       if(s.mat) for(const r of MAT_RES){
         const left = this.matLeft(s, r);
         if(left<=0) continue;
@@ -4049,6 +4127,7 @@ class GameState {
     for(const d of this.buildings){
       if(!d.done || d===b || rc.from.indexOf(d.def)<0) continue;
       if(d.def==="pasture" && !(d.herd && d.herd.an.length && (r!=="milk" || d.herd.sp==="cattle"))) continue;
+      if(!this.spotFor(d, x, y)) continue;   // étape 8 : un dépôt enfermé ne sert à rien
       const k = Math.hypot(d.x+d.w/2-x, d.y+d.h/2-y) + Math.hypot(b.x+b.w/2-(d.x+d.w/2), b.y+b.h/2-(d.y+d.h/2));
       if(k<bd){ bd = k; best = d; }
     }
@@ -5057,6 +5136,7 @@ class GameState {
     }
     // postes voulus : on y place les adultes devenus libres
     this.fillJobs();
+    this.enclosedCheck();   // étape 8
     // objectifs
     this.objectives.wood=this.objectives.wood||this.buildings.some(b=>b.done&&b.def==="woodcutter");
     this.objectives.pop=this.objectives.pop||this.families.length>=8;
@@ -5334,6 +5414,7 @@ class GameState {
     if(b.def==="pasture") return this.pastureStatus(b);
     if(b.def==="field") return this.fieldStatus(b);
     if(!b.done) return this.siteStatus(b);
+    if(b.enclosed) return "Enfermé : plus aucun accès ! Dégagez un passage.";   // étape 8
     const nw = d.fam>0 ? this.workersOf(b).length : 0;
     if(d.fam>0 && nw===0) return (Number(b.want)||0)>0 ? "En attente d'un adulte libre" : "Aucun ouvrier";
     switch(b.def){

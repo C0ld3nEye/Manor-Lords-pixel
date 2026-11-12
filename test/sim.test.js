@@ -3281,4 +3281,49 @@ test("étape 8 : l'impôt du roi attend le manoir ; faute de deniers, on le comp
   assert.ok(Math.abs(g.foodStock() - (food - kind)) < 1e-6, "et des vivres pour le reste");
 });
 
+test("étape 8 : une case libre enfermée n'est plus visée — les journaliers passent par un accès qu'ils peuvent atteindre", () => {
+  const g = fresh(); houses(g, 3);
+  g.stock.timber = 99; g.stock.stone = 99;
+  // un entrepôt dont la seule case libre au contact est une poche fermée par des remparts
+  let spot = null;
+  for(let y=DY+3; y<DY+OH-6 && !spot; y++) for(let x=DX+Math.ceil(OW/3)+3; x<DX+Math.floor(2*OW/3)-6 && !spot; x++){
+    let ok = true;
+    for(let yy=y-3; yy<=y+4 && ok; yy++) for(let xx=x-3; xx<=x+3 && ok; xx++) if(g.tiles[yy*W+xx]!==T_GRASS || g.occupied[yy*W+xx]>=0 || g.roads[yy*W+xx]) ok = false;
+    if(ok) spot = { x, y };
+  }
+  assert.ok(spot, "un coin libre");
+  const { x, y } = spot;
+  assert.strictEqual(g.place("storehouse", x, y), null);
+  const st = g.buildings[g.buildings.length-1]; st.done = true; st.progress = 1; delete st.mat;
+  for(const [dx, dy] of [[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[1,1],[0,2],[-1,2],[1,2]]){
+    assert.strictEqual(g.place("wall", x+dx, y+dy), null);
+    const w = g.buildings[g.buildings.length-1]; w.done = true; w.progress = 1; delete w.mat;
+  }
+  assert.ok(g.passable(x, y+1), "la poche est libre…");
+  const from = { x:x+0.5, y:y-3.5 };
+  const sp = g.spotFor(st, from.x, from.y);
+  assert.ok(sp, "un accès existe plus loin");
+  assert.ok(!(sp.x===x && sp.y===y+1), "… mais on ne vise plus la poche");
+  assert.strictEqual(g.compAt(sp.x+0.5, sp.y+0.5), g.compAt(from.x, from.y), "l'accès choisi est relié");
+  assert.ok(g.astar(Math.floor(from.x), Math.floor(from.y), sp.x, sp.y), "et un chemin y mène");
+});
+
+test("étape 8 : un bâtiment que plus personne ne peut atteindre est signalé (panneau et message)", () => {
+  const g = fresh(); houses(g, 3);
+  g.stock.timber = 99; g.stock.stone = 99;
+  const b = doneBuilding(g, "hunter");
+  assert.ok(!g.enclosedCheck() || !b.enclosed, "accessible au départ");
+  // trois anneaux de remparts autour : plus aucune case libre reliée
+  for(let r=1;r<=3;r++) for(let y=b.y-r;y<=b.y+r;y++) for(let x=b.x-r;x<=b.x+r;x++){
+    if(Math.max(Math.abs(x-b.x), Math.abs(y-b.y))!==r) continue;
+    if(g.place("wall", x, y)===null){ const w = g.buildings[g.buildings.length-1]; w.done = true; w.progress = 1; delete w.mat; }
+    else { g.occupied[y*W+x] = 9999; }   // (une case déjà prise ou impropre : on la bouche aussi)
+  }
+  g._reach = null;
+  g.enclosedCheck();
+  assert.ok(b.enclosed, "enfermé");
+  assert.ok(/Enfermé/.test(g.workStatus(b)), g.workStatus(b));
+  assert.ok(g.log.some(l=>/n'a plus aucun accès/.test(l.text)), "message au joueur");
+});
+
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));

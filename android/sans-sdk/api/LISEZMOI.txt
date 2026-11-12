@@ -1,0 +1,3 @@
+Déclarations minimales des classes Android utilisées par l'application, pour compiler sans le SDK.
+Elles ne sont PAS mises dans l'APK : sur le téléphone, ce sont les vraies classes d'Android qui servent.
+Les constantes ont leur vraie valeur (le compilateur les recopie dans le code).

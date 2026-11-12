@@ -67,7 +67,7 @@ function placeBest(g, def, score, R){
   R = R || 28;
   for(let y=c.y-R; y<=c.y+R; y++) for(let x=c.x-R; x<=c.x+R; x++){
     if(def==="quarry"){ if(x<0 || y<0 || x>=W || y>=H || g.tiles[at(x, y)]!==T_STONE || g.occupied[at(x, y)]>=0 || !g.regionOwned(x, y) || g.stoneAmt[at(x, y)]<20) continue; }
-    else if(!rectFree(g, x, y, d.w, d.h)) continue;
+    else if(!rectFree(g, x-1, y-1, d.w+2, d.h+2)) continue;   // une case libre tout autour : jamais enfermé
     const s = score(x, y) - Math.hypot(x-c.x, y-c.y)*0.6;
     if(s>bs){ bs = s; best = { x, y }; }
   }

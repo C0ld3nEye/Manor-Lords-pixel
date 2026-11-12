@@ -29,6 +29,10 @@ Automatiquement : le flux `.github/workflows/apk.yml` construit et publie l'APK 
 À la main (avec le SDK Android installé) : `gradle -p android assembleRelease`, puis
 `android/app/build/outputs/apk/release/app-release.apk`.
 
+Sans le SDK Android : `android/sans-sdk/construire.sh` télécharge sur Maven Central `apktool-lib` (qui contient aapt2
+et le framework Android de référence), `dalvik-dx` et `apksig`, puis assemble, aligne et signe l'APK. Les classes
+Android ne servent qu'à compiler : de simples déclarations, dans `sans-sdk/api/`.
+
 ## La clé de signature
 
 Android n'accepte une mise à jour que si elle porte **la même signature** que la version installée ; sinon il faut
