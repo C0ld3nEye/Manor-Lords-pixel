@@ -987,6 +987,7 @@ var JOB_CLOTH = {
   windmill:["#d8d0b8","#b0a68c","#ece6d4"], market:["#c49a3a","#9a7628","#dcb860"],
   trade:["#7a4a8a","#5c3768","#9a68aa"], militia:["#3e5a86","#2c4266","#5a78a4"],
   merc:["#7a2a2a","#561c1e","#984040"], brigand:["#4a4038","#342c26","#625548"],
+  pasture:["#7a6a44","#5c4f32","#968458"],
 };
 var HAIRS = [P.hrBrown, P.hrBlond, P.hrBlack, P.hrRed, P.hrGrey];
 function person(head, body, cloth, hair, opts){
@@ -1044,6 +1045,21 @@ function toolSprite(kind, up){
     o.r(hx-1, by, 4, 3, P.wood3); o.r(hx-1, by, 4, 1, "#c42a2a"); o.p(hx-1, by+2, P.wood1);
   } else if(kind==="bow"){
     o.ln(hx+1, hy-5, hx+2, hy-1, P.wood2); o.ln(hx+2, hy-1, hx+1, hy+3, P.wood2); o.ln(hx+1, hy-5, hx+1, hy+3, P.linen0);
+  } else if(kind==="fork"){          // fourche à fumier
+    if(up){ handle(hx, hy, hx+1, 3); o.r(hx, 1, 3, 1, P.st2); o.p(hx, 0, P.st3); o.p(hx+2, 0, P.st3); }
+    else { handle(hx-1, hy-3, hx+2, hy+3); o.r(hx+2, hy+4, 3, 1, P.st2); o.p(hx+2, hy+5, P.st3); o.p(hx+4, hy+5, P.st3); o.p(hx+5, hy+4, "#4a321e"); }
+  } else if(kind==="seed"){          // sac de semences, on sème à la volée
+    var sy = up ? hy-1 : hy+1;
+    o.r(hx-2, sy, 4, 4, P.linen); o.r(hx-2, sy, 4, 1, P.linen0); o.p(hx-1, sy+2, P.linen0);
+    if(!up){ o.p(hx+3, hy-1, P.th3); o.p(hx+4, hy+1, P.th3); o.p(hx+5, hy-2, P.th3); }
+  } else if(kind==="scythe"){        // faux
+    if(up){ handle(hx, hy, hx+2, 1); o.ln(hx+2, 1, hx-3, 2, P.st4); o.p(hx-4, 3, P.st3); }
+    else { handle(hx-2, hy-5, hx+1, hy+4); o.ln(hx+1, hy+4, hx+5, hy+5, P.st4); o.p(hx+6, hy+4, P.st3); }
+  } else if(kind==="flail"){         // fléau à battre
+    if(up){ handle(hx, hy, hx, 3); o.ln(hx, 3, hx-3, 1, P.wood3); }
+    else { handle(hx, hy, hx+2, hy-2); o.ln(hx+2, hy-2, hx+3, hy+3, P.wood3); }
+  } else if(kind==="crook"){         // houlette du berger
+    handle(hx+1, hy+5, hx+1, 1); o.p(hx+2, 0, P.wood2); o.p(hx+3, 1, P.wood2); o.p(hx+3, 2, P.wood2);
   }
   return o;
 }
@@ -1268,6 +1284,199 @@ function sheaf(){
 }
 
 /* ======================================================
+   ÉTAPE 5 : NOUVELLES CULTURES, PRÉS, FUMIER, MEULES
+   stage : 2 pousses, 3 jeune, 4 haut / fleurs, 5 mûrissant, 6 mûr
+   ====================================================== */
+var CROP_RAMPS = {
+  rye:  { g:["#3a6248","#4f7c5a","#6a9a6c"], m:["#7a8a5a","#9a9e6a","#b8b27a"], r:["#8f7a4a","#b09a62","#cdb682"], head:"#dccb92", tall:1 },
+  oats: { g:["#4a7a3a","#62924a","#7eac5a"], m:["#94a25a","#aeb46a","#c8c47e"], r:["#b8a868","#d2c488","#ece0b0"], head:"#f4ecc8", tall:0 },
+};
+function cropTile(crop, stage, v){
+  var o = new Px(16, 16), x, y, row, j;
+  for(y=0;y<16;y++) for(x=0;x<16;x++) o.p(x, y, furrowPix(x, y, v));
+  if(crop==="rye" || crop==="oats"){
+    var R = CROP_RAMPS[crop], ramp = stage>=6 ? R.r : stage===5 ? R.m : R.g;
+    var height = (stage===2 ? 1 : stage===3 ? 2 : 3) + (stage>=4 ? R.tall : 0);
+    for(row=2; row<16; row+=4) for(x=0; x<16; x++){
+      if(stage===2 && (x%2)) continue;
+      var hh = height + (hash(x,row,v)<0.3 ? -1 : 0);
+      for(j=0;j<=hh;j++) o.p(x, row-j+1, ramp[j===hh ? 2 : (j===0 ? 0 : 1)]);
+      if(stage>=4) o.p(x, row+2, ramp[0]);
+      if(crop==="oats" && stage>=5 && hash(x,row,v+2)<0.5){ o.p(x+1, row-hh+1, R.head); o.p(x-1, row-hh+2, R.head); }
+      if(crop==="rye" && stage>=6 && hash(x,row,v+1)<0.5) o.p(x, row-hh, R.head);
+    }
+  } else if(crop==="flax"){
+    var st = ["#4e7a44","#6a9a52","#86b062"];
+    for(row=2; row<16; row+=4) for(x=0; x<16; x+=2){
+      var hf = (stage===2 ? 1 : stage===3 ? 2 : 3) + (hash(x,row,v)<0.3 ? -1 : 0), xx = x + (row>>2&1);
+      for(j=0;j<=hf;j++) o.p(xx, row-j+1, stage>=6 ? "#9a8a50" : st[j===hf ? 2 : 1]);
+      if((stage===4 || stage===5) && hash(xx,row,v+4)<(stage===4 ? 0.7 : 0.4)) o.p(xx, row-hf, hash(xx,row,v+5)<0.5 ? "#6a8ad8" : "#9ab4f0");
+      if(stage>=5 && hash(xx,row,v+6)<0.5) o.p(xx, row-hf, stage>=6 ? "#7a6438" : "#a0a85a");
+    }
+  } else if(crop==="peas"){
+    var pg = stage>=6 ? ["#7a7a3a","#9a9248","#b8a858"] : ["#3e7a34","#56963e","#78b452"];
+    for(row=2; row<16; row+=4) for(x=0; x<16; x++){
+      if(stage===2 && (x%3)) continue;
+      var hp = stage<=2 ? 0 : stage===3 ? 1 : 2;
+      if(hash(x,row,v)<0.2) hp = Math.max(0, hp-1);
+      for(j=0;j<=hp;j++) o.p(x, row-j+1, pg[j===hp ? 2 : (j===0 ? 0 : 1)]);
+      if(stage===4 && hash(x,row,v+3)<0.25) o.p(x, row-hp, "#f0eee0");
+      if(stage===5 && hash(x,row,v+3)<0.3) o.p(x, row-hp+1, "#a8d86a");
+      if(stage>=6 && hash(x,row,v+3)<0.3) o.p(x, row-hp+1, "#c8b46a");
+    }
+  }
+  return o;
+}
+/* pré de fauche : herbe sur toute la case, de plus en plus haute et fleurie ; mown : fauché */
+function meadowTile(stage, v, mown){
+  var o = new Px(16, 16), x, y;
+  var base = ["#3c6a2c","#4e7e34","#5e8e3c"];
+  for(y=0;y<16;y++) for(x=0;x<16;x++){ var n = hash(x, y, v+30); o.p(x, y, n<0.3 ? base[0] : n<0.75 ? base[1] : base[2]); }
+  if(mown){
+    for(y=0;y<16;y++) for(x=0;x<16;x++){ if(hash(x,y,v+31)<0.5) o.p(x, y, hash(x,y,v+32)<0.5 ? "#7a9a48" : "#94a85a"); }
+    for(y=3;y<16;y+=6) for(x=0;x<16;x++){ o.p(x, y, "#c8c070"); if(hash(x,y,v+33)<0.6) o.p(x, y-1, "#ddd48a"); o.p(x, y+1, "#a89a52"); }
+    return o;
+  }
+  var tall = stage<=2 ? 1 : stage<=3 ? 2 : 3, dens = stage<=2 ? 0.25 : stage<=3 ? 0.45 : 0.6;
+  var blades = ["#4a8a38","#62a244","#7cb850"];
+  for(x=0;x<16;x++) for(y=2;y<16;y+=2){
+    if(hash(x,y,v+34) > dens) continue;
+    var h = tall - (hash(x,y,v+35)<0.4 ? 1 : 0);
+    for(var j=0;j<=h;j++) o.p(x, y-j, blades[Math.min(2, j)]);
+    if(stage>=5 && hash(x,y,v+36)<0.12){
+      var fl = ["#e8d04a","#f4f0e0","#a878c8","#d84a3a"][Math.floor(hash(x,y,v+37)*4)];
+      o.p(x, y-h-1, fl);
+    }
+  }
+  if(stage>=6) for(x=0;x<16;x++) for(y=0;y<16;y++) if(hash(x,y,v+38)<0.06) o.p(x, y, "#b8b05a");
+  return o;
+}
+/* fumier épandu sur le chaume, avant le labour */
+function dungTile(v){
+  var o = stubbleTile(2, v);
+  for(var k=0;k<14;k++){
+    var x = Math.floor(hash(k,1,v+40)*15), y = Math.floor(hash(k,2,v+40)*15);
+    o.p(x, y, "#4a321e"); o.p(x+1, y, "#3a2616"); if(k&1) o.p(x, y+1, "#5a3e24");
+  }
+  return o;
+}
+/* culture d'hiver sous la neige : quelques pousses vertes dépassent */
+function winterCropTile(v){
+  var o = fieldTile("wheat", 0, 0, v);
+  for(var row=2; row<16; row+=4) for(var x=0; x<16; x+=2) if(hash(x,row,v+41)<0.55){ o.p(x+(row>>2&1), row, "#5a8a4a"); }
+  return o;
+}
+/* meule de foin (pré fauché, réserve d'hiver près de l'abri) */
+function haycock(){
+  var o = S(10, 9, 5, 9);
+  o.el(5, 5.5, 4.4, 3.6, function(nx, ny, x, y){
+    if(ny<-0.4) return nx<0 ? "#e8d690" : "#d8c47a";
+    var n = hash(x, y, 50);
+    return ny>0.5 ? "#a89048" : n<0.25 ? "#c8b060" : n<0.7 ? "#d8c070" : "#e4d08a";
+  });
+  o.p(5, 1, "#b09a50"); o.p(4, 2, "#c8b060");
+  o.outline(C(P.ink));
+  return o;
+}
+
+/* ======================================================
+   ÉTAPE 5 : BÉTAIL (frame : 0 debout, 1 marche, 2 broute, 3 couché)
+   ====================================================== */
+function legs(o, xs, y0, len, col, frame){
+  for(var i=0;i<xs.length;i++){
+    var lift = frame===1 && (i&1) ? 1 : 0, dx = frame===1 ? ((i&1) ? 1 : -1)*0 : 0;
+    o.r(xs[i]+dx, y0, 1, len-lift, col);
+  }
+}
+function sheepSprite(frame, young){
+  var o = young ? S(11, 9, 5, 9) : S(15, 12, 7, 12);
+  var s = young ? 0.68 : 1, by = young ? 4.6 : 6.4, lie = frame===3;
+  if(lie) by += young ? 1.6 : 2.4;
+  var wool = function(nx, ny, x, y){ if(ny>0.45) return "#c4b89c"; return ((x+y)&1) ? "#efe9d8" : (hash(x,y,52)<0.5 ? "#dcd2bc" : "#e6dfcc"); };
+  if(!lie) legs(o, young ? [2,4,6,7] : [3,5,9,11], young ? 6 : 9, young ? 3 : 3, "#3a2e26", frame);
+  o.el(young ? 4.6 : 6.5, by, 4.7*s, 3.1*s, wool);
+  var face = "#3a2e26", hx = young ? 7 : 10, hy = frame===2 ? (young ? 5 : 7) : (young ? 2 : 3);
+  if(lie) hy += young ? 1 : 2;
+  o.r(hx, hy, young ? 2 : 3, young ? 2 : 3, face);
+  o.p(hx-1, hy, face);                                   // oreille
+  o.p(hx + (young ? 1 : 2), hy+1, "#e8dcc4");            // œil
+  if(!young && frame!==2) o.p(hx-1, hy-1, "#efe9d8");   // laine sur le front
+  o.outline(C(P.ink));
+  return o;
+}
+function cowSprite(frame, young){
+  var o = young ? S(13, 10, 6, 10) : S(19, 14, 9, 14);
+  var lie = frame===3;
+  var base = young ? "#b07a4e" : "#8a5a3a", dark = young ? "#8a5c38" : "#6a4228", white = "#ece4d6";
+  if(!lie) legs(o, young ? [2,4,7,9] : [3,5,12,14], young ? 7 : 10, young ? 3 : 4, "#4a3222", frame);
+  var cx = young ? 5.5 : 8.5, cy = (young ? 4.8 : 6.8) + (lie ? (young ? 1.5 : 2.5) : 0);
+  o.el(cx, cy, young ? 4.6 : 7.2, young ? 2.8 : 3.8, function(nx, ny, x, y){
+    if(ny>0.5) return dark;
+    if(!young && hash(Math.floor(x/3), Math.floor(y/3), 55)<0.35) return white;
+    return nx<-0.3 && ny<0 ? mix(base, "#ffffff", 0.12) : base;
+  });
+  var hx = young ? 9 : 14, hy = (frame===2 ? (young ? 5 : 8) : (young ? 2 : 3)) + (lie ? (young ? 1 : 2) : 0);
+  o.r(hx, hy, young ? 3 : 4, young ? 3 : 4, base);
+  o.r(hx+(young ? 2 : 3), hy+(young ? 1 : 2), young ? 1 : 2, young ? 2 : 2, "#e8b8a0");   // mufle
+  o.p(hx+(young ? 1 : 2), hy+1, P.ink);                                                  // œil
+  if(!young){ o.p(hx, hy-1, "#e8e0c8"); o.p(hx+2, hy-1, "#e8e0c8"); }                  // cornes
+  o.p(hx-1, hy+1, dark);                                                                  // oreille
+  if(!lie) o.ln(young ? 1 : 1, cy-1, young ? 1 : 1, cy+(young ? 2 : 3), dark);           // queue
+  o.outline(C(P.ink));
+  return o;
+}
+function pigSprite(frame, young){
+  var o = young ? S(10, 7, 5, 7) : S(15, 10, 7, 10);
+  var lie = frame===3, pink = "#e8a890", sh = "#c8806c", lt = "#f4c4b0";
+  if(!lie) legs(o, young ? [2,3,6,7] : [3,5,9,11], young ? 5 : 7, young ? 2 : 3, sh, frame);
+  var cx = young ? 4.5 : 6.8, cy = (young ? 3.6 : 5) + (lie ? (young ? 1 : 1.6) : 0);
+  o.el(cx, cy, young ? 3.4 : 5.2, young ? 2.1 : 2.9, function(nx, ny){ return ny>0.45 ? sh : (nx<-0.2 && ny<-0.1 ? lt : pink); });
+  var hx = young ? 7 : 11, hy = (frame===2 ? (young ? 4 : 6) : (young ? 2 : 3)) + (lie ? 1 : 0);
+  o.r(hx, hy, young ? 2 : 3, young ? 2 : 3, pink);
+  o.r(hx+(young ? 2 : 3), hy+1, 1, young ? 1 : 2, lt);                 // groin
+  o.p(hx+(young ? 2 : 3), hy+1, "#a85a50");
+  o.p(hx+1, hy, P.ink);                                                 // œil
+  o.p(hx, hy-1, sh);                                                    // oreille
+  if(!young){ o.p(1, cy-2, sh); o.p(0, cy-3, sh); }                     // queue en tire-bouchon
+  o.outline(C(P.ink));
+  return o;
+}
+/* abris des pâturages (1 case) : bergerie, étable, soue, ou simple appentis */
+function shelter(kind){
+  var o;
+  if(kind==="sheep"){
+    o = S(18, 17, 1, 17);
+    wall(o, 2, 10, 14, 6, "stone", 0);
+    o.r(7, 11, 4, 5, P.inkSoft); o.r(7, 11, 4, 1, P.wood1);          // porte ouverte
+    roofHip(o, 1, 16, 3, 10, 2, "thatch", { seed:21 });
+    contact(o, 2, 15, 16);
+  } else if(kind==="cattle"){
+    o = S(18, 21, 1, 21);
+    wall(o, 2, 13, 14, 7, "plank", 0);
+    o.r(6, 14, 6, 6, P.wood1); for(var i=7;i<11;i++) o.r(i, 15, 1, 5, (i&1) ? P.wood2 : P.wood3); o.r(6, 16, 6, 1, P.wood0);   // grande porte
+    roofGable(o, 1, 16, 14, 7, 5, "shingle", { seed:22 });
+    gableFill(o, 1, 16, 14, 7, 13, "plank");
+    o.r(8, 9, 2, 2, "#241c18");                                      // lucarne du fenil
+    contact(o, 2, 15, 20);
+  } else if(kind==="pig"){
+    o = S(18, 14, 1, 14);
+    for(var x=2;x<16;x++) for(var y=9;y<13;y++) o.p(x, y, wallPix("stone", x, y, x-2, 14));
+    o.r(4, 10, 3, 3, P.inkSoft);                                     // trou de la soue
+    roofHip(o, 1, 11, 4, 9, 1, "shingle", { seed:23 });
+    o.r(11, 12, 5, 1, "#5e4630"); o.r(12, 11, 3, 1, "#6e5238");     // auge
+    contact(o, 2, 15, 13);
+  } else {
+    o = S(18, 15, 1, 15);
+    o.r(3, 7, 1, 7, P.wood1); o.r(14, 7, 1, 7, P.wood0);             // poteaux
+    roofHip(o, 1, 16, 3, 8, 2, "thatch", { seed:24 });
+    o.el(9, 12, 4, 2, function(nx, ny, x, y){ return hash(x,y,56)<0.5 ? "#c8b060" : "#d8c070"; });   // foin
+    contact(o, 3, 14, 14);
+  }
+  o.outline(C(P.ink), true);
+  return o;
+}
+
+/* ======================================================
    CAMP DE BRIGANDS, EFFETS, INTERFACE
    ====================================================== */
 function banditCamp(){
@@ -1426,7 +1635,7 @@ function kid(sex, look, body){
   o.ax = 3; o.ay = 9;
   return o;
 }
-var JOBS = ["laborer","woodcutter","forager","hunter","quarry","farm","windmill","market","trade"];
+var JOBS = ["laborer","woodcutter","forager","hunter","quarry","farm","windmill","market","trade","pasture"];
 var BODIES = ["idle","walkA","walkB","workU","workD"];
 
 function build(){
@@ -1470,13 +1679,28 @@ function build(){
     add("field_stub_"+v, stubbleTile(2,v));
   }
   add("sheaf", sheaf());
+  /* étape 5 : nouvelles cultures, prés, fumier, blé sous la neige, meules */
+  for(v=0;v<2;v++){
+    for(k=2;k<=6;k++){ ["rye","oats","flax","peas"].forEach(function(c){ add("field_"+c+"_"+k+"_"+v, cropTile(c, k, v)); }); add("field_hay_"+k+"_"+v, meadowTile(k, v)); }
+    add("field_mown_"+v, meadowTile(0, v, true));
+    add("field_dung_"+v, dungTile(v));
+    add("field_wintercrop_"+v, winterCropTile(v));
+  }
+  add("haycock", haycock());
+  /* étape 5 : bétail et abris */
+  for(k=0;k<4;k++){
+    addLR("sheep_a_"+k, sheepSprite(k, false)); addLR("sheep_y_"+k, sheepSprite(k, true));
+    addLR("cattle_a_"+k, cowSprite(k, false)); addLR("cattle_y_"+k, cowSprite(k, true));
+    addLR("pig_a_"+k, pigSprite(k, false)); addLR("pig_y_"+k, pigSprite(k, true));
+  }
+  ["sheep","cattle","pig","none"].forEach(function(sp){ addW("shelter_"+sp, shelter(sp)); });
   /* personnages */
   for(var l=0;l<LOOKS.length;l++) for(var j=0;j<JOBS.length;j++) for(var b=0;b<BODIES.length;b++)
     addLR("p_"+l+"_"+JOBS[j]+"_"+BODIES[b], person(LOOKS[l][0], BODIES[b], JOB_CLOTH[JOBS[j]], LOOKS[l][1], LOOKS[l][2]));
   for(var ks=0;ks<2;ks++) for(var kl=0;kl<KID_LOOKS.length;kl++) for(var kb=0;kb<KID_BODIES.length;kb++)
     addLR("kid_"+(ks?"f":"m")+"_"+kl+"_"+KID_BODIES[kb], kid(ks?"f":"m", kl, KID_BODIES[kb]));
   add("mark_0", marker(0)); add("mark_1", marker(1)); add("baby", babySprite());
-  ["axe","pick","hoe","hammer","sickle","basket","bow"].forEach(function(t){ addLR("tool_"+t+"_u", toolSprite(t,true)); addLR("tool_"+t+"_d", toolSprite(t,false)); });
+  ["axe","pick","hoe","hammer","sickle","basket","bow","fork","seed","scythe","flail","crook"].forEach(function(t){ addLR("tool_"+t+"_u", toolSprite(t,true)); addLR("tool_"+t+"_d", toolSprite(t,false)); });
   ["timber","berries","meat","stone","sack"].forEach(function(c){ addLR("carry_"+c, carrySprite(c)); });
   ["militia","merc","brigand"].forEach(function(kd){ for(var f=0;f<3;f++) addLR("sol_"+kd+"_"+f, soldier(kd,f)); });
   for(k=0;k<4;k++){ addLR("deer_1_"+k, deer(k,true)); addLR("deer_0_"+k, deer(k,false)); }
@@ -1493,6 +1717,7 @@ function build(){
   add("sh_person", shadowEll(7, 3, 3, 2)); add("sh_deer", shadowEll(13, 3, 6, 2)); add("sh_ox", shadowEll(17, 4, 8, 2));
   add("sh_b1", shadowBuilding(1,1,1)); add("sh_b1t", shadowBuilding(1,1,7)); add("sh_b2", shadowBuilding(2,2,2)); add("sh_b2t", shadowBuilding(2,2,8));
   add("sh_camp", shadowEll(28, 6, 13, 3));
+  add("sh_sheep", shadowEll(11, 3, 5, 2)); add("sh_lamb", shadowEll(7, 2, 3, 1)); add("sh_cow", shadowEll(15, 4, 7, 2)); add("sh_pig", shadowEll(11, 3, 5, 2));
 
   /* rangement en étagères (largeur 1024) */
   var AW = 1024, pad = 1;
@@ -1548,6 +1773,8 @@ var api = { P:P, C:C, mix:mix, hash:hash, rng:rng, bayer:bayer, Px:Px, LEAF:LEAF
     person:person, toolSprite:toolSprite, carrySprite:carrySprite, soldier:soldier, deer:deer, ox:ox, chicken:chicken,
     skep:skep, vegPatch:vegPatch, barrel:barrel, clothLine:clothLine, fruitTree:fruitTree,
     fieldTile:fieldTile, stubbleTile:stubbleTile, sheaf:sheaf, banditCamp:banditCamp, fire:fire, flag:flag,
+    cropTile:cropTile, meadowTile:meadowTile, dungTile:dungTile, haycock:haycock, sheepSprite:sheepSprite, cowSprite:cowSprite,
+    pigSprite:pigSprite, shelter:shelter,
     smoke:smoke, digit:digit } };
 return api;
 })();

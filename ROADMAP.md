@@ -84,8 +84,9 @@ Le détail technique et l'historique (audit, anciennes phases 0 à 7) restent da
 | Interface mobile | ✅ Étape 2 : barre compacte, construction par catégories, panneaux en bas d'écran. |
 | Maisons et chantiers | ✅ Étape 3 : zones tracées point par point, parcelles, jardins et clôtures, chantiers en quatre étapes, départ au campement. |
 | Villageois | ✅ Étape 4 : chaque habitant a un prénom, un âge, une santé, une humeur et un savoir-faire ; un métier par adulte, apprentis, mariages, naissances, vieillesse, décès. |
-| Simulation | 16 bâtiments, champs avec fertilité, nourriture variée, routes, comptoir, 3 régions, un baron rival, brigands, milice, 5 modes, 3 difficultés. 98 tests. |
-| Élevage, administration, vassaux, dynastie | ❌ À construire. |
+| Agriculture et élevage | ✅ Étape 5 : 8 cultures et leur calendrier, fumure, labour, semailles, moisson en gerbes, battage, rotation, météo, prévision de récolte ; pâturages tracés, moutons, vaches, porcs, foin d'hiver, maladies, bœufs de trait. |
+| Simulation | 17 bâtiments, 8 cultures, 3 espèces de bétail, nourriture variée, routes, comptoir, 3 régions, un baron rival, brigands, milice, 5 modes, 3 difficultés. 126 tests. |
+| Logistique, transformation, administration, vassaux, dynastie | ❌ À construire. |
 | Équilibrage et fun | ❓ À vérifier en jouant sur téléphone. |
 | Distribution | Page web uniquement. |
 
@@ -103,7 +104,7 @@ Tracé d'une zone le long d'une route → découpe en parcelles, maison, jardin 
 **Étape 4 — Villageois individuels** ✅
 Chaque villageois a un nom, un âge, des compétences, une santé et une humeur. Familles, naissances, vieillesse, décès. Affectation aux métiers, progression des compétences, apprentissage.
 
-**Étape 5 — Agriculture et élevage approfondis**
+**Étape 5 — Agriculture et élevage approfondis** ✅
 Nouvelles cultures, rotation, fumier, labour, battage, météo. Bétail avec reproduction, pâturages, enclos, fourrage d'hiver, maladies, produits animaux.
 
 **Étape 5 bis — Logistique et chantiers livrés**

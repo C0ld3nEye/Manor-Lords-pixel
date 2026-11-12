@@ -1073,7 +1073,8 @@ class GameState {
     f.hits = Array.isArray(f.hits) ? f.hits.filter(h=>Array.isArray(h) && typeof h[0]==="string" && num(h[1], null)!==null).slice(-4) : [];
     f.prev = CROP_DEFS[f.prev] ? f.prev : null;
     f.prevAt = num(f.prevAt, -999);
-    f.sownAt = num(f.sownAt, this.monthIdx() - 6);
+    // (sauvegarde d'avant l'étape 5 : on semait en mars-avril, on suppose avril dernier)
+    f.sownAt = num(f.sownAt, (this.time.month>=3 ? this.time.year : this.time.year-1)*12 + 3);
     f.stubAt = num(f.stubAt, -999);
     f.rested = !!f.rested;
     f.grazed = !!f.grazed;

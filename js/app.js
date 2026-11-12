@@ -47,7 +47,7 @@ centerCam();
 
 var ui = {
   buildSel:null, selId:null, cat:null, sheet:null, modal:null, roadMode:false,
-  zoneMode:false, zonePts:[], zoneClosed:false, zoneN:null, extPlace:null,
+  zoneMode:false, zoneKind:"house", zonePts:[], zoneClosed:false, zoneN:null, extPlace:null,
   flash:null, objOpen:false, layersOpen:false, tip:null, tipT:0, hoverTip:null,
   demolishArm:0, delArm:null, taxDrag:false, lastSpeed:1, endSeen:false,
   newMode:"prosperity", newDiff:"normal", newSlot:activeSlot,
@@ -61,8 +61,8 @@ var CATS = [
     hint:"Tracez une zone le long d'une route : maisons, cours et clôtures se placent seules." },
   { id:"res",   name:"Récolte",    icon:"axe",    items:["woodcutter","forager","hunter","quarry"],
     hint:"Bois, baies, gibier et pierre : posez-les près de la ressource." },
-  { id:"farm",  name:"Champs",     icon:"grain",  items:["field","farm","windmill"], actions:["buyox"],
-    hint:"Champs gratuits, une ferme pour les travailler, un moulin pour le pain." },
+  { id:"farm",  name:"Terres",     icon:"grain",  items:["field","farm","windmill"], actions:["pasture","buyox"],
+    hint:"Champs gratuits, une ferme pour les travailler, un moulin pour le pain, des pâturages pour le bétail." },
   { id:"store", name:"Stocks",     icon:"crate",  items:["granary","storehouse"],
     hint:"La grange limite le pourrissement, l'entrepôt augmente la capacité." },
   { id:"realm", name:"Domaine",    icon:"church", items:["market","trade","church","manor"],
@@ -78,7 +78,9 @@ var RES = {
   timber:{ n:"Bois d'œuvre" }, firewood:{ n:"Bois de chauffe" }, stone:{ n:"Pierre" },
   grain:{ n:"Grain" }, barley:{ n:"Orge" }, bread:{ n:"Pain" }, berries:{ n:"Baies" }, meat:{ n:"Viande" },
   eggs:{ n:"Œufs" }, veg:{ n:"Légumes" }, apples:{ n:"Pommes" }, honey:{ n:"Miel" },
-  clothes:{ n:"Vêtements" }, ale:{ n:"Ale" }, ox:{ n:"Bœufs" }
+  clothes:{ n:"Vêtements" }, ale:{ n:"Ale" }, ox:{ n:"Bœufs" },
+  oats:{ n:"Avoine" }, flax:{ n:"Lin" }, pulses:{ n:"Pois et fèves" }, milk:{ n:"Lait" }, wool:{ n:"Laine" },
+  hay:{ n:"Foin et paille" }, manure:{ n:"Fumier" }, sh_grain:{ n:"Gerbes de blé et de seigle" }, sh_barley:{ n:"Gerbes d'orge" }, sh_oats:{ n:"Gerbes d'avoine" }
 };
 var MONTHS_SHORT = ["Janv.","Févr.","Mars","Avril","Mai","Juin","Juil.","Août","Sept.","Oct.","Nov.","Déc."];
 var SEASON_IC = ["winter","spring","summer","autumn"];
@@ -91,7 +93,9 @@ function ic(n, cls){ return ICONS.ic(n, cls); }
    par les icônes pixel-art (ou on les retire quand il n'y a pas d'équivalent). */
 var EMOJI_IC = { "💰":"coin", "🪵":"timber", "🔥":"firewood", "🪨":"stone", "🌾":"grain", "🍞":"bread", "🍒":"berries",
   "🍗":"meat", "🥚":"eggs", "🥕":"veg", "🍎":"apples", "🍯":"honey", "👕":"clothes", "🍺":"ale", "🐂":"ox",
-  "🗺":"flag", "🛡":"shield", "⚔":"sword", "🏆":"crown", "🏰":"house", "❄":"winter", "💀":"", "☠":"", "🏕":"", "⚠":"" };
+  "🗺":"flag", "🛡":"shield", "⚔":"sword", "🏆":"crown", "🏰":"house", "❄":"winter", "💀":"", "☠":"", "🏕":"", "⚠":"",
+  "🌱":"oats", "🪻":"flax", "🫛":"pulses", "🥛":"milk", "🧶":"wool", "🌿":"hay", "🟫":"manure", "🎋":"sheaf",
+  "🐑":"sheep", "🐄":"cow", "🐖":"pig", "🌩":"", "🌧":"", "☀":"summer" };
 var EMOJI_RE = new RegExp("("+Object.keys(EMOJI_IC).join("|")+")\\ufe0f?\\s?", "g");
 function rich(text){
   return esc(text).replace(EMOJI_RE, function(m, e){ var n = EMOJI_IC[e]; return n ? ic(n,"s")+(/\s$/.test(m)?" ":"") : ""; });
@@ -483,8 +487,9 @@ document.addEventListener("click", function(e){
       }
       ui.layersOpen = false; clearTools();
       break;
-    case "zone":
-      clearTools(); ui.zoneMode = true; ui.cat = null; ui.buildSel = null; ui.roadMode = false; ui.selId = null; ui.sheet = null;
+    case "zone": case "pasture":
+      clearTools(); ui.zoneMode = true; ui.zoneKind = act==="pasture" ? "pasture" : "house";
+      ui.cat = null; ui.buildSel = null; ui.roadMode = false; ui.selId = null; ui.sheet = null;
       break;
     case "placeok":
       if(ui.buildSel && ui.pendingPlace){
@@ -504,7 +509,7 @@ document.addEventListener("click", function(e){
     }
     case "zoneok":
       if(ui.zoneClosed){
-        var zerr = g.traceZone(ui.zonePts, ui.zoneN==null ? undefined : ui.zoneN);
+        var zerr = ui.zoneKind==="pasture" ? g.tracePasture(ui.zonePts) : g.traceZone(ui.zonePts, ui.zoneN==null ? undefined : ui.zoneN);
         if(zerr) flash(zerr); else { AudioFX.build(); buzz(8); ui.zonePts = []; ui.zoneClosed = false; ui.zoneN = null; }
       }
       break;
@@ -552,6 +557,20 @@ document.addEventListener("click", function(e){
       break;
     /* --- actions de la seigneurie --- */
     case "buyox": g.buyOx(); break;
+    /* --- étape 5 : bœufs et troupeaux --- */
+    case "retireox": g.retireOx(); break;
+    case "buyanimal": if(ui.selId!=null){ var ba = String(arg).split(":"), be = g.buyAnimal(ui.selId, ba[0], ba[1]==="1"); if(be) flash(be); } break;
+    case "sellanimal": if(ui.selId!=null){ var se = g.sellAnimal(ui.selId); if(se) flash(se); } break;
+    case "slaughter": if(ui.selId!=null){ var sle = g.slaughter(ui.selId); if(sle) flash(sle); } break;
+    case "cullsick": if(ui.selId!=null){ var ce = g.cullSick(ui.selId); if(ce) flash(ce); } break;
+    case "keepminus": case "keepplus": case "keepall": {
+      var kp = ui.selId!=null ? g.pastureOf(ui.selId) : null;
+      if(kp){
+        var cur = kp.herd.keep===null ? kp.herd.an.length : kp.herd.keep;
+        g.setKeep(kp.id, act==="keepall" ? null : Math.max(0, cur + (act==="keepplus" ? 1 : -1)));
+      }
+      break;
+    }
     case "militia": if(!g.raiseMilitia()) flash("Toute la milice disponible est déjà levée."); break;
     case "merc": g.hireMercenary(); break;
     case "claim": g.claimRegion(Number(arg)); break;
@@ -716,6 +735,10 @@ function renderTop(g){
   r += "<span class='rc"+(food < g.foodNeed()*2 ? " low" : "")+"'>"+ic("bread")+Math.floor(food)
      + "<span class='dim' style='font-size:10px'>·"+kinds+"</span></span>";
   ["grain","barley","clothes","ale"].forEach(function(k){ if((g.stock[k]||0)>=1) r += rc(k, g.stock[k], false); });
+  /* étape 5 : le foin compte dès qu'il y a des bêtes à nourrir l'hiver */
+  var wneed = g.winterNeed();
+  if(wneed>0) r += rc("hay", g.stock.hay, [8,9,10,11,0,1].indexOf(g.time.month)>=0 && g.fodderStock() < wneed*3);
+  if(g.sheafTotal()>=1) r += rc("sheaf", g.sheafTotal(), false);
   if(g.stock.ox>0) r += rc("ox", g.stock.ox, false);
   r += "<span class='rc sep'>"+ic("crown")+Math.floor(g.influence)+"</span>";
   r += "<span class='rc'>"+ic("bag")+Math.floor(g.wealth)+"</span>";
@@ -760,7 +783,22 @@ function renderHud(g){
   /* aide à la pose (bas de l'écran) */
   var h = "";
   if(ui.flash) h += "<div class='flash'>"+esc(ui.flash)+"</div>";
-  if(ui.zoneMode){
+  if(ui.zoneMode && ui.zoneKind==="pasture"){
+    var po = zoneOverlay(g), pp = ui.zonePts.length, ppl = po && po.plan, ptxt, ptitle = "Pâturage", pok = ui.zoneClosed && ppl && !ppl.err;
+    if(!ui.zoneClosed) ptxt = pp===0 ? "Touchez la carte pour poser les points de la clôture, où vous voulez (4 cases au moins)."
+      : pp<3 ? pp+" point"+(pp>1?"s":"")+" posé"+(pp>1?"s":"")+". Continuez le contour."
+      : pp+" points. Touchez le premier point (doré) ou « Fermer ». Appui long sur un point pour le déplacer.";
+    else if(!pok) ptxt = ppl ? ppl.err : "";
+    else {
+      ptitle = "Pâturage de "+ppl.n+" cases "+costHtml({ timber:ppl.cost }, g);
+      ptxt = "Herbe pour ~"+Math.floor((ppl.n-1)/0.5)+" moutons, ~"+Math.floor(ppl.n-1)+" vaches ou ~"+Math.floor((ppl.n-1)/0.5)+" porcs. L'abri se place au bord, côté route.";
+    }
+    h += "<div class='frame place wrap'>"+ic("sheep","l")+"<div class='t'><b>"+ptitle+"</b><span>"+rich(ptxt)+"</span></div><div class='sizes'>";
+    if(pp>0) h += "<button class='b' data-act='zoneundo' aria-label='Annuler le dernier point'>↶</button>";
+    if(!ui.zoneClosed && pp>=3) h += "<button class='b' data-act='zoneclose'>Fermer</button>";
+    if(pok) h += "<button class='b gold' data-act='zoneok'>Clôturer</button>";
+    h += "</div><button class='b sq' data-act='cancel' aria-label='Annuler'>"+ic("close")+"</button></div>";
+  } else if(ui.zoneMode){
     var zo = zoneOverlay(g), zp = ui.zonePts.length, zpl2 = zo && zo.plan, ztxt, ztitle = "Zone de bourgages", zok = ui.zoneClosed && zpl2 && !zpl2.err;
     if(!ui.zoneClosed) ztxt = zp===0 ? "Touchez la carte pour poser les points du contour, le long d'une route."
       : zp<3 ? zp+" point"+(zp>1?"s":"")+" posé"+(zp>1?"s":"")+". Continuez le contour."
@@ -841,7 +879,8 @@ function sheetBuild(g, catId){
   var acts = cat.actions || [];
   for(var a=0;a<acts.length;a++){
     if(acts[a]==="zone") h += actionCard("zone", ic("house","l"), "Tracer une zone", costHtml(BUILD_DEFS.burgage.cost, g)+"<span class='dim'> / maison</span>", "Parcelles le long d'une route");
-    if(acts[a]==="buyox") h += actionCard("buyox", ic("ox","l"), "Acheter un bœuf", "<span class='cost"+(g.treasury<20?" no":"")+"'>20"+ic("coin","s")+"</span>", "Labour et transport plus rapides");
+    if(acts[a]==="pasture") h += actionCard("pasture", ic("sheep","l"), "Tracer un pâturage", "<span class='cost'>clôture "+ic("timber","s")+"</span>", "Moutons, vaches ou porcs");
+    if(acts[a]==="buyox") h += actionCard("buyox", ic("ox","l"), "Acheter un bœuf", "<span class='cost"+(g.treasury<20?" no":"")+"'>20"+ic("coin","s")+"</span>", "Labours plus rapides");
     if(acts[a]==="militia") h += actionCard("militia", ic("sword","l"), "Lever la milice", "<span class='cost'>"+g.units.length+" / "+g.militiaCount()+"</span>", "1 soldat pour 2 familles");
     if(acts[a]==="merc") h += actionCard("merc", ic("shield","l"), "Mercenaire", "<span class='cost"+(g.treasury<25?" no":"")+"'>25"+ic("coin","s")+"</span>", "Loué pour 6 mois");
   }
@@ -858,8 +897,9 @@ function sheetSelection(g){
   if(!sel) return "";
   var d = BUILD_DEFS[sel.def];
   var status = g.workStatus(sel);
-  var h = head(ICONS.th(sel.def), esc(d.name)+(sel.def==="burgage" ? " · niveau "+sel.lvl : ""), status ? esc(status) : "");
-  h += "<div class='desc'>"+esc(d.desc)+"</div>";
+  var hsp = sel.def==="pasture" && sel.herd && LIVESTOCK[sel.herd.sp] && sel.herd.an.length ? LIVESTOCK[sel.herd.sp] : null;
+  var h = head(ICONS.th(sel.def), esc(d.name)+(sel.def==="burgage" ? " · niveau "+sel.lvl : "")+(hsp ? " · "+hsp.name : "")+(sel.def==="field" ? " · "+sel.w+"×"+sel.h : ""), status ? esc(status) : "");
+  if(sel.def!=="field") h += "<div class='desc'>"+esc(hsp ? hsp.desc : d.desc)+"</div>";
   if(!sel.done){
     h += "<div class='row'><span class='dim'>Chantier</span>"+bar(sel.progress||0,"gold")+"<b>"+Math.round((sel.progress||0)*100)+" %</b></div>";
     h += "<div class='dim' style='font-size:11px'>Les journaliers (adultes sans poste) construisent les chantiers.</div>";
@@ -898,23 +938,9 @@ function sheetSelection(g){
       }
     }
   }
-  if(sel.def==="field" && sel.f){
-    h += "<div class='sec'>Culture · "+sel.w+"×"+sel.h+"</div><div class='row'>";
-    for(var ci=0; ci<CROP_ORDER.length; ci++){
-      var cd = CROP_DEFS[CROP_ORDER[ci]];
-      h += "<button class='b"+(sel.f.crop===cd.id?" on":"")+"' data-act='crop' data-arg='"+cd.id+"'>"+(cd.yield ? ic(cd.yield==="grain"?"grain":"barley","s") : "")+esc(cd.name)+"</button>";
-    }
-    h += "</div><div class='desc'>"+esc(CROP_DEFS[sel.f.crop].desc)+"</div>";
-    h += "<div class='kv'><span class='k'>Fertilité</span>"+bar(sel.f.fert, sel.f.fert<0.35?"red":"")+"<span class='v'>"+Math.round(sel.f.fert*100)+" %</span></div>";
-    h += "<div class='kv'><span class='k'>Labour</span>"+bar(sel.f.plow,"gold")+"<span class='v'>"+Math.round(sel.f.plow*100)+" %</span></div>";
-    h += "<div class='kv'><span class='k'>"+(sel.f.sown ? "Croissance" : (sel.f.growth>0 ? "Mûr" : "En attente"))+"</span>"+bar(sel.f.sown ? sel.f.growth : 0)+"<span class='v'>"+(sel.f.sown ? Math.round(sel.f.growth*100)+" %" : "—")+"</span></div>";
-    if(sel.f.harvestP>0) h += "<div class='kv'><span class='k'>Moisson</span>"+bar(sel.f.harvestP,"gold")+"<span class='v'>"+Math.round(sel.f.harvestP*100)+" %</span></div>";
-    if(!g.buildings.some(function(b){ return b.def==="farm" && b.done && g.workersOf(b).length>0; })) h += "<div class='bad' style='font-size:12px;margin-top:6px'>Aucune ferme active : ce champ ne sera pas travaillé.</div>";
-  }
-  if(sel.def==="farm" && sel.done){
-    h += "<div class='kv'><span class='k'>"+ic("ox","s")+"Bœufs à l'écurie</span><span class='v'>"+(g.stock.ox||0)+"</span>"
-       + "<button class='b' data-act='buyox'>+1 · 20"+ic("coin","s")+"</button></div>";
-  }
+  if(sel.def==="field" && sel.f) h += sheetField(g, sel);
+  if(sel.def==="farm" && sel.done) h += sheetFarm(g);
+  if(sel.def==="pasture" && sel.herd) h += sheetPasture(g, sel);
   if(sel.def==="trade" && sel.done){
     h += "<div class='sec'>Prix du marché (deniers)</div><div class='chips'>";
     for(var pk in g.prices) h += "<span class='chip'>"+(RES[pk] ? ic(pk,"s") : esc(pk))+" "+g.prices[pk]+"</span>";
@@ -941,6 +967,149 @@ function sheetSelection(g){
   }
   var armed = Date.now() < ui.demolishArm;
   h += "<button class='b red wide' data-act='demolish'>"+(armed ? "Toucher encore pour confirmer" : "Démolir (moitié remboursée)")+"</button>";
+  return h;
+}
+
+/* =====================================================================
+   ÉTAPE 5 : champs, ferme, pâturages
+   ===================================================================== */
+var CROP_IC = { wheat:"grain", rye:"rye", barley:"barley", oats:"oats", flax:"flax", peas:"pulses", hay:"hay", fallow:null };
+function pct(x){ return Math.round(x*100)+" %"; }
+function mulTxt(x){ return "×"+(Math.round(x*100)/100).toFixed(2).replace(".", ","); }
+function cropIc(id, cls){ var k = CROP_IC[id]; return k ? ic(k, cls||"s") : "<i class='ic s' style='background:#5a4630'></i>"; }
+/* calendrier d'une culture en une ligne */
+function calTxt(cd){
+  var cal = CROP_CAL[cd.season] || {};
+  if(cd.season==="rest") return "Aucun travail : le champ se repose une année.";
+  if(cd.season==="meadow") return "Repousse en mars · fauche "+monthsTxt(cal.harvest);
+  var plow = cal.plow.slice().sort(function(a, c){ return ((a+5)%12)-((c+5)%12); });
+  return "Labour "+monthsTxt(plow)+" · semailles "+monthsTxt(cal.sow)+" · récolte "+monthsTxt(cal.harvest);
+}
+function sheetField(g, sel){
+  var f = sel.f, cd = g.liveCrop(f), h = "";
+  if(!f.sown){
+    h += "<div class='sec'>Culture prévue · "+sel.w+"×"+sel.h+"</div><div class='crops'>";
+    for(var ci=0; ci<CROP_ORDER.length; ci++){
+      var c = CROP_DEFS[CROP_ORDER[ci]];
+      h += "<button class='b"+(f.crop===c.id?" on":"")+"' data-act='crop' data-arg='"+c.id+"'>"+cropIc(c.id)+"<span>"+esc(c.short||c.name)+"</span></button>";
+    }
+    h += "</div>";
+  } else {
+    h += "<div class='sec'>En terre · "+sel.w+"×"+sel.h+"</div>"
+       + "<div class='kv'><span class='k'>"+cropIc(cd.id,"")+"<b>"+esc(cd.name)+"</b></span><span class='v dim' style='font-weight:400'>semé"+(cd.season==="meadow" ? " (pré)" : "")+" en "+MONTHS_ABBR[((f.sownAt%12)+12)%12]+" "+Math.floor(f.sownAt/12)+"</span></div>";
+  }
+  h += "<div class='desc'>"+esc(cd.desc)+"<br><span class='gold'>"+esc(calTxt(cd))+"</span></div>";
+  /* la rotation : ce qui a poussé avant ici */
+  var rot = g.rotationMul(f, cd);
+  if(rot[0]!==1) h += "<div class='"+(rot[0]>1?"good":"bad")+"' style='font-size:12px'>"+esc(rot[1])+" : rendement "+mulTxt(rot[0])+"</div>";
+  if(f.hist.length){
+    h += "<div class='chips' style='margin:4px 0'>";
+    f.hist.slice().reverse().forEach(function(x){ h += "<span class='chip'>"+x.y+" · "+cropIc(x.crop)+esc(CROP_DEFS[x.crop].short||CROP_DEFS[x.crop].name)+" "+x.q+"</span>"; });
+    h += "</div>";
+  }
+  if(cd.season!=="rest"){
+    h += "<div class='sec'>Travaux</div>";
+    h += "<div class='kv'><span class='k'>Fertilité</span>"+bar(f.fert, f.fert<0.35?"red":"")+"<span class='v'>"+pct(f.fert)+"</span></div>";
+    if(cd.season!=="meadow"){
+      if(!f.sown){
+        var man = Math.floor(g.stock.manure||0);
+        h += "<div class='kv'><span class='k'>"+ic("manure","s")+"Fumure</span>"+bar(f.dunged ? 1 : f.dungP,"gold")+"<span class='v'>"+(f.dunged ? "faite" : man>=1 ? man+" en réserve" : "pas de fumier")+"</span></div>";
+        h += "<div class='kv'><span class='k'>Labour</span>"+bar(f.plow,"gold")+"<span class='v'>"+pct(f.plow)+"</span></div>";
+        h += "<div class='kv'><span class='k'>Semailles</span>"+bar(f.sowP,"gold")+"<span class='v'>"+pct(f.sowP)+"</span></div>";
+      }
+    }
+    if(f.sown){
+      h += "<div class='kv'><span class='k'>Pousse</span>"+bar(f.growth)+"<span class='v'>"+pct(f.growth)+"</span></div>";
+      if(f.harvestP>0) h += "<div class='kv'><span class='k'>"+(cd.season==="meadow" ? "Fauche" : "Moisson")+"</span>"+bar(f.harvestP,"gold")+"<span class='v'>"+pct(f.harvestP)+"</span></div>";
+    }
+    /* la récolte attendue, et pourquoi */
+    var fc = g.forecast(sel);
+    h += "<div class='sec'>Récolte attendue</div><div class='kv'><span class='k'>"+(fc.unit ? ic(fc.unit.indexOf("sh_")===0 ? "sheaf" : fc.unit) : "")+"<b>≈ "+fc.qty+"</b>"
+       + "<span class='dim'>"+(cd.sheaf ? "gerbes à battre" : RES[fc.unit] ? RES[fc.unit].n.toLowerCase() : "")+"</span></span></div><div class='why'>";
+    fc.parts.forEach(function(p){ h += "<div><span>"+esc(p[0])+"</span><b class='"+(p[1]>=1 ? "good" : p[1]>=0.7 ? "gold" : "bad")+"'>"+mulTxt(p[1])+"</b></div>"; });
+    (f.hits||[]).forEach(function(x){ h += "<div><span class='dim'>· "+esc(x[0])+"</span><b class='bad'>"+x[1]+" %</b></div>"; });
+    h += "</div>";
+  }
+  if(!g.buildings.some(function(b){ return b.def==="farm" && b.done && g.workersOf(b).length>0; })) h += "<div class='bad' style='font-size:12px;margin-top:6px'>Aucune ferme active : ce champ ne sera pas travaillé.</div>";
+  return h;
+}
+function sheetFarm(g){
+  var h = "";
+  var wo = g.workingOxen();
+  h += "<div class='sec'>Bœufs de trait · labour "+mulTxt(g.plowMul())+"</div>";
+  h += "<div class='kv'><span class='k'>"+ic("ox","s")+g.oxen.length+" bœuf"+(g.oxen.length>1?"s":"")+(g.oxen.length ? " · "+g.oxen.map(function(o){ return Math.floor(o.a/12)+" ans"+(o.h<50 ? " (faible)" : ""); }).join(", ") : "")+"</span>"
+     + "<button class='b sm' data-act='buyox'>+1 · 20"+ic("coin","s")+"</button></div>";
+  if(g.oxen.length) h += "<div class='row'><span class='dim' style='flex:1 1 auto;font-size:11px'>"+wo+" à l'attelage. L'hiver, chaque bœuf mange 1 foin par mois.</span><button class='b sm' data-act='retireox'>Réformer le plus vieux</button></div>";
+  h += "<div class='sec'>Grange de la ferme</div>";
+  var any = false;
+  ["sh_grain","sh_barley","sh_oats"].forEach(function(k){ var q = Math.floor(g.stock[k]||0); if(q>0){ any = true; h += "<div class='kv'><span class='k'>"+ic(k,"s")+RES[k].n+"</span><span class='v'>"+q+"</span></div>"; } });
+  if(!any) h += "<div class='dim' style='font-size:12px'>Aucune gerbe à battre. Les fermiers battent au fléau quand les champs leur en laissent le temps, surtout l'hiver.</div>";
+  h += "<div class='kv'><span class='k'>"+ic("manure","s")+"Fumier</span><span class='v'>"+Math.floor(g.stock.manure||0)+"</span></div>";
+  var fs = g.fields();
+  h += "<div class='sec'>Champs · "+fs.length+"</div>";
+  if(!fs.length) h += "<div class='dim'>Posez des champs depuis le tiroir Terres.</div>";
+  fs.forEach(function(b){
+    var cd = g.liveCrop(b.f), fc = g.forecast(b);
+    var st = g.fieldStatus(b); if(st.indexOf(cd.name+" · ")===0) st = st.slice(cd.name.length+3);
+    h += "<button class='vrow' data-act='bsel' data-arg='"+b.id+"'><span class='ppw'>"+cropIc(cd.id,"")+"</span><span class='t'>"+esc(cd.name)+" · "+b.w+"×"+b.h
+       + "<span class='s'>"+esc(st.charAt(0).toUpperCase()+st.slice(1))+"</span></span>"+(fc.qty ? "<span class='mood dim'>≈"+fc.qty+"</span>" : "")+"</button>";
+  });
+  return h;
+}
+function herdCounts(g, h){
+  var d = LIVESTOCK[h.sp], c = { f:0, m:0, y:0, sick:0 };
+  h.an.forEach(function(a){ if(a.s>0) c.sick++; if(a.a<d.adultAt) c.y++; else if(a.f) c.f++; else c.m++; });
+  return c;
+}
+function sheetPasture(g, sel){
+  var h = "", hd = sel.herd, d = LIVESTOCK[hd.sp], n = hd.an.length;
+  if(!sel.done) return h;
+  if(!n){
+    h += "<div class='sec'>Choisir les bêtes</div><div class='dim' style='font-size:11px;margin-bottom:4px'>Une seule espèce par pâturage. Il faut un mâle pour les naissances. Un marchand de bestiaux passe parfois au printemps.</div>";
+    LIVESTOCK_ORDER.forEach(function(sp){
+      var L = LIVESTOCK[sp], cap = Math.floor(g.grassCells(sel)/L.area);
+      h += "<div class='ext' style='cursor:default'>"+ic(sp==="cattle" ? "cow" : sp)+"<span class='t'><b>"+L.name+"</b><span>"+esc(L.desc)+" Herbe pour ~"+cap+" adultes · foin "+String(L.fodder).replace(".", ",")+"/mois l'hiver.</span></span></div>"
+         + "<div class='row' style='justify-content:flex-end;margin-top:0'><button class='b sm' data-act='buyanimal' data-arg='"+sp+":1'>+ "+L.f+" · "+L.buy+ic("coin","s")+"</button><button class='b sm' data-act='buyanimal' data-arg='"+sp+":0'>+ "+L.m+" · "+L.buy+ic("coin","s")+"</button></div>";
+    });
+    return h;
+  }
+  var c = herdCounts(g, hd), m = g.time.month, eq = g.herdEq(hd), cap = g.pastureCap(sel, isWinterMonth(m) ? 4 : m);
+  h += "<div class='sec'>Troupeau · "+n+" "+(n>1 ? d.ones : d.one)+"</div>";
+  h += "<div class='chips'><span class='chip'>"+c.f+" "+(c.f>1 ? d.fs : d.f.toLowerCase())+"</span><span class='chip'>"+c.m+" "+(c.m>1 ? d.ms : d.m.toLowerCase())+"</span>"
+     + (c.y ? "<span class='chip'>"+c.y+" "+(c.y>1 ? d.youngs : d.young.toLowerCase())+"</span>" : "")
+     + (c.sick ? "<span class='chip bad'>"+c.sick+" malade"+(c.sick>1?"s":"")+"</span>" : "")+"</div>";
+  if(!c.m) h += "<div class='bad' style='font-size:12px;margin-top:4px'>Pas de "+d.m.toLowerCase()+" adulte : aucune naissance au printemps.</div>";
+  if(hd.out>=0) h += "<div class='kv'><span class='k'>Glandée</span><span class='v good'>en forêt, ils s'engraissent</span></div>";
+  else if(isWinterMonth(m)){
+    var need = Math.round(eq*d.fodder*10)/10, have = g.fodderStock();
+    h += "<div class='kv'><span class='k'>"+ic("hay","s")+"Au foin</span>"+bar(hd.fed, hd.fed<0.6?"red":hd.fed<1?"gold":"")+"<span class='v'>"+String(need).replace(".", ",")+"/mois</span></div>";
+    h += "<div class='dim' style='font-size:11px'>Réserve de fourrage : "+Math.floor(have)+" (foin, et avoine comptée 1,5).</div>";
+  } else {
+    h += "<div class='kv'><span class='k'>"+ic("hay","s")+"Herbe</span>"+bar(Math.min(1, cap/Math.max(1, eq)), cap<eq?"red":cap<eq*1.3?"gold":"")+"<span class='v'>"+Math.floor(cap)+" places / "+Math.ceil(eq)+"</span></div>";
+  }
+  if(hd.sp==="pig") h += "<div class='dim' style='font-size:11px'>Glandée (sept.–nov.) : "+(g.forestNear(sel, 9)>=0 ? "<span class='good'>une forêt est à portée</span>" : "<span class='bad'>aucune forêt à moins de 9 cases</span>")+", avec un porcher.</div>";
+  var L = hd.last || {}, prod = [];
+  if(L.milk) prod.push(ic("milk","s")+String(L.milk).replace(".", ",")+" lait");
+  if(L.wool) prod.push(ic("wool","s")+Math.round(L.wool)+" laine");
+  if(L.hay) prod.push(ic("hay","s")+Math.round(L.hay)+" foin");
+  if(L.born) prod.push(L.born+" naissance"+(L.born>1?"s":""));
+  if(L.dead) prod.push("<span class='bad'>"+L.dead+" mort"+(L.dead>1?"s":"")+"</span>");
+  if(prod.length) h += "<div class='kv'><span class='k dim'>Le mois dernier</span><span class='v' style='font-weight:400'>"+prod.join(" · ")+"</span></div>";
+  if(!g.keeperOf(sel)) h += "<div class='bad' style='font-size:12px;margin-top:4px'>Sans "+d.job[0].toLowerCase()+" : ni lait ni tonte, moins de naissances, plus de maladies.</div>";
+  h += "<div class='sec'>Commerce et boucherie</div><div class='row'>"
+     + "<button class='b sm' data-act='buyanimal' data-arg='"+hd.sp+":1'>+ "+d.f+" · "+d.buy+ic("coin","s")+"</button>"
+     + "<button class='b sm' data-act='buyanimal' data-arg='"+hd.sp+":0'>+ "+d.m+" · "+d.buy+ic("coin","s")+"</button>"
+     + "<button class='b sm' data-act='sellanimal'>Vendre · +"+d.sell+ic("coin","s")+"</button>"
+     + "<button class='b sm' data-act='slaughter'>Abattre · "+ic("meat","s")+"</button></div>";
+  if(c.sick) h += "<button class='b red wide' data-act='cullsick'>"+(c.sick>1 ? "Abattre les "+c.sick+" bêtes malades" : "Abattre la bête malade")+" ("+esc(d.disease)+")</button>";
+  /* l'abattage de novembre : combien en garder pour l'hiver ? */
+  var keep = hd.keep, feedable = d.fodder>0 ? Math.floor(g.fodderStock()/3/d.fodder) : 0;
+  h += "<div class='sec'>Abattage de novembre</div><div class='row'><div class='stepper'>"
+     + "<button class='b sq' data-act='keepminus' aria-label='Garder une bête de moins'>−</button>"
+     + "<span class='n'>"+(keep===null ? "tout" : keep)+"</span>"
+     + "<button class='b sq' data-act='keepplus' aria-label='Garder une bête de plus'>+</button></div>"
+     + (keep!==null ? "<button class='b sm' data-act='keepall'>Tout garder</button>" : "")
+     + "<span class='dim' style='font-size:11px;flex:1 1 120px'>bêtes gardées pour l'hiver ; le reste part à la boucherie. Le fourrage en stock en nourrirait ~"+feedable+".</span></div>";
   return h;
 }
 
@@ -1145,8 +1314,16 @@ function sheetStock(g){
   if(!g.marketActive()) h += "<div class='bad' style='font-size:12px'>Sans marché actif, chaque famille ne reçoit qu'un type de nourriture.</div>";
   FOOD_TYPES.forEach(function(k){ h += line(k); });
   h += "<div class='sec'>Ingrédients</div>"+line("grain")+line("barley");
-  h += "<div class='sec'>Biens</div>"+line("clothes")+line("ale");
-  h += "<div class='sec'>Bétail</div><div class='kv'><span class='k'>"+ic("ox")+"Bœufs</span><span class='v'>"+(g.stock.ox||0)+"</span><button class='b' data-act='buyox'>+1 · 20"+ic("coin","s")+"</button></div>";
+  if(g.sheafTotal()>=1) h += "<div class='sec'>Gerbes à battre</div>"+["sh_grain","sh_barley","sh_oats"].filter(function(k){ return (g.stock[k]||0)>=1; }).map(line).join("");
+  h += "<div class='sec'>Fibres et biens</div>"+line("wool")+line("flax")+line("clothes")+line("ale");
+  var wn = g.winterNeed();
+  h += "<div class='sec'>Fourrage et fumier</div>"+line("hay")+line("oats")+line("manure");
+  if(wn>0) h += "<div class='dim' style='font-size:11px'>L'hiver, le bétail mange ~"+(Math.round(wn*10)/10).toString().replace(".", ",")+" foin par mois (l'avoine compte 1,5). Réserve : "+Math.floor(g.fodderStock())+".</div>";
+  h += "<div class='sec'>Bétail</div><div class='kv'><span class='k'>"+ic("ox")+"Bœufs de trait</span><span class='v'>"+(g.stock.ox||0)+"</span><button class='b' data-act='buyox'>+1 · 20"+ic("coin","s")+"</button></div>";
+  LIVESTOCK_ORDER.forEach(function(sp){
+    var n = 0, np = 0; g.pastures().forEach(function(b){ if(b.herd.sp===sp){ n += b.herd.an.length; np++; } });
+    if(np) h += "<div class='kv'><span class='k'>"+ic(sp==="cattle" ? "cow" : sp)+LIVESTOCK[sp].name+"</span><span class='v'>"+n+" · "+np+" pâturage"+(np>1?"s":"")+"</span></div>";
+  });
   return h;
 }
 
@@ -1200,7 +1377,8 @@ function renderDock(g){
   var h = "";
   for(var i=0;i<CATS.length;i++){
     var c = CATS[i];
-    var on = c.tool ? ui.roadMode : (ui.cat===c.id || (ui.buildSel && c.items.indexOf(ui.buildSel)>=0) || (c.id==="home" && (ui.zoneMode || ui.extPlace)));
+    var on = c.tool ? ui.roadMode : (ui.cat===c.id || (ui.buildSel && c.items.indexOf(ui.buildSel)>=0)
+           || (c.id==="home" && ((ui.zoneMode && ui.zoneKind!=="pasture") || ui.extPlace)) || (c.id==="farm" && ui.zoneMode && ui.zoneKind==="pasture"));
     h += "<button class='cat"+(on?" on":"")+"' data-act='cat' data-arg='"+c.id+"'>"+ic(c.icon)+"<span>"+c.name+"</span></button>";
   }
   setHTML(elDock, h);
@@ -1307,7 +1485,9 @@ function modalHelp(){
   h += "<h3>Premiers pas</h3><p>Ouvrez <b>Récolte</b> dans la barre du bas et posez un <b>camp de bûcherons</b> près d'une forêt. Touchez-le, puis <b>+</b> pour embaucher un ouvrier : le jeu choisit l'adulte libre le plus doué. Les adultes sans poste (journaliers) construisent les chantiers.</p>";
   h += "<h3>Les villageois</h3><p>Chaque habitant a un âge, une santé, une humeur et un savoir-faire par métier, qui progresse en travaillant (de novice à maître). Touchez un villageois sur la carte, ou le compteur d'habitants en haut, pour ouvrir sa fiche : vous y voyez pourquoi il est content ou non, et vous pouvez changer son métier. Les adolescents de 12 à 15 ans peuvent entrer en <b>apprentissage</b> : auprès d'un bon maître, ils apprennent vite. Les couples se marient, ont des enfants, vieillissent ; à 65 ans, on prend sa retraite. Si un maître meurt sans avoir formé personne, son savoir-faire disparaît.</p>";
   h += "<h3>Nourrir et chauffer</h3><p>Cueilleuses (baies, de mars à novembre) et chasseurs (viande) nourrissent le village. La <b>variété</b> de nourriture fait monter l'approbation, et il faut un <b>marché</b> actif pour la distribuer. L'hiver, la consommation de bois de chauffe double : faites des réserves avant décembre.</p>";
-  h += "<h3>Agriculture</h3><p>Les champs sont gratuits ; une <b>ferme</b> les laboure au printemps et moissonne en septembre. Le <b>moulin</b> transforme le grain en pain. Une année de jachère restaure la fertilité.</p>";
+  h += "<h3>Agriculture</h3><p>Les champs sont gratuits ; les fermiers d'une <b>ferme</b> les travaillent au fil des saisons. Chaque culture a son calendrier : le <b>blé d'hiver</b> et le <b>seigle</b> se sèment à l'automne et se moissonnent l'été suivant ; l'orge, l'avoine, le lin et les pois se sèment au printemps ; le <b>pré de fauche</b> donne du foin en juin-juillet sans labour. Les céréales sont moissonnées en <b>gerbes</b>, battues ensuite à la ferme (surtout l'hiver) ; le moulin fait le pain.</p>"
+     + "<p><b>Rotation</b> : la même céréale deux ans de suite rend moins ; après des pois ou une jachère, davantage. Le <b>fumier</b> des bêtes, épandu avant le labour, remonte la fertilité ; un <b>bœuf</b> accélère le labour. La météo compte : gel tardif, printemps sec, grêle, été pourri. Le panneau d'un champ montre la récolte attendue et pourquoi.</p>";
+  h += "<h3>Élevage</h3><p>Tracez un <b>pâturage</b> (tiroir Terres) comme une zone, n'importe où : la clôture coûte du bois, un abri se pose au bord. Achetez des moutons (laine en mai), des vaches (lait après le vêlage, les jeunes taureaux deviennent des bœufs) ou des porcs (glandée en forêt l'automne). Il faut un mâle pour les naissances et un <b>gardien</b> pour traire, tondre et soigner. L'herbe nourrit les bêtes du printemps à l'automne ; l'hiver, il faut du <b>foin</b> (pré de fauche, herbe en trop fauchée en juin, paille du battage) ou de l'avoine. Réglez l'<b>abattage de novembre</b> pour ne garder que ce que vous pourrez nourrir. Une maladie se propage dans un troupeau : abattre les bêtes malades l'arrête.</p>";
   h += "<h3>Croissance</h3><p>Une approbation d'au moins 40 % et une maison libre attirent une nouvelle famille ; les jeunes couples du village qui vivent chez leurs parents passent avant. Les bourgages bien approvisionnés montent de niveau et débloquent des arrière-cours (potager, rucher, atelier…). Le <b>manoir</b> permet de lever l'impôt.</p>";
   h += "<h3>Commandes</h3><p>Glisser pour déplacer · pincer ou molette pour zoomer · toucher un bâtiment pour l'ouvrir · <b>appui long</b> pour annuler · toucher la minimap pour s'y rendre. Le bandeau des réserves et la date ouvrent le détail. Au clavier : Espace = pause, 1/2/3 = vitesse, ZQSD = caméra, Échap = annuler.</p>";
   h += "<h3>Sauvegarde</h3><p>Automatique sur cet appareil (3 emplacements). Le menu permet de copier un code pour continuer sur un autre appareil.</p>";
@@ -1319,7 +1499,7 @@ renderUI();
 /* ----- boucle principale ----- */
 var _lastT = performance.now(), _acc = 0, _uiAcc = 0, _saveAcc = 0;
 /* étape 3 : outils de zone et de pose dans la cour */
-function clearTools(){ ui.pendingPlace = null; ui.zoneMode = false; ui.zonePts = []; ui.zoneClosed = false; ui.zoneN = null; ui.extPlace = null; zoneDrag = { i:-1 }; }
+function clearTools(){ ui.pendingPlace = null; ui.zoneMode = false; ui.zoneKind = "house"; ui.zonePts = []; ui.zoneClosed = false; ui.zoneN = null; ui.extPlace = null; zoneDrag = { i:-1 }; }
 var zoneDrag = { i:-1 }, lastPtrType = "mouse";
 function nearZonePt(x, y){
   var r = Math.max(0.35, 34/(16*cam.zoom)), best = -1;
@@ -1334,10 +1514,12 @@ function zoneOverlay(g){
   }
   if(!ui.zoneMode || ui.zonePts.length===0) return null;
   var grab = zoneDrag.i>=0 && zoneDrag.grabbed ? zoneDrag.i : -1;
-  var key = JSON.stringify(ui.zonePts)+"|"+ui.zoneClosed+"|"+ui.zoneN+"|"+grab+"|"+g.uiVersion+"|"+g.buildings.length+"|"+Math.floor(g.stock.timber);
+  var key = ui.zoneKind+"|"+JSON.stringify(ui.zonePts)+"|"+ui.zoneClosed+"|"+ui.zoneN+"|"+grab+"|"+g.uiVersion+"|"+g.buildings.length+"|"+Math.floor(g.stock.timber);
   if(key===_zoneKey) return _zoneOv;
   _zoneKey = key;
-  _zoneOv = { pts:ui.zonePts.slice(), closed:ui.zoneClosed, grab:grab, plan: ui.zoneClosed ? g.planZone(ui.zonePts, ui.zoneN==null ? undefined : ui.zoneN) : null };
+  var pasture = ui.zoneKind==="pasture";
+  _zoneOv = { kind:ui.zoneKind, pts:ui.zonePts.slice(), closed:ui.zoneClosed, grab:grab,
+              plan: ui.zoneClosed ? (pasture ? g.planPasture(ui.zonePts) : g.planZone(ui.zonePts, ui.zoneN==null ? undefined : ui.zoneN)) : null };
   return _zoneOv;
 }
 
