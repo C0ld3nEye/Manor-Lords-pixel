@@ -2305,4 +2305,29 @@ test("détail : une maison indique ses habitants et sa capacité selon son nivea
   assert.ok(g.membersOf(fam.id).length>before, "au niveau 2, un enfant naît");
 });
 
+test("détail : quand le bœuf est pris, les autres journaliers traînent un tronc au lieu d'attendre", () => {
+  const g = fresh();
+  g.stock.timber = 40;
+  const sites = [placeInCenter(g, "storehouse"), placeInCenter(g, "woodcutter"), placeInCenter(g, "forager")];
+  let most = 0, withOx = false;
+  quietSteps(g, 20*DAY, ()=>{
+    const hauling = g.villagers.filter(v=>v.task && v.task.type==="haul" && v.task.phase!=="back");
+    if(hauling.some(v=>v.task.ox)) withOx = true;
+    most = Math.max(most, hauling.length);
+    return sites.every(b=>g.matFrac(b)>=1);
+  });
+  assert.ok(withOx, "le bœuf sert toujours");
+  assert.ok(most>=3, "plusieurs journaliers charrient en même temps ("+most+")");
+  assert.ok(sites.every(b=>g.matFrac(b)>=1), "tout le bois est livré");
+});
+
+test("détail : un journalier qui flâne se met au travail peu après la pose d'un chantier", () => {
+  const g = fresh();
+  g.stock.timber = 40;
+  quietSteps(g, 3*DAY);   // ils flânent autour du campement
+  const b = placeInCenter(g, "woodcutter");
+  const t = quietSteps(g, 3*DAY, ()=>g.villagers.some(v=>v.task && (v.task.bid===b.id)));
+  assert.ok(t < DAY/2, "quelqu'un part servir le chantier en moins d'une demi-journée ("+t+" ticks)");
+});
+
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));

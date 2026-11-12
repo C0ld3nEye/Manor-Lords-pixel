@@ -2374,7 +2374,10 @@ class GameState {
   idleNearHome(f){
     if(this.stageOf(f)==="baby"){ f.cool = 200; return; }   // un nourrisson reste à la maison
     const kid = !this.isAdult(f);
-    if(this.rnd() < (kid ? 0.5 : 0.3)){
+    // un adulte valide sans ouvrage (journalier) reste aux aguets : il flâne moins et regarde souvent
+    // s'il y a un chantier à servir. Avant, il pouvait rester des jours sans rien voir.
+    const ready = this.canWork(f) && !f.appr;
+    if(this.rnd() < (kid ? 0.5 : ready ? 0.15 : 0.3)){
       const home = this.homeOf(f);
       const hx = home?home.x:W/2, hy = home?home.y:H/2;
       const R = kid ? 3 : 5;
@@ -2385,7 +2388,7 @@ class GameState {
         if(p && p.length<=12){ f.path=p; f.state="wander"; return; }
       }
     }
-    f.cool = 20 + Math.floor(this.rnd()*20);
+    f.cool = ready ? 2 + Math.floor(this.rnd()*3) : 20 + Math.floor(this.rnd()*20);
   }
   // le travail et les pauses n'avancent qu'un tick sur WORK_DIV (décalé d'un villageois à l'autre)
   workGate(f){ return ((this.stepN|0) + f.id) % WORK_DIV === 0; }
@@ -2400,7 +2403,7 @@ class GameState {
     // chantier : les ouvriers affectés à un bâtiment non terminé y portent les matériaux et le bâtissent
     if(site){
       const job = this.siteJob(f, [site]);
-      if(job) this.doSiteJob(f, job); else f.cool = 10;   // ils attendent la livraison en cours
+      if(job) this.doSiteJob(f, job); else f.cool = 3;   // ils attendent la livraison en cours
       return;
     }
     if(!b){
@@ -2484,6 +2487,15 @@ class GameState {
     const need = {}, got = {};
     for(const r of MAT_RES) if((cost && cost[r])>0){ need[r] = cost[r]; got[r] = 0; }
     b.mat = { need, got };
+    this.wakeBuilders();
+  }
+  // un chantier vient d'être posé : les journaliers qui attendent s'y mettent tout de suite
+  wakeBuilders(){
+    for(const v of this.villagers || []){
+      if(v.work>0 || v.appr || !this.canWork(v)) continue;
+      if(v.state==="idle") v.cool = Math.min(v.cool||0, 1);
+      else if(v.state==="wander"){ v.state = "idle"; v.path = null; v.cool = 0; }
+    }
   }
   // promis aux chantiers mais pas encore livré (donc encore dans le stock)
   reserved(r){
@@ -2604,7 +2616,6 @@ class GameState {
   // travail d'un ouvrier sur les chantiers : aller chercher ce qui manque, sinon bâtir avec ce qui est arrivé
   siteJob(f, sites){
     const plow = this.plowing();
-    const ableOx = this.oxen.some(o=>this.oxCanHaul(o));
     for(const s of this.sitesByOrder(sites, f.x, f.y)){
       if(s.mat) for(const r of MAT_RES){
         const left = this.matLeft(s, r);
@@ -2620,9 +2631,9 @@ class GameState {
           return { type:"haul", bid:s.id, res:r, n, dep:dep.id, ox:ox.id, phase:"ox" };
         }
         if(r==="stone") return { type:"haul", bid:s.id, res:r, n:PORTER_LOAD, dep:dep.id, phase:"fetch" };
-        // aucun bœuf en état : on traîne un tronc à la main, lentement
-        if(!ableOx) return { type:"haul", bid:s.id, res:r, n:1, dep:dep.id, drag:true, phase:"fetch" };
-        // le bœuf est déjà pris : on attend son retour
+        // aucun bœuf en état, ou le bœuf est déjà parti avec un autre : plutôt que d'attendre son retour
+        // les bras croisés, on traîne un tronc à la main, lentement (le bœuf en traîne trois, plus vite)
+        return { type:"haul", bid:s.id, res:r, n:1, dep:dep.id, drag:true, phase:"fetch" };
       }
       if((s.progress||0) < this.matFrac(s) - 1e-9) return { type:"build", bid:s.id };
     }
@@ -2795,7 +2806,7 @@ class GameState {
         if(this.moveAlong(f, f.path, 0.25*sp) || !f.path){ f.state="idle"; f.cool=0; f.path=null; }
         break;
       case "wander":
-        if(this.moveAlong(f, f.path, 0.18*sp)){ f.state="idle"; f.cool=25; f.path=null; }
+        if(this.moveAlong(f, f.path, 0.18*sp)){ f.state="idle"; f.cool = this.canWork(f) && !f.appr ? 2 : 25; f.path=null; }
         break;
       case "walk":
         if(this.moveAlong(f, f.path, (this.haulSpeed(f) || 0.25)*sp)){
