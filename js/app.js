@@ -346,7 +346,15 @@ canvas.addEventListener("pointerup", function(e){
     if(!game.toggleRoad(w.tx, w.ty)) flash("Impossible de tracer une route ici.");
   }
   else if(ui.buildSel){
-    var def = ui.buildSel;
+    /* pose en deux temps : 1er toucher = emplacement en bleu, 2e toucher au même endroit = validation */
+    var def = ui.buildSel, pp = ui.pendingPlace;
+    if(!pp || pp.tx!==w.tx || pp.ty!==w.ty){
+      var perr = game.canPlace(def, w.tx, w.ty);
+      if(perr){ ui.pendingPlace = null; flash(perr); }
+      else { ui.pendingPlace = { tx:w.tx, ty:w.ty }; buzz(5); }
+      renderUI(); return;
+    }
+    ui.pendingPlace = null;
     var err = game.place(def, w.tx, w.ty);
     if(err) flash(err);
     else {
@@ -454,6 +462,15 @@ document.addEventListener("click", function(e){
       break;
     case "zone":
       clearTools(); ui.zoneMode = true; ui.cat = null; ui.buildSel = null; ui.roadMode = false; ui.selId = null; ui.sheet = null;
+      break;
+    case "placeok":
+      if(ui.buildSel && ui.pendingPlace){
+        var pp2 = ui.pendingPlace, perr2 = g.place(ui.buildSel, pp2.tx, pp2.ty); ui.pendingPlace = null;
+        if(perr2) flash(perr2);
+        else { AudioFX.build(); buzz(8);
+          if(UNIQUE[ui.buildSel]) ui.buildSel = null;
+          else if(!g.canAfford(ui.buildSel)){ var bs = ui.buildSel; ui.buildSel = null; flash("Plus assez de matériaux. "+missingText(bs, g)); } }
+      }
       break;
     case "zoneundo": if(ui.zoneClosed) ui.zoneClosed = false; else ui.zonePts.pop(); ui.zoneN = null; break;
     case "zoneclose": if(ui.zonePts.length>=3){ ui.zoneClosed = true; ui.zoneN = null; } break;
@@ -730,13 +747,15 @@ function renderHud(g){
        + "<button class='b gold' data-act='cancel'>Terminer</button></div>";
   } else if(ui.buildSel){
     var d = BUILD_DEFS[ui.buildSel];
-    h += "<div class='frame place'><div class='t'><b>"+esc(d.name)+" "+costHtml(d.cost, g)+"</b><span>Touchez la carte pour poser"
-       + (UNIQUE[ui.buildSel] ? "" : " (plusieurs à la suite)")+". Appui long pour annuler.</span></div>";
+    h += "<div class='frame place'><div class='t'><b>"+esc(d.name)+" "+costHtml(d.cost, g)+"</b><span>"+(ui.pendingPlace
+         ? "Touchez à nouveau l'emplacement bleu pour valider, ou ailleurs pour le changer."
+         : "Touchez la carte pour choisir l'emplacement"+(UNIQUE[ui.buildSel] ? "" : " (plusieurs à la suite)")+".")+"</span></div>";
     if(d.uiSize){
       h += "<div class='sizes'>";
       for(var si=0; si<FIELD_SIZES.length; si++) h += "<button class='b"+(g.fieldSize()===FIELD_SIZES[si]?" on":"")+"' data-act='fieldsize' data-arg='"+FIELD_SIZES[si]+"'>"+FIELD_SIZES[si]+"×"+FIELD_SIZES[si]+"</button>";
       h += "</div>";
     }
+    if(ui.pendingPlace) h += "<button class='b gold' data-act='placeok'>Valider</button>";
     h += "<button class='b sq' data-act='cancel' aria-label='Annuler'>"+ic("close")+"</button></div>";
   }
   setHTML(elHint, h);
@@ -1073,7 +1092,7 @@ renderUI();
 /* ----- boucle principale ----- */
 var _lastT = performance.now(), _acc = 0, _uiAcc = 0, _saveAcc = 0;
 /* étape 3 : outils de zone et de pose dans la cour */
-function clearTools(){ ui.zoneMode = false; ui.zonePts = []; ui.zoneClosed = false; ui.zoneN = null; ui.extPlace = null; zoneDrag = { i:-1 }; }
+function clearTools(){ ui.pendingPlace = null; ui.zoneMode = false; ui.zonePts = []; ui.zoneClosed = false; ui.zoneN = null; ui.extPlace = null; zoneDrag = { i:-1 }; }
 var zoneDrag = { i:-1 }, lastPtrType = "mouse";
 function nearZonePt(x, y){
   var r = Math.max(0.35, 34/(16*cam.zoom)), best = -1;
@@ -1082,6 +1101,10 @@ function nearZonePt(x, y){
 }
 var _zoneKey = "", _zoneOv = null;
 function zoneOverlay(g){
+  if(ui.buildSel && ui.pendingPlace){
+    var bd = BUILD_DEFS[ui.buildSel];
+    return { pending:{ x:ui.pendingPlace.tx, y:ui.pendingPlace.ty, w:bd.w, h:bd.h } };
+  }
   if(!ui.zoneMode || ui.zonePts.length===0) return null;
   var grab = zoneDrag.i>=0 && zoneDrag.grabbed ? zoneDrag.i : -1;
   var key = JSON.stringify(ui.zonePts)+"|"+ui.zoneClosed+"|"+ui.zoneN+"|"+grab+"|"+g.uiVersion+"|"+g.buildings.length+"|"+Math.floor(g.stock.timber);

@@ -644,6 +644,12 @@ var OV = null;
 var PLOT_TINTS = ["rgba(90,224,110,0.30)", "rgba(110,190,255,0.30)"];
 function drawOverlay(g, now){
   var k, j;
+  if(OV.pending){ /* emplacement choisi, en attente de validation */
+    var pq = OV.pending, pa = 0.30 + 0.12*Math.sin(now/200);
+    bx.fillStyle = "rgba(80,150,255,"+pa.toFixed(3)+")";
+    bx.fillRect(pq.x*TS-OX, pq.y*TS-OY, pq.w*TS, pq.h*TS);
+    corners(pq.x*TS, pq.y*TS, pq.w*TS, pq.h*TS, "#8cc4ff");
+  }
   if(OV.pts){
     var pl = OV.plan, plots = (pl && !pl.err) ? pl.plots : [];
     for(k=0; k<plots.length; k++){ fillPoly(plots[k].poly, PLOT_TINTS[k&1]); drawPolyFence(g, plots[k].poly, plots[k].dir, 0.95, "#f2e6c8", "#c9a45a"); }
