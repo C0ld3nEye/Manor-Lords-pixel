@@ -966,8 +966,8 @@ function sheetSelection(g){
        + (fam.gruel ? " <span class='bad'>(bouillie de disette)</span>" : "")+"</span></div>";
     if(fam){
       h += "<div class='kv'><span class='k'>"+ic("crown","s")+"Ordre</span><span class='v'>"+esc(ORDER_DEFS[fam.ord||"serf"].name)+"</span></div>";
-      if(fam.ord!=="noble" && sel.lvl>=3) h += "<button class='b wide"+(g.canEnnoble(fam)?" off":"")+"' data-act='ennoble' data-arg='"+fam.id+"'>"+ic("crown","s")+"Anoblir la famille · "+ENNOBLE_COST+" d'influence</button>"
-         + "<div class='dim' style='font-size:11px'>Noble, elle ne travaille plus, sert à votre cour, au clergé ou comme lettrée, ne paie pas la taille et veut chaque mois des vêtements et une bonne table.</div>";
+      if(fam.ord!=="noble" && sel.lvl>=3) h += "<button class='b wide"+(g.canEnnoble(fam)?" off":"")+"' data-act='ennoble' data-arg='"+fam.id+"'>"+ic("crown","s")+"Anoblir la famille · "+g.ennobleCost()+" d'influence</button>"
+         + "<div class='dim' style='font-size:11px'>"+(g.nobleCount()>=g.nobleCap() ? "<span class='bad'>La noblesse reste rare : une famille noble pour huit familles au plus.</span> " : "")+"Noble, elle ne travaille plus, sert à votre cour, au clergé ou comme lettrée, ne paie pas la taille et veut chaque mois des vêtements et une bonne table.</div>";
       else if(fam.ord==="serf" && sel.lvl<2) h += "<div class='dim' style='font-size:11px'>Au niveau 2, la famille entrera dans la bourgeoisie (métiers d'artisan, plus de corvée).</div>";
     }
     if(fam) g.membersOf(fam.id).forEach(function(v){ h += vRow(g, v); });
@@ -1711,8 +1711,8 @@ function sheetJustice(g){
     var who = c.type==="border" ? famName(g, c.a)+" contre "+famName(g, c.b)
       : c.type==="theft" ? famName(g, c.b)+" accuse "+(acc ? esc(g.fullName(acc)) : "?")
       : c.type==="poach" ? (acc ? esc(g.fullName(acc)) : "?")+" ("+famName(g, c.a)+")"
-      : c.type==="debt" ? famName(g, c.a)+" réclame son dû à la "+famName(g, c.b).toLowerCase()
-      : "Un homme de la "+famName(g, c.a).toLowerCase()+" contre un de la "+famName(g, c.b).toLowerCase();
+      : c.type==="debt" ? famName(g, c.a)+" réclame son dû à la "+esc(g.famLow(g.famById(c.b)))
+      : "Un homme de la "+esc(g.famLow(g.famById(c.a)))+" contre un de la "+esc(g.famLow(g.famById(c.b)));
     h += "<div class='desc' style='margin-bottom:4px'>"+esc(d.desc)+" "+who+"."+(c.proof ? " <b class='"+(c.proof==="solides"?"gold":"dim")+"'>Preuves "+c.proof+".</b>" : "")+"</div>";
     var vs = d.verdicts.map(function(x){
       var lbl = x.id==="a" ? "Raison aux "+esc(g.surnameOf(g.famById(c.a))) : x.id==="b" ? "Raison aux "+esc(g.surnameOf(g.famById(c.b))) : esc(x.name);

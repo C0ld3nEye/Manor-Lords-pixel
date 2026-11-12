@@ -58,6 +58,8 @@ Vous arrivez en mars 1176 avec trois familles de survivants. Chaque villageois a
 - `js/render.js` — le rendu : sol mis en cache, objets triés en profondeur, ombres, météo, minimap.
 - `js/app.js` — l'application mobile (entrées tactiles, interface, boucle de jeu).
 - `test/sim.test.js` — tests automatisés de la simulation : `node test/sim.test.js`.
+- `test/soak.js` — grande campagne : un joueur automatique gouverne des parties de plusieurs années (quatre manières de faire) et vérifie l'état chaque mois : `node test/soak.js [années] [graines]`.
+- `test/ui.smoke.js` — parcourt l'interface de l'administration dans un navigateur au format téléphone (nécessite Playwright) : `node test/ui.smoke.js [dossier des captures]`.
 - `dev/planche.html` — planche de tous les sprites (pratique pour retoucher le dessin).
 - `dev/icones.html` — planche des icônes et des miniatures.
 

@@ -769,6 +769,7 @@ test("phase 6 : défaite après 6 mois à approbation très basse (famine)", () 
   const g = new GameState(1176, "peace", "hard");
   g.time.year = 1178;
   g.stock.berries=0; g.stock.meat=0; g.stock.bread=0; g.stock.firewood=0; g.stock.clothes=0;
+  for(const f of g.families) f.clothed = false;   // en haillons dès le départ
   for(let m=0;m<8 && !g.defeat;m++) g.onMonth();
   assert.strictEqual(g.defeat, true);
   assert.ok(/approbation/.test(g.endReason));
@@ -776,6 +777,7 @@ test("phase 6 : défaite après 6 mois à approbation très basse (famine)", () 
   const g2 = new GameState(1176, "peace", "hard");
   g2.time.year = 1178;
   g2.stock.berries=0; g2.stock.meat=0; g2.stock.bread=0; g2.stock.firewood=0; g2.stock.clothes=0;
+  for(const f of g2.families) f.clothed = false;
   for(let m=0;m<3;m++) g2.onMonth();
   assert.ok(g2.lowApprovalStreak >= 3);
   g2.stock.berries=100; g2.stock.meat=100; g2.stock.bread=100; g2.stock.firewood=100; g2.stock.clothes=100;
@@ -2789,8 +2791,9 @@ test("étape 7b : la famille la plus fâchée part la première ; une famille ra
   for(const f of g.families) f.founder = false;
   const [a, b, c] = g.families;
   g.addMem(b, "x", "Grief", -40, 0);
-  g.approval = 20;
+  g.stock.firewood = 0; g.stock.clothes = 0; for(const f of g.families) f.clothed = false;   // un village malheureux (approbation sous 30)
   g.time.month = 4; g.onMonth(); g.pendingEvent = null;
+  assert.ok(g.approval<30, "approbation "+g.approval);
   assert.ok(!g.families.includes(b), "la plus fâchée est partie");
   const g2 = fresh(); houses(g2, 3);
   for(const f of g2.families) f.founder = false;
@@ -2876,7 +2879,8 @@ test("étape 7c : les serfs ne tiennent pas un métier d'artisan ; une maison de
   doneBuilding(g, "market"); for(const o of g.families) o.ord = "serf";
   for(const o of g.families){ o.fed = 1; o.variety = 3; }
   g.time.month = 5; g.onMonth(); g.pendingEvent = null;
-  if(h.lvl>=2) assert.strictEqual(f.ord, "bourg", "maison de niveau 2 : bourgeois");
+  assert.ok(h.lvl>=2, "la maison bien pourvue monte de niveau");
+  assert.strictEqual(f.ord, "bourg", "maison de niveau 2 : bourgeois");
   f.ord = "bourg";
   assert.strictEqual(g.assignVillager(v.id, b.id), null, "un bourgeois peut être boulanger");
 });
