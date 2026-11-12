@@ -631,13 +631,54 @@ var MAPS = {
            "....kkkkk..."]
 };
 
+/* étape 6 : farine, fromage, viande fumée */
+MAPS.flour = ["............",
+              "....kkkk....",
+              "...kwssWk...",
+              "....kwwk....",
+              "...kwwwWk...",
+              "..kwwWwwwk..",
+              ".kwwwwwwsWk.",
+              ".kwWwwwwswk.",
+              ".kwwwwwswwk.",
+              ".kswwwwwwsk.",
+              "..kssssssk..",
+              "...kkkkkk..."];
+MAPS.cheese = ["............",
+               "............",
+               "....kkkk....",
+               "..kkYYYYkk..",
+               ".kYYYYYYYYk.",
+               "kYYYyYYYYYYk",
+               "kyYYYYYYYYyk",
+               "kykkYYYYkkyk",
+               "kyyykkkkyyyk",
+               "kyyyyyyyyyyk",
+               ".kkyyyyyykk.",
+               "...kkkkkk..."];
+MAPS.smoked = [".....kk.....",
+               ".....k4k....",
+               "....kwwk....",
+               "....kkkk....",
+               "...kFFfFk...",
+               "..kFffFffk..",
+               "..kFfFfFfk..",
+               ".kFfffFfffk.",
+               ".kFFfFffFfk.",
+               ".kFfffffFFk.",
+               "..kFFFFFFk..",
+               "...kkkkkk..."];
+
 /* couleurs propres à certaines icônes */
 var MAP_PAL = {
   meat:  { M:"#e0925a", m:"#b4562e", d:"#7a321a" },
   hay:   { Y:"#e8d690", y:"#c8b060", o:"#9a8240" },
   pulses:{ G:"#9ad060", g:"#5a9a3a" },
   eggs:  { W:"#ffffff" },
-  bread: { Y:"#f2cf86", y:"#d8963c", f:"#9a5a24" }
+  bread: { Y:"#f2cf86", y:"#d8963c", f:"#9a5a24" },
+  flour: { W:"#ffffff" },
+  cheese:{ Y:"#f6dc7a", y:"#d6a83a" },
+  smoked:{ F:"#6a3018", f:"#a8582e" }
 };
 
 /* variantes de couleur (même dessin, autre palette) */
@@ -694,7 +735,8 @@ function fromFn(fn){
 var THUMB = {
   burgage:"burgage2_1", woodcutter:"woodcutter", forager:"forager", hunter:"hunter", quarry:"quarry",
   farm:"farm", windmill:"windmill", granary:"granary", storehouse:"storehouse", market:"market_1",
-  trade:"trade", church:"church_11", tower:"tower", wall:"wall_10", manor:"manor", pasture:"shelter_sheep"
+  trade:"trade", church:"church_11", tower:"tower", wall:"wall_10", manor:"manor", pasture:"shelter_sheep",
+  bakery:"bakery", dairy:"dairy", smokehouse:"smokehouse"
 };
 function thumbCanvas(def){
   var F = SPR.frames;

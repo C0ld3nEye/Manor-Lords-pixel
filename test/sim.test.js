@@ -896,7 +896,7 @@ test("étape 3 : sauvegarde v3 des parcelles et de leur contour, démolition lib
   const gm = GameState.load(multi);
   assert.deepStrictEqual(gm.buildings.find(x=>x.id===b.id).exts, ["garden"]);
   assert.strictEqual(gm.stock.timber, multi.stock.timber + EXT_DEFS.orchard.cost.timber);
-  assert.strictEqual(data.v, 6);
+  assert.strictEqual(data.v, 7);
   const g2 = GameState.load(data);
   const b2 = g2.buildings.find(x=>x.id===b.id);
   assert.deepStrictEqual(b2.plot, b.plot);
@@ -1248,7 +1248,7 @@ test("étape 4 : sauvegarde v4 — villageois, liens et compétences conservés,
   g.assign(b.id);
   for(let i=0;i<300*TS;i++) g.step();
   const data = JSON.parse(JSON.stringify(g.serialize()));
-  assert.strictEqual(data.v, 6);
+  assert.strictEqual(data.v, 7);
   const g2 = GameState.load(data);
   assert.strictEqual(g2.villagers.length, g.villagers.length);
   for(const v of g.villagers){
@@ -1926,7 +1926,7 @@ test("étape 5 bis : sauvegarde v6 — matériaux, priorité et bœuf mené gard
   g.setSitePrio(b.id, true);
   quietSteps(g, 60*DAY, ()=>g.oxen.some(o=>o.lead>0 && g.villager(o.lead).task.phase==="bring"));
   const data = JSON.parse(JSON.stringify(g.serialize()));
-  assert.strictEqual(data.v, 6);
+  assert.strictEqual(data.v, 7);
   const g2 = GameState.load(data), b2 = g2.buildings.find(x=>x.id===b.id);
   assert.deepStrictEqual(b2.mat, b.mat);
   assert.strictEqual(b2.prio, true);
@@ -1987,6 +1987,248 @@ test("retirer un ouvrier (−) : il redevient journalier, sa fiche le dit tout d
   g.assign(b.id); const w = g.workersOf(b)[0];
   g.unassign(b.id);
   assert.ok(w.task && (w.task.type==="haul" || w.task.type==="build") && w.task.bid===s.id, "il part aussitôt au chantier");
+});
+
+
+/* ================= étape 6 : nourriture, transformation et conservation ================= */
+const { FOOD_DEFS, FOOD_TYPES: FT6, RECIPES, SMOKE_KEEP, GRANARY_CAP, STORE_SPOIL } = require("../js/sim.js");
+function emptyFood(g){ for(const k of FT6.concat(["grain","flour","barley","oats"])) g.stock[k] = 0; }
+// un atelier achevé avec un ouvrier, et rien d'autre qui travaille
+function workshop(g, def){ const b = doneBuilding(g, def); g.assign(b.id); return b; }
+function stepsUntil(g, n, until){ for(let i=0;i<n;i++){ g.step(); g.pendingEvent = null; if(until && until()) return i; } return n; }
+
+test("étape 6 : le moulin donne de la farine, plus du pain ; le meunier va chercher le grain à la ferme", () => {
+  const g = fresh(); houses(g, 3);
+  const farm = doneBuilding(g, "farm");
+  const mill = workshop(g, "windmill");
+  emptyFood(g); g.stock.grain = 10;
+  const miller = g.workersOf(mill)[0];
+  // il part chercher le grain : le grain reste en réserve tant qu'il n'est pas déposé au moulin
+  stepsUntil(g, 6000, ()=>miller.task && miller.task.type==="fetch");
+  assert.strictEqual(miller.task.dep, farm.id, "va à la ferme");
+  assert.strictEqual(g.stock.grain, 10, "rien n'est sorti avant la livraison");
+  stepsUntil(g, 20000, ()=>miller.task && miller.task.type==="fetch" && miller.task.phase==="bring");
+  assert.ok(miller.carry && miller.carry.grain>0, "il porte un sac");
+  stepsUntil(g, 20000, ()=>(g.stock.flour||0)>=2);
+  assert.ok(g.stock.flour>=2, "farine moulue");
+  assert.ok(g.stock.grain<10, "le grain a quitté la réserve");
+  assert.strictEqual(Math.round((g.stock.bread||0)*100), 0, "plus de pain direct au moulin");
+  assert.ok(Math.abs((10 - g.stock.grain) - (g.stock.flour + mill.inp + g.inFetch("grain", true)*0)) < 1e-6, "1 grain → 1 farine, rien ne se perd");
+});
+
+test("étape 6 : la boulangerie cuit 1,5 pain par farine avec du bois, et s'arrête quand il y en a assez", () => {
+  const g = fresh(); houses(g, 3);
+  const mill = doneBuilding(g, "windmill");
+  const bk = workshop(g, "bakery");
+  emptyFood(g); g.stock.flour = 30; g.stock.firewood = 50;
+  const target = g.craftTarget("bread");
+  stepsUntil(g, 60000, ()=>g.stock.bread >= target);
+  assert.ok(g.stock.bread >= target && g.stock.bread <= target + RECIPES.bakery.give + 1e-6, "cuit jusqu'à la réserve voulue ("+g.stock.bread+")");
+  const used = 30 - g.stock.flour - bk.inp;
+  assert.ok(Math.abs(g.stock.bread - used*1.5) < 1e-6, "1,5 pain par farine");
+  assert.ok(g.stock.firewood < 50, "le four consomme du bois");
+  assert.strictEqual(g.craftBlock(bk), "full", "ne cuit plus rien de trop : le pain rassit");
+  assert.ok(/attend/i.test(g.workStatus(bk)), g.workStatus(bk));
+});
+
+test("étape 6 : sans boulangerie, chaque foyer logé cuit un peu de farine dans son four", () => {
+  const g = fresh(); houses(g, 3);
+  emptyFood(g); g.stock.flour = 20; g.stock.firewood = 40;
+  const q = g.homeBake();
+  const ovens = g.families.filter(f=>f.home>0).length;
+  assert.ok(ovens>=3);
+  assert.ok(Math.abs(q - Math.min(20, ovens, g.craftTarget("bread"))) < 1e-6, "1 farine par foyer, 1 pain par farine");
+  assert.ok(Math.abs(g.stock.bread - q) < 1e-6);
+  assert.ok(Math.abs(g.stock.flour - (20 - q)) < 1e-6);
+});
+
+test("étape 6 : la laiterie fait du fromage avec le lait (3 → 2), le fumoir fume la viande en en laissant de fraîche", () => {
+  const g = fresh(); houses(g, 3);
+  const d = workshop(g, "dairy"), s = workshop(g, "smokehouse");
+  emptyFood(g); g.stock.milk = 12; g.stock.meat = 10; g.stock.firewood = 40;
+  stepsUntil(g, 80000, ()=>g.stock.milk + d.inp < 3 && g.stock.meat <= SMOKE_KEEP + 1e-6 && s.inp < 1);
+  assert.ok(Math.abs(g.stock.cheese - 8) < 1e-6, "12 laits → 8 fromages ("+g.stock.cheese+")");
+  assert.ok(Math.abs(g.stock.smoked - (10 - SMOKE_KEEP)) < 1e-6, "on fume tout sauf "+SMOKE_KEEP+" ("+g.stock.smoked+")");
+  assert.ok(Math.abs(g.stock.meat - SMOKE_KEEP) < 1e-6);
+  assert.ok(g.stock.firewood < 40, "le fumoir brûle du bois");
+});
+
+test("étape 6 : faute de bois de chauffe, le four et le fumoir s'arrêtent", () => {
+  const g = fresh(); houses(g, 3);
+  const bk = doneBuilding(g, "bakery");
+  bk.inp = 3; g.stock.firewood = 0; g.stock.bread = 0;
+  assert.strictEqual(g.craftBlock(bk), "fuel");
+  g.assign(bk.id);
+  assert.ok(/bois de chauffe/.test(g.workStatus(bk)), g.workStatus(bk));
+  g.stock.firewood = 5;
+  assert.strictEqual(g.craftBlock(bk), null);
+});
+
+test("étape 6 : chaque denrée se gâte à son rythme ; l'hiver ralentit, l'été accélère", () => {
+  const g = fresh(); emptyFood(g);
+  for(const b of g.buildings.filter(b=>b.def==="granary")) g.demolish(b.id);
+  toMonth(g, 3);   // avril
+  g.stock.meat = 100; g.stock.smoked = 100; g.stock.milk = 100; g.stock.honey = 100; g.stock.cheese = 100; g.stock.grain = 100;
+  g.spoilMonth();
+  assert.ok(Math.abs(g.stock.meat - 100*(1-FOOD_DEFS.meat.spoil)) < 1e-6, "viande fraîche");
+  assert.ok(Math.abs(g.stock.smoked - 100*(1-FOOD_DEFS.smoked.spoil)) < 1e-6, "viande fumée");
+  assert.ok(g.stock.milk < 60, "le lait tourne");
+  assert.strictEqual(g.stock.honey, 100, "le miel ne se gâte pas");
+  assert.ok(Math.abs(g.stock.grain - 100*(1-STORE_SPOIL.grain)) < 1e-6, "le grain un peu (rats)");
+  assert.ok(g.spoiled.meat > 0, "les pertes sont notées pour le joueur");
+  assert.ok(g.spoilRate("meat", 0) < g.spoilRate("meat", 3) && g.spoilRate("meat", 3) < g.spoilRate("meat", 6), "hiver < printemps < été");
+});
+
+test("étape 6 : une grange abrite 200 denrées ; deux granges en abritent davantage", () => {
+  const g = fresh(); emptyFood(g);
+  g.stock.meat = 400; g.stock.bread = 200;   // 600 denrées
+  const r0 = g.spoilRate("meat", 3);
+  doneBuilding(g, "granary");
+  const r1 = g.spoilRate("meat", 3);
+  doneBuilding(g, "granary");
+  const r2 = g.spoilRate("meat", 3);
+  assert.ok(r1 < r0 && r2 < r1, r0+" > "+r1+" > "+r2);
+  assert.ok(Math.abs(g.granaryShare() - 2*GRANARY_CAP/600) < 1e-9);
+  g.stock.meat = 50; g.stock.bread = 0;
+  assert.ok(Math.abs(g.spoilRate("meat", 3) - FOOD_DEFS.meat.spoil/3) < 1e-9, "petite réserve : tout est à l'abri");
+  assert.ok(Math.abs(g.spoilRate("milk", 3) - FOOD_DEFS.milk.spoil) < 1e-9, "le lait n'y gagne rien");
+});
+
+test("étape 6 : on mange d'abord ce qui se gâte ; la variété se compte en familles d'aliments", () => {
+  const g = fresh(); houses(g, 3); doneBuilding(g, "market");
+  emptyFood(g);
+  g.stock.meat = 3; g.stock.smoked = 50;
+  g.stock.milk = 3; g.stock.cheese = 50;
+  g.stock.bread = 50; g.stock.apples = 50;
+  const need = g.foodNeed();
+  const meal = g.eatMonth(true);
+  assert.ok(g.stock.meat < 3 - 1e-6 && g.stock.smoked > 50 - need, "la viande fraîche part avant la fumée");
+  assert.ok(g.stock.milk < 3 - 1e-6, "le lait avant le fromage");
+  for(const f of g.families) assert.strictEqual(f.variety, 4, "pain, viande, laitages, fruits");
+  assert.strictEqual(meal.starved, 0);
+  assert.ok(Math.abs(meal.variety - 4) < 1e-9);
+  // viande fraîche et viande fumée : une seule famille d'aliments
+  emptyFood(g); g.stock.meat = 50; g.stock.smoked = 50;
+  g.eatMonth(true);
+  for(const f of g.families) assert.strictEqual(f.variety, 1);
+});
+
+test("étape 6 : le marché partage chaque sorte entre les foyers ; en pénurie, on sert les foyers l'un après l'autre", () => {
+  const g = fresh(); houses(g, 3); doneBuilding(g, "market");
+  emptyFood(g); g.stock.bread = 100; g.stock.meat = 100; g.stock.eggs = 0.6;   // quelques œufs seulement
+  g.eatMonth(true);
+  for(const f of g.families) assert.strictEqual(f.variety, 3, "le dernier foyer a aussi ses œufs");
+  // pénurie : de quoi nourrir un peu plus d'un foyer
+  emptyFood(g);
+  const w0 = g.membersOf(g.families[0].id).reduce((s, v)=>s+FOOD_NEED[g.stageOf(v)], 0);
+  g.stock.bread = w0*1.2;
+  const meal = g.eatMonth(true);
+  assert.ok(g.families[0].fed>0.999, "le premier foyer mange à sa faim");
+  assert.ok(g.families[g.families.length-1].fed<0.5 && meal.starved>=1, "les autres ont faim : la disette n'affame pas tout le village d'un coup");
+});
+
+test("étape 6 : sans marché, un foyer mange une seule chose… mais ne meurt pas de faim si une autre reste", () => {
+  const g = fresh(); houses(g, 3);
+  emptyFood(g); g.stock.berries = 1; g.stock.meat = 100;
+  const meal = g.eatMonth(false);
+  assert.strictEqual(meal.starved, 0);
+  for(const f of g.families) assert.ok(f.fed>0.999, "tous mangent");
+  assert.ok(g.families.every(f=>f.variety<=2) && g.families.filter(f=>f.variety===1).length>=2, "au plus le reste d'une autre sorte");
+});
+
+test("étape 6 : la variété des repas compte dans l'approbation et l'humeur", () => {
+  const g = fresh();
+  assert.ok(g.varietyApproval(4) > g.varietyApproval(3) && g.varietyApproval(3) > g.varietyApproval(2) && g.varietyApproval(1) < 0);
+  assert.ok(Math.abs(g.varietyApproval(2.5) - (g.varietyApproval(2)+g.varietyApproval(3))/2) < 1e-9, "progressif");
+  houses(g, 3); doneBuilding(g, "market");
+  emptyFood(g); for(const k of ["bread","meat","cheese","veg","apples"]) g.stock[k] = 100;
+  feed(g); for(const k of ["bread","meat","cheese","veg","apples"]) g.stock[k] = 100;
+  toMonth(g, 4); g.time.day = DAYS_PER_MONTH-1; g.time.tick = TICKS_PER_DAY-1; g.step();
+  assert.ok(g.approvalWhy.some(w=>/Repas variés/.test(w[0]) && w[1]>=15), JSON.stringify(g.approvalWhy));
+  const v = g.villagers[0];
+  assert.ok(v.why.some(w=>w[0]==="Repas variés"), "l'humeur aussi");
+});
+
+test("étape 6 : disette — le grain en bouillie, la faim pèse, un marchand de grain passe", () => {
+  const g = fresh(); houses(g, 3);
+  emptyFood(g); g.stock.grain = 100;
+  const meal = g.eatMonth(true);
+  assert.ok(meal.gruel>0 && meal.starved===0, "on mange le grain en bouillie");
+  assert.ok(g.families.every(f=>f.gruel && f.fed>0.999));
+  assert.ok(g.stock.grain < 100);
+  // le mois suivant : plus rien, ni grain ni farine
+  emptyFood(g); g.treasury = 100;
+  g.rnd = ()=>0.1;
+  toMonth(g, 5); g.time.day = DAYS_PER_MONTH-1; g.time.tick = TICKS_PER_DAY-1; g.pendingEvent = null; g.step();
+  assert.ok(g.dearth>=1, "disette");
+  assert.ok(g.approvalWhy.some(w=>/faim/.test(w[0])));
+  const ev = g.pendingEvent;
+  assert.ok(ev && ev.title==="Un marchand de grain", "le marchand propose ses pois");
+  const t0 = g.treasury, c = ev.choices[0];
+  g.resolveEvent(0);
+  assert.ok(g.stock.pulses >= c.qty - 1e-6 && g.treasury === t0 - Math.ceil(c.qty*c.price), "achat payé et livré");
+  // pas de nouveau marchand avant trois mois
+  emptyFood(g); toMonth(g, 6); g.time.day = DAYS_PER_MONTH-1; g.time.tick = TICKS_PER_DAY-1; g.step();
+  assert.ok(!g.pendingEvent || g.pendingEvent.title!=="Un marchand de grain");
+});
+
+test("étape 6 : la soudure est annoncée en mars quand les vivres manquent", () => {
+  const g = fresh(); houses(g, 3);
+  emptyFood(g); g.stock.bread = g.foodNeed()*1.5;
+  toMonth(g, 1); g.time.day = DAYS_PER_MONTH-1; g.time.tick = TICKS_PER_DAY-1; g.step();
+  assert.ok(g.toasts.some(t=>/soudure/.test(t.text)), "avertissement de soudure");
+  assert.ok(g.foodMonths() < 3);
+});
+
+test("étape 6 : démolir un atelier rend ce que l'artisan avait apporté", () => {
+  const g = fresh();
+  const m = doneBuilding(g, "windmill");
+  m.inp = 3; g.stock.grain = 5;
+  g.demolish(m.id);
+  assert.strictEqual(g.stock.grain, 8);
+});
+
+test("étape 6 : sauvegarde v7 — ateliers et réserves gardés ; un meunier v6 en pleine mouture reprend normalement", () => {
+  const g = fresh(); houses(g, 3);
+  const m = workshop(g, "windmill"); m.inp = 2.5;
+  g.stock.flour = 7; g.stock.cheese = 4; g.stock.smoked = 3; g.dearth = 2; g.merchantAt = 40;
+  const data = JSON.parse(JSON.stringify(g.serialize()));
+  assert.strictEqual(data.v, 7);
+  const g2 = GameState.load(data);
+  const m2 = g2.buildings.find(b=>b.id===m.id);
+  assert.strictEqual(m2.inp, 2.5);
+  assert.strictEqual(g2.stock.flour, 7); assert.strictEqual(g2.stock.cheese, 4); assert.strictEqual(g2.stock.smoked, 3);
+  assert.strictEqual(g2.dearth, 2); assert.strictEqual(g2.merchantAt, 40);
+  // une sauvegarde v6 : pas de farine, un meunier qui « moulait », pas de b.inp
+  const old = JSON.parse(JSON.stringify(data));
+  old.v = 6; delete old.stock.flour; delete old.stock.cheese; delete old.stock.smoked;
+  for(const b of old.buildings) delete b.inp;
+  const mv = old.villagers.find(v=>v.work===m.id); mv.task = { type:"mill" }; mv.state = "work";
+  delete old.dearth; delete old.merchantAt; delete old.spoiled;
+  const g3 = GameState.load(old);
+  assert.strictEqual(g3.stock.flour, 0); assert.strictEqual(g3.stock.cheese, 0);
+  assert.strictEqual(g3.buildings.find(b=>b.id===m.id).inp, 0);
+  assert.strictEqual(g3.villagers.find(v=>v.id===mv.id).task, null);
+  g3.stock.grain = 6;
+  stepsUntil(g3, 30000, ()=>g3.stock.flour>=1);
+  assert.ok(g3.stock.flour>=1, "le moulin reprend avec la farine");
+});
+
+test("étape 6 : trois ans de chaînes de transformation — ni exception ni valeur aberrante", () => {
+  for(const seed of [5, 77]){
+    const g = new GameState(seed, "prosperity", "normal");
+    g.stock.timber = 80; g.treasury = 200; houses(g, 3);
+    const p = newPasture(g, 5, 4); stockHerd(g, p, "cattle", 3, 1); g.assign(p.id);
+    const farm = doneBuilding(g, "farm"); g.assign(farm.id);
+    for(const c of ["wheat","peas","hay"]) newField(g, c, 3);
+    for(const d of ["windmill","bakery","dairy","smokehouse","market"]) workshop(g, d);
+    doneBuilding(g, "granary");
+    g.stock.grain = 30;
+    for(let i=0;i<36*MONTH_TICKS;i++){ g.step(); if(g.pendingEvent) g.resolveEvent(g.pendingEvent.choices.length-1); }
+    for(const k of Object.keys(g.stock)) assert.ok(isFinite(g.stock[k]) && g.stock[k]>=-1e-9, k+" = "+g.stock[k]);
+    for(const b of g.buildings) if(RECIPES[b.def]) assert.ok(isFinite(b.inp) && b.inp>=0, b.def+".inp");
+    assert.ok(isFinite(g.approval));
+  }
 });
 
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));

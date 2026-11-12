@@ -812,7 +812,7 @@ function drawFamily(g, f, info){
   }
   if(walking && f.task && f.task.type==="haul" && f.task.drag && f.task.phase==="bring") spr("drag_timber", x + (dir<0 ? 10 : -10), y + 1);
   if(f.carry && walking){
-    var ck = f.carry.timber ? "timber" : f.carry.berries ? "berries" : f.carry.meat ? "meat" : f.carry.stone ? "stone" : "sack";
+    var ck = f.carry.timber ? "timber" : f.carry.berries ? "berries" : f.carry.meat ? "meat" : f.carry.stone ? "stone" : f.carry.milk ? "milk" : "sack";
     spr("carry_"+ck+sfx, x, y);
   }
   spr(personSprite(g, f, info.job, body, dir), x, y);
@@ -859,6 +859,7 @@ function drawSprite(name, x, y){ spr(name, x, y); }
 /* ---- fumées et drapeaux ---- */
 var SMOKE_AT = {
   burgage1:[[11,2]], burgage2:[[9,1]], burgage3:[[13.5,0]], manor:[[6.5,5],[24.5,6]], forager:[[8,1]],
+  bakery:[[9.5,5]], smokehouse:[[7.5,5],[8.5,6]],
 };
 function smokeFrom(x, y, t, seed, strength){
   for(var k=0;k<4;k++){

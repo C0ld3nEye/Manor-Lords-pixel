@@ -61,10 +61,10 @@ var CATS = [
     hint:"Tracez une zone le long d'une route : maisons, cours et clôtures se placent seules." },
   { id:"res",   name:"Récolte",    icon:"axe",    items:["woodcutter","forager","hunter","quarry"],
     hint:"Bois, baies, gibier et pierre : posez-les près de la ressource." },
-  { id:"farm",  name:"Terres",     icon:"grain",  items:["farm","windmill"], actions:["fieldzone","pasture","buyox"],
-    hint:"Tracez champs et pâturages à la forme que vous voulez ; une ferme travaille les champs, un moulin fait le pain." },
-  { id:"store", name:"Stocks",     icon:"crate",  items:["granary","storehouse"],
-    hint:"La grange limite le pourrissement, l'entrepôt augmente la capacité." },
+  { id:"farm",  name:"Terres",     icon:"grain",  items:["farm"], actions:["fieldzone","pasture","buyox"],
+    hint:"Tracez champs et pâturages à la forme que vous voulez ; une ferme travaille les champs." },
+  { id:"store", name:"Vivres",     icon:"bread",  items:["windmill","bakery","dairy","smokehouse","granary","storehouse"],
+    hint:"Moulin, boulangerie, laiterie, fumoir : transformer et conserver. La grange abrite les denrées, l'entrepôt agrandit les réserves." },
   { id:"realm", name:"Domaine",    icon:"church", items:["market","trade","church","manor"],
     hint:"Marché, commerce, église et manoir : le cœur de la seigneurie." },
   { id:"def",   name:"Défense",    icon:"shield", items:["tower","wall"], actions:["militia","merc"],
@@ -80,7 +80,8 @@ var RES = {
   eggs:{ n:"Œufs" }, veg:{ n:"Légumes" }, apples:{ n:"Pommes" }, honey:{ n:"Miel" },
   clothes:{ n:"Vêtements" }, ale:{ n:"Ale" }, ox:{ n:"Bœufs" },
   oats:{ n:"Avoine" }, flax:{ n:"Lin" }, pulses:{ n:"Pois et fèves" }, milk:{ n:"Lait" }, wool:{ n:"Laine" },
-  hay:{ n:"Foin et paille" }, manure:{ n:"Fumier" }, sh_grain:{ n:"Gerbes de blé et de seigle" }, sh_barley:{ n:"Gerbes d'orge" }, sh_oats:{ n:"Gerbes d'avoine" }
+  hay:{ n:"Foin et paille" }, manure:{ n:"Fumier" }, sh_grain:{ n:"Gerbes de blé et de seigle" }, sh_barley:{ n:"Gerbes d'orge" }, sh_oats:{ n:"Gerbes d'avoine" },
+  flour:{ n:"Farine" }, cheese:{ n:"Fromage" }, smoked:{ n:"Viande fumée" }
 };
 var MONTHS_SHORT = ["Janv.","Févr.","Mars","Avril","Mai","Juin","Juil.","Août","Sept.","Oct.","Nov.","Déc."];
 var SEASON_IC = ["winter","spring","summer","autumn"];
@@ -95,7 +96,7 @@ var EMOJI_IC = { "💰":"coin", "🪵":"timber", "🔥":"firewood", "🪨":"ston
   "🍗":"meat", "🥚":"eggs", "🥕":"veg", "🍎":"apples", "🍯":"honey", "👕":"clothes", "🍺":"ale", "🐂":"ox",
   "🗺":"flag", "🛡":"shield", "⚔":"sword", "🏆":"crown", "🏰":"house", "❄":"winter", "💀":"", "☠":"", "🏕":"", "⚠":"",
   "🌱":"oats", "🪻":"flax", "🫛":"pulses", "🥛":"milk", "🧶":"wool", "🌿":"hay", "🟫":"manure", "🎋":"sheaf",
-  "🐑":"sheep", "🐄":"cow", "🐖":"pig", "🌩":"", "🌧":"", "☀":"summer" };
+  "🐑":"sheep", "🐄":"cow", "🐖":"pig", "🌩":"", "🌧":"", "☀":"summer", "🥣":"flour", "🧀":"cheese", "🥓":"smoked" };
 var EMOJI_RE = new RegExp("("+Object.keys(EMOJI_IC).join("|")+")\\ufe0f?\\s?", "g");
 function rich(text){
   return esc(text).replace(EMOJI_RE, function(m, e){ var n = EMOJI_IC[e]; return n ? ic(n,"s")+(/\s$/.test(m)?" ":"") : ""; });
@@ -728,16 +729,15 @@ function renderTop(g){
   setHTML(elBar, h);
 
   /* bandeau des réserves (toucher = détail) */
-  var food = 0, kinds = 0;
-  for(var i=0;i<FOOD_TYPES.length;i++){ var q = g.stock[FOOD_TYPES[i]]||0; food += q; if(q>=1) kinds++; }
+  var food = g.foodStock(), kinds = foodGroupsIn(g);
   var cold = [9,10,11,0,1].indexOf(g.time.month)>=0;
   var r = "";
   r += rc("timber", g.stock.timber, g.stock.timber<3);
   r += rc("firewood", g.stock.firewood, cold && g.stock.firewood < g.families.length*3);
   r += rc("stone", g.stock.stone, false);
-  r += "<span class='rc"+(food < g.foodNeed()*2 ? " low" : "")+"'>"+ic("bread")+Math.floor(food)
+  r += "<span class='rc"+(food < g.foodNeed()*2 || g.dearth>0 ? " low" : "")+"'>"+ic("bread")+Math.floor(food)
      + "<span class='dim' style='font-size:10px'>·"+kinds+"</span></span>";
-  ["grain","barley","clothes","ale"].forEach(function(k){ if((g.stock[k]||0)>=1) r += rc(k, g.stock[k], false); });
+  ["grain","flour","barley","clothes","ale"].forEach(function(k){ if((g.stock[k]||0)>=1) r += rc(k, g.stock[k], false); });
   /* étape 5 : le foin compte dès qu'il y a des bêtes à nourrir l'hiver */
   var wneed = g.winterNeed();
   if(wneed>0) r += rc("hay", g.stock.hay, [8,9,10,11,0,1].indexOf(g.time.month)>=0 && g.fodderStock() < wneed*3);
@@ -912,6 +912,9 @@ function sheetSelection(g){
     var fam = g.families.filter(function(f){ return f.home===sel.id; })[0];
     h += "<div class='kv'><span class='k'>"+ic("family","s")+(fam ? esc(fam.name) : "Logement vacant")+"</span>"
        + (sel.monthsGood>0 ? "<span class='v good'>Bien loti : "+sel.monthsGood+" mois</span>" : "")+"</div>";
+    if(fam && fam.menu) h += "<div class='kv'><span class='k dim' style='font-size:11px'>Au menu le mois dernier</span><span class='v' style='font-size:11px'>"
+       + (fam.menu.length ? fam.menu.map(function(gk){ return esc(FOOD_GROUPS[gk] ? FOOD_GROUPS[gk].name.toLowerCase() : gk); }).join(", ") : "rien")
+       + (fam.gruel ? " <span class='bad'>(bouillie de disette)</span>" : "")+"</span></div>";
     if(fam) g.membersOf(fam.id).forEach(function(v){ h += vRow(g, v); });
     if(sel.done){
       var exts = sel.exts || [];
@@ -943,6 +946,8 @@ function sheetSelection(g){
   }
   if(sel.def==="field" && sel.f) h += sheetField(g, sel);
   if(sel.def==="farm" && sel.done) h += sheetFarm(g);
+  if(RECIPES[sel.def] && sel.done) h += sheetWorkshop(g, sel);
+  if(sel.def==="granary" && sel.done) h += sheetGranary(g);
   if(sel.def==="pasture" && sel.herd) h += sheetPasture(g, sel);
   if(sel.def==="trade" && sel.done){
     h += "<div class='sec'>Prix du marché (deniers)</div><div class='chips'>";
@@ -1351,20 +1356,80 @@ function sheetPeople(g){
 }
 
 /* réserves détaillées */
+/* =====================================================================
+   ÉTAPE 6 : vivres, ateliers, grange
+   ===================================================================== */
+function foodGroupsIn(g){
+  var n = 0;
+  FOOD_GROUP_ORDER.forEach(function(gk){ if(FOOD_TYPES.some(function(k){ return FOOD_DEFS[k].group===gk && (g.stock[k]||0)>=1; })) n++; });
+  return n;
+}
+function spoilTxt(r){ var p = r*100; return (p<1 ? (Math.round(p*10)/10).toString().replace(".", ",") : Math.round(p))+" %"; }
+function monthsFood(m){ return m>=24 ? "plus de 2 ans" : m<1 ? "moins d'un mois" : (Math.floor(m*2)/2).toString().replace(".", ",")+" mois"; }
+function granaryNote(g){
+  var n = g.granaryCount();
+  if(!n) return "<div class='gold' style='font-size:11px'>Sans grange, tout se gâte trois fois plus vite qu'à l'abri.</div>";
+  var sh = g.granaryShare();
+  return "<div class='dim' style='font-size:11px'>"+n+" grange"+(n>1?"s":"")+" : "+(n*GRANARY_CAP)+" denrées à l'abri"+(sh<0.999 ? " ("+Math.round(sh*100)+" % des réserves ; une grange de plus en abriterait davantage)" : " (toutes les réserves)")+".</div>";
+}
+var RECIPE_TXT = {
+  windmill:"1 grain → 1 farine. Sans boulangerie, chaque foyer cuit sa farine (1 farine → 1 pain).",
+  bakery:"1 farine → 1,5 pain, avec ¼ de bois de chauffe par fournée.",
+  dairy:"3 laits → 2 fromages.",
+  smokehouse:"1 viande → 1 viande fumée, avec ½ bois de chauffe. "+SMOKE_KEEP+" viandes fraîches restent pour la table."
+};
+var FROM_TXT = { farm:"ferme", granary:"grange", storehouse:"entrepôt", camp:"campement", windmill:"moulin", pasture:"pâturage", hunter:"camp de chasse" };
+function sheetWorkshop(g, sel){
+  var rc = RECIPES[sel.def], h = "";
+  var tgt = g.craftTarget(rc.out), have = Math.floor(g.stock[rc.out]||0);
+  h += "<div class='sec'>Fabrication</div>";
+  h += "<div class='kv'><span class='k'>"+ic(rc.inp,"s")+RES[rc.inp].n+" → "+ic(rc.out,"s")+RES[rc.out].n+"</span></div>";
+  h += "<div class='dim' style='font-size:11px'>"+esc(RECIPE_TXT[sel.def])+"</div>";
+  h += "<div class='kv'><span class='k'>Sur place</span>"+bar(Math.min(1, (sel.inp||0)/rc.load))+"<span class='v'>"+(Math.floor((sel.inp||0)*10)/10).toString().replace(".", ",")+" "+RES[rc.inp].n.toLowerCase()+"</span></div>";
+  h += "<div class='kv'><span class='k'>En réserve</span><span class='v'>"+Math.floor(g.stock[rc.inp]||0)+" "+RES[rc.inp].n.toLowerCase()+" · "+have+" "+RES[rc.out].n.toLowerCase()+"</span></div>";
+  if(tgt < g.capFor(rc.out)) h += "<div class='dim' style='font-size:11px'>"+(rc.out==="bread" ? "Le pain rassit vite : on cuit à mesure, jusqu'à "+tgt+" pains d'avance." : "On moud d'avance jusqu'à "+tgt+" farines ; le grain se garde mieux.")+"</div>";
+  if(sel.lastMade!==undefined) h += "<div class='kv'><span class='k'>Le mois dernier</span><span class='v'>"+String(sel.lastMade).replace(".", ",")+" "+RES[rc.out].n.toLowerCase()+"</span></div>";
+  var deps = rc.from.map(function(d){ return FROM_TXT[d]; }).filter(Boolean);
+  h += "<div class='dim' style='font-size:11px;margin-top:4px'>L'artisan va chercher "+RES[rc.inp].n.toLowerCase()+" au plus proche : "+deps.join(", ")+(sel.def==="dairy" ? " (des vaches)" : "")+". Il le porte à l'atelier, où il sort de la réserve.</div>";
+  return h;
+}
+function sheetGranary(g){
+  var h = "<div class='sec'>Conservation</div>";
+  h += granaryNote(g);
+  h += "<div class='dim' style='font-size:11px'>Ce qui est à l'abri se gâte trois fois moins vite. Le lait n'y gagne rien : faites-en du fromage.</div>";
+  var sp = g.spoiled || {}, any = false;
+  FOOD_TYPES.concat(["grain","flour"]).forEach(function(k){ if((sp[k]||0)>=0.5){ if(!any) h += "<div class='sec'>Gâté le mois dernier</div>"; any = true; h += "<div class='kv'><span class='k'>"+ic(k,"s")+RES[k].n+"</span><span class='v bad'>−"+Math.round(sp[k])+"</span></div>"; } });
+  return h;
+}
 function sheetStock(g){
   var cap = g.capFor("timber");
-  var food = 0, kinds = 0;
-  for(var i=0;i<FOOD_TYPES.length;i++){ var q = g.stock[FOOD_TYPES[i]]||0; food += q; if(q>=1) kinds++; }
+  var food = g.foodStock(), kinds = foodGroupsIn(g);
   var h = head(ic("crate","l"), "Réserves", "Capacité : "+cap+" par ressource · "+g.storehouseCount()+" entrepôt(s)");
   function line(k){ var v = Math.floor(g.stock[k]||0); return "<div class='kv'><span class='k'>"+ic(k)+RES[k].n+"</span>"+bar(v/cap, v>=cap?"gold":"")+"<span class='v' style='min-width:36px;text-align:right'>"+v+"</span></div>"; }
+  /* étape 6 : denrée par denrée, ce qui se gâtera ce mois-ci */
+  function fline(k){
+    var v = Math.floor(g.stock[k]||0), rt = g.spoilRate(k);
+    return "<div class='kv'><span class='k'>"+ic(k)+RES[k].n+"</span>"+bar(v/cap, v>=cap?"gold":"")
+         + "<span class='v' style='min-width:36px;text-align:right'>"+v+"</span>"
+         + "<span class='dim' style='min-width:44px;text-align:right;font-size:10px'>"+(rt>0.0005 ? "−"+spoilTxt(rt) : "se garde")+"</span></div>";
+  }
   h += "<div class='sec'>Matériaux</div>"+line("timber")+line("stone");
   var rt = g.reserved("timber"), rs = g.reserved("stone");
   if(rt>0 || rs>0) h += "<div class='dim' style='font-size:11px'>Dont réservés aux chantiers : "+(rt>0 ? Math.ceil(rt)+" bois" : "")+(rt>0 && rs>0 ? " et " : "")+(rs>0 ? Math.ceil(rs)+" pierre"+(rs>1?"s":"") : "")+". Ils sortent du stock à la livraison.</div>";
   h += "<div class='sec'>Chauffage</div>"+line("firewood");
-  h += "<div class='sec'>Nourriture · "+Math.floor(food)+" · variété "+kinds+"/"+FOOD_TYPES.length+"</div>";
-  if(!g.marketActive()) h += "<div class='bad' style='font-size:12px'>Sans marché actif, chaque famille ne reçoit qu'un type de nourriture.</div>";
-  FOOD_TYPES.forEach(function(k){ h += line(k); });
-  h += "<div class='sec'>Ingrédients</div>"+line("grain")+line("barley");
+  var fm = g.foodMonths();
+  h += "<div class='sec'>Nourriture · "+Math.floor(food)+" · "+kinds+"/"+FOOD_GROUP_ORDER.length+" sortes · "+monthsFood(fm)+"</div>";
+  if(!g.marketActive()) h += "<div class='bad' style='font-size:12px'>Sans marché actif, chaque famille ne mange qu'une sorte d'aliment.</div>";
+  h += "<div class='dim' style='font-size:11px;margin-bottom:2px'>Ce qui se gâte ce mois-ci"+(isWinterMonth(g.time.month) ? " (le froid ralentit tout)" : (g.time.month>=5 && g.time.month<=7) ? " (la chaleur l'accélère)" : "")+". On mange d'abord le plus périssable.</div>";
+  FOOD_GROUP_ORDER.forEach(function(gk){
+    var ks = FOOD_TYPES.filter(function(k){ return FOOD_DEFS[k].group===gk; });
+    h += "<div class='dim' style='font-size:11px;margin:4px 0 0;font-weight:700'>"+esc(FOOD_GROUPS[gk].name)+"</div>";
+    ks.forEach(function(k){ h += fline(k); });
+  });
+  h += granaryNote(g);
+  var sp = g.spoiled || {}, spt = 0; for(var sk in sp) if(FOOD_DEFS[sk]) spt += sp[sk];
+  if(spt>=1) h += "<div class='dim' style='font-size:11px'>Le mois dernier, "+Math.round(spt)+" denrée"+(spt>=2?"s":"")+" se sont gâtées.</div>";
+  h += "<div class='sec'>Ingrédients</div>"+fline("grain")+fline("flour")+fline("barley");
   if(g.sheafTotal()>=1) h += "<div class='sec'>Gerbes à battre</div>"+["sh_grain","sh_barley","sh_oats"].filter(function(k){ return (g.stock[k]||0)>=1; }).map(line).join("");
   h += "<div class='sec'>Fibres et biens</div>"+line("wool")+line("flax")+line("clothes")+line("ale");
   var wn = g.winterNeed();
@@ -1390,6 +1455,8 @@ function sheetRealm(g){
     g.approvalWhy.forEach(function(w){ if(w[1]) h += "<div><span>"+esc(w[0])+"</span><b class='"+(w[0]==="Base" ? "dim" : w[1]>0 ? "good" : "bad")+"'>"+(w[0]==="Base" ? w[1] : signed(w[1]))+"</b></div>"; });
     h += "</div>";
   }
+  var fm = g.foodMonths();
+  h += "<button class='kv lnk' data-act='sheet' data-arg='stock'><span class='k'>"+ic("bread")+"Vivres"+(g.dearth>0 ? " · <span class='bad'>disette</span>" : "")+"</span><span class='v"+(fm<2 ? " bad" : fm<4 ? " gold" : "")+"'>"+monthsFood(fm)+" ›</span></button>";
   h += "<button class='kv lnk' data-act='sheet' data-arg='people'><span class='k'>"+ic("family")+"Habitants</span><span class='v'>"+g.villagers.length+" · "+g.families.length+" foyer"+(g.families.length>1?"s":"")+" ›</span></button>";
   h += "<div class='kv'><span class='k' style='padding-left:24px'>Journaliers (adultes sans poste)</span><span class='v'>"+g.unemployed()+"</span></div>";
   h += "<div class='kv'><span class='k' style='padding-left:24px'>Bourgages libres</span><span class='v'>"+g.freeBurgages()+"</span></div>";
@@ -1536,8 +1603,11 @@ function modalHelp(){
   h += "<h3>Premiers pas</h3><p>Ouvrez <b>Récolte</b> dans la barre du bas et posez un <b>camp de bûcherons</b> près d'une forêt. Touchez-le, puis <b>+</b> pour embaucher un ouvrier : le jeu choisit l'adulte libre le plus doué. Les adultes sans poste (journaliers) construisent les chantiers.</p>";
   h += "<h3>Chantiers et matériaux</h3><p>Le bois et la pierre d'un chantier sont réservés à la pose (on ne peut plus les dépenser ailleurs), puis <b>apportés</b> : ils sortent du stock quand ils arrivent au pied du chantier. Les journaliers les prennent au dépôt le plus commode (campement, poteau du bœuf, <b>entrepôt</b>, camp de bûcherons pour le bois, carrière pour la pierre). Un tronc est trop lourd pour un homme : un journalier va chercher le <b>bœuf</b> et le mène, avec trois troncs derrière lui, quand il ne laboure pas ; sans bœuf en état, on traîne un tronc à la main, lentement. La pierre se porte une à une. On ne bâtit qu'avec ce qui est arrivé : posez vos entrepôts près des chantiers, et touchez un chantier pour le <b>livrer en priorité</b>. Abandonner un chantier rend les matériaux non employés.</p>";
   h += "<h3>Les villageois</h3><p>Chaque habitant a un âge, une santé, une humeur et un savoir-faire par métier, qui progresse en travaillant (de novice à maître). Touchez un villageois sur la carte, ou le compteur d'habitants en haut, pour ouvrir sa fiche : vous y voyez pourquoi il est content ou non, et vous pouvez changer son métier. Les adolescents de 12 à 15 ans peuvent entrer en <b>apprentissage</b> : auprès d'un bon maître, ils apprennent vite. Les couples se marient, ont des enfants, vieillissent ; à 65 ans, on prend sa retraite. Si un maître meurt sans avoir formé personne, son savoir-faire disparaît.</p>";
-  h += "<h3>Nourrir et chauffer</h3><p>Cueilleuses (baies, de mars à novembre) et chasseurs (viande) nourrissent le village. La <b>variété</b> de nourriture fait monter l'approbation, et il faut un <b>marché</b> actif pour la distribuer. L'hiver, la consommation de bois de chauffe double : faites des réserves avant décembre.</p>";
-  h += "<h3>Agriculture</h3><p>Les champs sont gratuits ; les fermiers d'une <b>ferme</b> les travaillent au fil des saisons. Chaque culture a son calendrier : le <b>blé d'hiver</b> et le <b>seigle</b> se sèment à l'automne et se moissonnent l'été suivant ; l'orge, l'avoine, le lin et les pois se sèment au printemps ; le <b>pré de fauche</b> donne du foin en juin-juillet sans labour. Les céréales sont moissonnées en <b>gerbes</b>, battues ensuite à la ferme (surtout l'hiver) ; le moulin fait le pain.</p>"
+  h += "<h3>Nourrir et chauffer</h3><p>Cueilleuses (baies, de mars à novembre) et chasseurs (viande) nourrissent le village. Les repas se comptent en cinq sortes d'aliments : <b>pain</b>, <b>viande</b>, <b>laitages et œufs</b>, <b>légumes et pois</b>, <b>fruits et miel</b>. Plus il y en a dans l'écuelle de chaque foyer, plus l'approbation monte. Un <b>marché</b> actif les distribue ; sans lui, chacun se contente d'une seule sorte. L'hiver, la consommation de bois de chauffe double : faites des réserves avant décembre.</p>";
+  h += "<h3>Transformer et conserver</h3><p>Le <b>moulin</b> moud le grain en farine ; la <b>boulangerie</b> en tire 1,5 pain par farine (un foyer, dans son propre four, n'en tire qu'un). La <b>laiterie</b> fait du fromage avec le lait des vaches, le <b>fumoir</b> fume la viande. Chaque artisan va chercher ce qu'il lui faut au plus proche (ferme, grange, moulin, pâturage, camp de chasse) et le porte à l'atelier.</p>"
+     + "<p>Chaque denrée se gâte à son rythme : le lait tourne en quelques semaines, la viande fraîche et le pain ne durent pas, le fromage, la viande fumée, les pois secs et le miel se gardent. Le froid de l'hiver ralentit tout, la chaleur de l'été l'accélère. Une <b>grange</b> met 200 denrées à l'abri (trois fois moins de pertes). On mange d'abord ce qui va se gâter : les conserves restent pour l'hiver.</p>"
+     + "<p><b>Disette</b> : quand les réserves ne suffisent plus, on mange le grain en bouillie, puis on a faim. Le jeu prévient en mars si la soudure s'annonce difficile, et en octobre si l'hiver sera maigre. En disette, un marchand de grain passe parfois et vend des pois secs.</p>";
+  h += "<h3>Agriculture</h3><p>Les champs sont gratuits ; les fermiers d'une <b>ferme</b> les travaillent au fil des saisons. Chaque culture a son calendrier : le <b>blé d'hiver</b> et le <b>seigle</b> se sèment à l'automne et se moissonnent l'été suivant ; l'orge, l'avoine, le lin et les pois se sèment au printemps ; le <b>pré de fauche</b> donne du foin en juin-juillet sans labour. Les céréales sont moissonnées en <b>gerbes</b>, battues ensuite à la ferme (surtout l'hiver) ; le moulin moud le grain, la boulangerie fait le pain.</p>"
      + "<p><b>Rotation</b> : la même céréale deux ans de suite rend moins ; après des pois ou une jachère, davantage. Le <b>fumier</b> des bêtes, épandu avant le labour, remonte la fertilité ; un <b>bœuf</b> accélère le labour. La météo compte : gel tardif, printemps sec, grêle, été pourri. Le panneau d'un champ montre la récolte attendue et pourquoi.</p>";
   h += "<h3>Élevage</h3><p>Tracez un <b>pâturage</b> (tiroir Terres) comme une zone, n'importe où : la clôture coûte du bois, un abri se pose au bord. Achetez des moutons (laine en mai), des vaches (lait après le vêlage, les jeunes taureaux deviennent des bœufs) ou des porcs (glandée en forêt l'automne). Il faut un mâle pour les naissances et un <b>gardien</b> pour traire, tondre et soigner. L'herbe nourrit les bêtes du printemps à l'automne ; l'hiver, il faut du <b>foin</b> (pré de fauche, herbe en trop fauchée en juin, paille du battage) ou de l'avoine. Réglez l'<b>abattage de novembre</b> pour ne garder que ce que vous pourrez nourrir. Une maladie se propage dans un troupeau : abattre les bêtes malades l'arrête.</p>";
   h += "<h3>Croissance</h3><p>Une approbation d'au moins 40 % et une maison libre attirent une nouvelle famille ; les jeunes couples du village qui vivent chez leurs parents passent avant. Les bourgages bien approvisionnés montent de niveau et débloquent des arrière-cours (potager, rucher, atelier…). Le <b>manoir</b> permet de lever l'impôt.</p>";
