@@ -340,10 +340,53 @@ const BOOK_CATS = {
   mercs:    { name:"Mercenaires" },
   regions:  { name:"Réclamations de régions" },
   interest: { name:"Intérêts" },
+  wages:    { name:"Gages du conseil" },
+  alms:     { name:"Aumônes et fêtes" },
+  recovered:{ name:"Sommes recouvrées", inc:true },
   repay:    { name:"Remboursements" },
   other:    { name:"Divers" },
 };
-const BOOK_ORDER = ["taille","peage","trade","sales","loot","loan","king","tribute","livestock","food","mercs","regions","interest","repay","other"];
+/* ---------- étape 7b : l'opinion, la réputation et le conseil ----------
+   Chaque famille garde en mémoire ce que le seigneur lui a fait (f.mem) ; son opinion, c'est l'approbation du
+   village plus cette mémoire. Le conseil est facultatif : un siège vide ne coûte rien, un conseiller apporte un plus. */
+const TRAIT_DEFS = {
+  honest:  { id:"honest",   name:"Honnête",   desc:"Ne détourne jamais un denier." },
+  greedy:  { id:"greedy",   name:"Cupide",    desc:"Intendant, il détourne une part des recettes." },
+  diligent:{ id:"diligent", name:"Zélé",      desc:"Un quart plus efficace au conseil." },
+  lazy:    { id:"lazy",     name:"Paresseux", desc:"Un quart moins efficace au conseil." },
+  pious:   { id:"pious",    name:"Pieux",     desc:"Fait un bon chapelain." },
+  brave:   { id:"brave",    name:"Brave",     desc:"Fait un bon maître d'armes." },
+  shrewd:  { id:"shrewd",   name:"Avisé",     desc:"Fait un bon intendant ou un bon bailli." },
+};
+const SEAT_DEFS = {
+  steward: { id:"steward", name:"Intendant", fem:"Intendante", skill:"trade", trait:"shrewd", needs:"manor",
+    desc:"Tient les finances du domaine.",
+    tasks:{ tax:    { name:"Lever la taille",          desc:"La taille rapporte jusqu'à 15 % de plus, avec moins d'impayés." },
+            granary:{ name:"Surveiller les greniers",  desc:"Jusqu'à un quart de denrées gâtées en moins." },
+            market: { name:"Développer le commerce",   desc:"Le comptoir et les péages rapportent jusqu'à 15 % de plus." } } },
+  bailiff: { id:"bailiff", name:"Bailli", fem:"Baillive", skill:"build", trait:"shrewd", needs:"manor",
+    desc:"Fait régner l'ordre et encadre les travaux.",
+    tasks:{ patrol:  { name:"Faire la tournée",        desc:"Les brigands pillent jusqu'à moitié moins ; les familles se sentent protégées." },
+            corvee:  { name:"Encadrer la corvée",      desc:"La corvée fâche jusqu'à moitié moins." },
+            quarrels:{ name:"Apaiser les rancunes",    desc:"Les griefs des familles s'effacent jusqu'à deux fois plus vite." } } },
+  chaplain:{ id:"chaplain", name:"Chapelain", fem:"Chapelaine", skill:null, trait:"pious", needs:"church",
+    desc:"Veille aux âmes et aux registres de la paroisse.",
+    tasks:{ preach:   { name:"Prêcher",                desc:"Jusqu'à +4 d'approbation." },
+            registers:{ name:"Tenir les registres",    desc:"Jusqu'à +4 d'influence par mois." },
+            school:   { name:"Instruire les jeunes",   desc:"Les apprentis apprennent jusqu'à moitié plus vite." } } },
+  marshal: { id:"marshal", name:"Maître d'armes", fem:"Maîtresse d'armes", skill:"hunt", trait:"brave", needs:"manor",
+    desc:"Entraîne la milice et garde les chemins.",
+    tasks:{ train:{ name:"Entraîner la milice",        desc:"Les soldats levés sont jusqu'à 40 % plus solides." },
+            roads:{ name:"Garder les routes",          desc:"Jusqu'à 60 % de camps de brigands en moins." } } },
+};
+const SEAT_ORDER = ["steward","bailiff","chaplain","marshal"];
+const COUNCIL_WAGE = 2;            // deniers par conseiller et par mois
+const EMBEZZLE = 0.15;             // part qu'un intendant cupide détourne
+const AUDIT_COST = 5;              // influence pour faire vérifier les comptes
+const ALMS_COST = 10, FEAST_COST = 10;
+const REP_GEN = 25, REP_SEV = 30;  // seuils des réputations (généreux / avare, craint)
+
+const BOOK_ORDER = ["taille","peage","trade","sales","loot","loan","recovered","wages","alms","king","tribute","livestock","food","mercs","regions","interest","repay","other"];
 
 const CHURCH_UPGRADES = {
   altar:  { id:"altar",  name:"Autel",   cost:{stone:3},           bonus:{approval:3, influence:2}, desc:"+3 approbation, +2 influence/mois." },
@@ -479,6 +522,11 @@ class GameState {
     this.taxes = { dime:0, peage:0, corvee:0 };
     this.fisc = { taille:0, harvest:0, debt:0, missed:0, corveeDays:0, corveeCalled:0, lastTaille:null, lastDime:null, peageLast:0 };
     this.book = { cur:{}, hist:[] };
+    // étape 7b : le conseil (sièges vides au départ), la réputation du seigneur, la dernière fête
+    this.council = {};
+    for(const id of SEAT_ORDER) this.council[id] = { vid:-1, task:Object.keys(SEAT_DEFS[id].tasks)[0], unpaid:0, stolen:0, known:false };
+    this.rep = { gen:0, sev:0 };
+    this.feastY = 0;
     this.prices = { bread:2, clothes:3, ale:2, apples:1, honey:4, meat:1, berries:1, wool:2, cheese:3 };
     this.occupied = new Int32Array(W*H).fill(-1);
     this.buildings = []; this.nextB = 1;
@@ -915,6 +963,7 @@ class GameState {
   dropVillager(v){
     const i = this.villagers.indexOf(v); if(i<0) return;
     this.villagers.splice(i, 1);
+    if(v.seat && this.council && this.council[v.seat] && this.council[v.seat].vid===v.id){ const c = this.council[v.seat]; c.vid = -1; c.unpaid = 0; c.stolen = 0; c.known = false; }
     for(const o of this.villagers){
       if(o.spouse===v.id) o.spouse = -1;
     }
@@ -942,7 +991,7 @@ class GameState {
   diff(){ return DIFF_BY_ID[this.diffId] || DIFF_BY_ID.normal; }
   berrySeason(){ const m=this.time.month; return m>=2 && m<=10; } // mars → novembre
   // journaliers : adultes sans poste, qui bâtissent les chantiers
-  unemployed(){ return this.villagers.filter(v=>v.work<0 && !v.appr && this.canWork(v)).length; }
+  unemployed(){ return this.villagers.filter(v=>v.work<0 && !v.appr && !v.seat && this.canWork(v)).length; }
 
   canAfford(def       ){ return this.hasFree(BUILD_DEFS[def].cost); }
   costText(def       ){ const c=BUILD_DEFS[def].cost; const p         =[]; if(c.timber)p.push(c.timber+" 🪵"); if(c.stone)p.push(c.stone+" 🪨"); return p.length?p.join(" "):"Gratuit"; }
@@ -1007,7 +1056,7 @@ class GameState {
     for(let yy=0;yy<b.h;yy++) for(let xx=0;xx<b.w;xx++) this.occupied[(b.y+yy)*W+(b.x+xx)] = -1;
     if(b.plot) for(const i of b.plot.cells) if(this.occupied[i]===b.id) this.occupied[i] = -1;
     for(const v of this.villagers) if(v.work===b.id){ v.work=-1; v.appr=false; this.resetWorker(v); }
-    for(const f of this.families) if(f.home===b.id) f.home = -1;
+    for(const f of this.families) if(f.home===b.id){ f.home = -1; if(b.def==="burgage" && b.done) this.addMem(f, "razed", "Sa maison a été rasée", -15, 12); }
     this.buildings.splice(idx,1);
     // un pâturage démoli : la clôture est remboursée à moitié, les bêtes sont vendues
     if(b.def==="pasture"){
@@ -1206,7 +1255,7 @@ class GameState {
      tout de suite s'il y en a un, sinon dès qu'il y en a un (adolescent devenu adulte, nouvel arrivant…). */
   // note d'un candidat pour un poste : sa compétence, un peu moins pour un ancien
   jobScore(v, skill){ return ((v.skills && v.skills[skill]) || 0) * (this.stageOf(v)==="elder" ? 0.75 : 1); }
-  freeAdults(){ return this.villagers.filter(v=>v.work<0 && !v.appr && this.canWork(v)); }
+  freeAdults(){ return this.villagers.filter(v=>v.work<0 && !v.appr && !v.seat && this.canWork(v)); }
   // pourvoit les postes voulus d'un bâtiment (ou de tous) ; renvoie le nombre d'embauches
   fillJobs(only){
     let n = 0;
@@ -1255,6 +1304,7 @@ class GameState {
   // affectation à la main depuis la fiche d'un villageois (bid < 0 : redevient journalier)
   assignVillager(vid, bid){
     const v = this.villager(vid); if(!v) return "Villageois introuvable";
+    if(v.seat) return this.fullName(v)+" siège au conseil : relevez-"+(v.sex==="f"?"la":"le")+" d'abord";
     if(bid>0){
       const b = this.buildings.find(x=>x.id===bid); if(!b) return "Bâtiment introuvable";
       const d = BUILD_DEFS[b.def];
@@ -1388,7 +1438,11 @@ class GameState {
     const job = sites.length ? this.siteJob(f, sites) : null;
     if(!job) return false;
     const key = this.monthIdx()*DAYS_PER_MONTH + this.time.day;
-    if(f.corvee!==key){ f.corvee = key; this.fisc.corveeDays++; }
+    if(f.corvee!==key){
+      f.corvee = key; this.fisc.corveeDays++;
+      if(!this.fisc.corveeFam) this.fisc.corveeFam = {};
+      this.fisc.corveeFam[f.fam] = (this.fisc.corveeFam[f.fam]||0) + 1;
+    }
     this.fisc.corveeCalled = 1;
     this.doSiteJob(f, job);
     return true;
@@ -1442,15 +1496,21 @@ class GameState {
     // taille : court chaque mois, se lève à Pâques et à la Saint-Michel
     F.taille += this.tailleMonthly();
     if(TAILLE_MONTHS.includes(m) && this.hasManor()){
-      const due = Math.round(F.taille), paid = Math.round(F.taille*this.tailleRate());
+      // étape 7b : un intendant qui lève la taille en tire davantage ; un intendant cupide en garde une part
+      const sp = this.taskPower("steward", "tax");
+      const due = Math.round(F.taille*(1 + 0.15*sp));
+      let paid = Math.round(due*Math.min(1, this.tailleRate() + 0.1*sp));
+      paid -= Math.round(this.skim(paid));
       if(paid>0) this.money("taille", paid);
+      if(this.taxRate>=0.3) for(const f of this.families) this.addMem(f, "taille", "Taille lourde ("+Math.round(this.taxRate*100)+" %)", -Math.round(this.taxRate*20), 6);
       F.lastTaille = { m, y:this.time.year, due, paid };
       if(due>0) this.toast((m===3 ? "Pâques" : "Saint-Michel")+" : la taille rapporte "+paid+" deniers"+(paid<due ? " ("+(due-paid)+" impayés : les familles mécontentes cachent leurs deniers)" : "")+".", paid<due ? "bad" : "good");
       F.taille = 0;
     }
     // péages : sur le marché et sur ce que les marchands achètent au comptoir
     const pr = TAX_DEFS.peage.rate[this.taxLevel("peage")];
-    const toll = Math.round(pr*(this.marketTraffic() + tradeSold)*10)/10;
+    let toll = Math.round(pr*(this.marketTraffic() + tradeSold)*(1 + 0.15*this.taskPower("steward", "market"))*10)/10;
+    toll = Math.max(0, Math.round((toll - this.skim(toll))*10)/10);
     F.peageLast = toll;
     if(toll>0) this.money("peage", toll);
     // dîme : en octobre, une part de ce qui a été récolté part à l'Église ; influence chaque mois
@@ -1479,6 +1539,13 @@ class GameState {
         if(F.missed>=LOAN_MISS_MAX) this.seizeGoods();
       }
     }
+    // étape 7b : chaque famille se souvient des journées de corvée de ses membres
+    const cp = this.taskPower("bailiff", "corvee");
+    for(const fid of Object.keys(F.corveeFam||{})){
+      const f = this.families.find(x=>x.id===Number(fid)), n = F.corveeFam[fid];
+      if(f && n>0) this.addMem(f, "corvee", "Corvée ("+n+" journée"+(n>1?"s":"")+")", -Math.max(1, Math.round(Math.min(6, n)*(1 - 0.5*cp))), 3);
+    }
+    F.corveeFam = {};
     F.corveeLast = F.corveeDays; F.corveeDays = 0; F.corveeCalled = 0;
   }
   // le changeur, impayé trop longtemps, saisit des biens jusqu'à la moitié de la dette
@@ -1536,6 +1603,208 @@ class GameState {
     add("Intérêts", -interest);
     const total = lines.reduce((s, l)=>s + l[1], 0);
     return { months:n, lines, total, end:Math.floor(this.treasury) + total };
+  }
+
+  /* ================= étape 7b : traits, mémoire des familles, réputation ================= */
+  // deux ou trois traits de caractère, tirés du numéro du villageois (ils ne changent jamais)
+  traitsOf(v){
+    if(!v) return [];
+    const h = hash2(v.id*31 + 7, (this.seed|0) + 101), t = [];
+    const a = h%100, b = (h>>>8)%100, c = (h>>>16)%100;
+    if(a<30) t.push("greedy"); else if(a>=60) t.push("honest");
+    if(b<25) t.push("lazy"); else if(b>=75) t.push("diligent");
+    if(c<20) t.push("pious"); else if(c<40) t.push("brave"); else if(c<60) t.push("shrewd");
+    return t;
+  }
+  // ce dont la famille se souvient : { k:clé, t:libellé, v:effet, m:mois restants, n:durée (0 : tant que ça dure) }
+  addMem(f, key, label, v, months){
+    if(!f) return;
+    if(!Array.isArray(f.mem)) f.mem = [];
+    const o = f.mem.find(x=>x.k===key), n = Math.max(0, Math.round(months||0));
+    if(o){ o.t = label; o.v = v; o.m = n; o.n = n; } else f.mem.push({ k:key, t:label, v, m:n, n });
+  }
+  dropMem(f, key){ if(f && Array.isArray(f.mem)) f.mem = f.mem.filter(x=>x.k!==key); }
+  memVal(x){ return x.n>0 ? x.v*Math.max(0, x.m)/x.n : x.v; }   // un souvenir s'estompe avec le temps
+  memTotal(f){ return f && Array.isArray(f.mem) ? f.mem.reduce((s, x)=>s + this.memVal(x), 0) : 0; }
+  famOpinion(f){ return Math.max(0, Math.min(100, Math.round(this.approval + this.memTotal(f)))); }
+  memMonth(){
+    const calm = this.taskPower("bailiff", "quarrels");
+    for(const f of this.families){
+      if(!Array.isArray(f.mem)) continue;
+      for(const x of f.mem) if(x.n>0) x.m -= 1 + (x.v<0 ? calm : 0);
+      f.mem = f.mem.filter(x=>x.n===0 || x.m>0);
+    }
+  }
+  // la réputation du seigneur se fait mois après mois : générosité (ou avarice) et sévérité
+  repMonth(){
+    const R = this.rep;
+    let greed = 0;
+    if(this.hasManor() && this.taxRate>0.3) greed += (this.taxRate-0.3)*20;
+    if(this.taxLevel("peage")>=3) greed += 2;
+    if(this.taxLevel("corvee")>=2 && this.fisc.corveeCalled) greed += this.taxLevel("corvee")-1;
+    if(greed>0) R.gen -= greed;
+    else if(this.hasManor() && this.taxRate<=0.1) R.gen += 0.5;
+    if(this.taxLevel("corvee")>=3 && this.fisc.corveeCalled) R.sev += 1;
+    R.gen = Math.max(-100, Math.min(100, R.gen*0.97));
+    R.sev = Math.max(0, Math.min(100, R.sev*0.98));
+  }
+  repTitles(){
+    const R = this.rep, t = [];
+    if(R.gen>=REP_GEN) t.push({ id:"generous", name:"Généreux", ap:3, desc:"On parle de vos largesses : +3 d'approbation." });
+    else if(R.gen<=-REP_GEN) t.push({ id:"miser", name:"Avare", ap:-3, desc:"On vous dit âpre au gain : −3 d'approbation." });
+    if(R.sev>=REP_SEV) t.push({ id:"feared", name:"Craint", ap:-2, desc:"On vous craint : les familles fâchées n'osent plus partir, mais l'approbation baisse de 2." });
+    return t;
+  }
+  feared(){ return this.rep.sev>=REP_SEV; }
+  // l'aumône : les trois familles les plus fâchées (ou les plus affamées) reçoivent une obole
+  giveAlms(){
+    if(!this.families.length) return "Personne à secourir";
+    if(this.treasury<ALMS_COST) return "Il faut "+ALMS_COST+" deniers";
+    const fs = this.families.slice().sort((a, b)=>((a.fed||1) - (b.fed||1)) || (this.famOpinion(a) - this.famOpinion(b)) || a.id - b.id).slice(0, 3);
+    this.money("alms", -ALMS_COST);
+    for(const f of fs) this.addMem(f, "alms", "Aumône du seigneur", 10, 8);
+    this.rep.gen = Math.min(100, this.rep.gen + 6);
+    this.toast("Vous faites l'aumône aux familles "+fs.map(f=>this.surnameOf(f)).join(", ")+".","good");
+    return null;
+  }
+  // une fête au village, une fois l'an : vivres, ale et deniers, toutes les familles s'en souviennent
+  feastNeed(){ return Math.ceil(this.families.length*1.5); }
+  giveFeast(){
+    if(!this.families.length) return "Personne à inviter";
+    if(this.feastY===this.time.year) return "Une fête par an : la prochaine l'an prochain";
+    if(this.treasury<FEAST_COST) return "Il faut "+FEAST_COST+" deniers";
+    const need = this.feastNeed();
+    if(this.foodStock()<need) return "Il faut "+need+" denrées en réserve";
+    let left = need;
+    const ks = FOOD_TYPES.slice().sort((a, b)=>(this.stock[b]||0) - (this.stock[a]||0));
+    for(const k of ks){ if(left<=0) break; const q = Math.min(left, this.stock[k]||0); this.stock[k] -= q; left -= q; }
+    const ale = Math.min(this.stock.ale||0, this.families.length);
+    this.stock.ale -= ale;
+    this.money("alms", -FEAST_COST);
+    this.feastY = this.time.year;
+    for(const f of this.families) this.addMem(f, "feast", "Fête au village"+(ale>0 ? ", l'ale a coulé" : ""), ale>0 ? 8 : 6, 6);
+    for(const v of this.villagers){ v.joy = Math.max(v.joy||0, 1); v.joyFor = "Fête au village"; }
+    this.rep.gen = Math.min(100, this.rep.gen + 8);
+    this.toast("🎉 Fête au village ! Toutes les familles s'en souviendront.","good");
+    return null;
+  }
+
+  /* ================= étape 7b : le conseil (facultatif) ================= */
+  seatOpen(seat){ const d = SEAT_DEFS[seat]; return !!d && (d.needs==="church" ? this.hasChurch() : this.hasManor()); }
+  seatHolder(seat){ const c = this.council[seat]; return c && c.vid>0 ? this.villager(c.vid) : null; }
+  seatTitle(seat, v){ const d = SEAT_DEFS[seat]; return d ? (v && v.sex==="f" ? d.fem : d.name) : ""; }
+  // un adulte (même retraité) en état de servir
+  canSit(v){ return !!v && this.isAdult(v) && v.health>=25 && !(v.sick>0); }
+  competence(v, seat){
+    const d = SEAT_DEFS[seat]; if(!d || !v) return 0;
+    let c = 20 + (d.skill ? 0.6*(v.skills[d.skill]||0) : 15) + Math.min(30, (v.sxp||0)*1.5);
+    const t = this.traitsOf(v);
+    if(t.includes(d.trait)) c += 20;
+    if(t.includes("diligent")) c *= 1.25;
+    if(t.includes("lazy")) c *= 0.75;
+    return Math.max(5, Math.min(100, Math.round(c)));
+  }
+  seatPower(seat){ const v = this.seatHolder(seat); return v && this.seatOpen(seat) && this.canSit(v) ? this.competence(v, seat)/100 : 0; }
+  taskPower(seat, task){ const c = this.council[seat]; return c && c.task===task ? this.seatPower(seat) : 0; }
+  seatCandidates(seat, n){
+    return this.villagers.filter(v=>this.canSit(v) && !v.seat)
+      .sort((a, b)=>this.competence(b, seat) - this.competence(a, seat) || a.id - b.id).slice(0, n||5);
+  }
+  appoint(seat, vid){
+    const d = SEAT_DEFS[seat]; if(!d) return "Siège inconnu";
+    if(!this.seatOpen(seat)) return d.needs==="church" ? "Il faut une église achevée" : "Il faut un manoir achevé";
+    const v = this.villager(vid); if(!v) return "Villageois introuvable";
+    if(!this.canSit(v)) return "Il faut un adulte en bonne santé";
+    if(v.seat===seat) return null;
+    if(v.seat) return this.fullName(v)+" siège déjà au conseil";
+    if(this.seatHolder(seat)) this.dismiss(seat, true);
+    if(v.work>0) this.leaveJob(v);
+    v.appr = false; v.seat = seat; v.sxp = v.sxp || 0;
+    const c = this.council[seat]; c.vid = v.id; c.unpaid = 0; c.stolen = 0; c.known = false;
+    this.addMem(this.famOf(v), "seat", this.fullName(v)+" siège au conseil", 8, 0);
+    this.resetWorker(v);
+    this.toast(this.fullName(v)+" devient "+this.seatTitle(seat, v).toLowerCase()+".","good");
+    this.uiVersion++;
+    return null;
+  }
+  // quiet : remplacement (pas de rancune) ; sinon la famille le prend mal
+  dismiss(seat, quiet){
+    const c = this.council[seat], v = this.seatHolder(seat);
+    if(c){ c.vid = -1; c.unpaid = 0; c.stolen = 0; c.known = false; }
+    if(!v) return null;
+    delete v.seat;
+    const f = this.famOf(v);
+    this.dropMem(f, "seat");
+    if(!quiet) this.addMem(f, "dismissed", this.fullName(v)+" renvoyé"+(v.sex==="f"?"e":"")+" du conseil", -10, 12);
+    this.resetWorker(v);
+    if(!quiet) this.toast(this.fullName(v)+" quitte le conseil.");
+    this.uiVersion++;
+    return null;
+  }
+  setSeatTask(seat, task){
+    const d = SEAT_DEFS[seat]; if(!d || !d.tasks[task]) return "Mission inconnue";
+    this.council[seat].task = task; this.uiVersion++;
+    return null;
+  }
+  // faire vérifier les comptes : un intendant qui détourne est démasqué
+  audit(){
+    if(this.influence<AUDIT_COST) return "Il faut "+AUDIT_COST+" d'influence";
+    if(!this.seatHolder("steward")) return "Aucun intendant à contrôler";
+    this.influence -= AUDIT_COST;
+    const c = this.council.steward;
+    if(c.stolen>=1){ c.known = true; this.toast("Les comptes ne tombent pas juste : l'intendant a détourné "+Math.round(c.stolen)+" deniers !","bad"); }
+    else this.toast("Les comptes de l'intendant sont justes.","good");
+    this.uiVersion++;
+    return null;
+  }
+  // l'intendant démasqué rend gorge et quitte le conseil, déshonoré
+  punishSteward(){
+    const c = this.council.steward, v = this.seatHolder("steward");
+    if(!v || !c.known) return "Rien à reprocher à l'intendant";
+    const back = Math.round(c.stolen);
+    const f = this.famOf(v), name = this.fullName(v);
+    this.dismiss("steward", true);
+    this.addMem(f, "disgrace", name+" déshonoré"+(v.sex==="f"?"e":"")+" pour vol", -20, 24);
+    if(back>0) this.money("recovered", back);
+    this.rep.sev = Math.min(100, this.rep.sev + 8);
+    this.toast(name+" rend gorge ("+back+" deniers) et quitte le conseil.","good");
+    return null;
+  }
+  // détournement : ce que l'intendant cupide garde pour lui sur une recette
+  skim(n){
+    const v = this.seatHolder("steward");
+    if(!v || n<=0 || !this.traitsOf(v).includes("greedy")) return 0;
+    const q = Math.round(n*EMBEZZLE*10)/10;
+    this.council.steward.stolen += q;
+    return q;
+  }
+  // le bilan mensuel du conseil : gages, expérience, conseillers qui ne peuvent plus servir, vols découverts
+  councilMonth(){
+    for(const seat of SEAT_ORDER){
+      const c = this.council[seat], v = this.seatHolder(seat);
+      if(c.vid>0 && !v){ c.vid = -1; continue; }
+      if(!v) continue;
+      if(!this.seatOpen(seat)){ this.dismiss(seat, true); this.toast("Le siège de "+SEAT_DEFS[seat].name.toLowerCase()+" n'a plus de lieu : "+this.fullName(v)+" rentre chez "+(v.sex==="f"?"elle":"lui")+"."); continue; }
+      if(!this.canSit(v)) continue;   // malade : il garde sa place, mais n'apporte rien ce mois-ci
+      v.sxp = (v.sxp||0) + 1;
+      if(this.treasury>=COUNCIL_WAGE){ this.money("wages", -COUNCIL_WAGE); c.unpaid = 0; }
+      else if(++c.unpaid>=2){
+        const f = this.famOf(v), name = this.fullName(v);
+        this.dismiss(seat, true);
+        this.addMem(f, "unpaid", "Gages impayés à "+name, -8, 12);
+        this.toast(name+" quitte le conseil : ses gages ne sont plus payés.","bad");
+      }
+    }
+    const st = this.council.steward, p = this.seatPower("bailiff");
+    if(st.vid>0 && st.stolen>=1 && !st.known && p>0 && this.rnd()<0.25*p){
+      st.known = true;
+      this.toast("Le bailli a découvert que l'intendant détourne des deniers ("+Math.round(st.stolen)+") !","bad");
+    }
+  }
+  // un conseiller passe ses journées au manoir (à l'église pour le chapelain)
+  seatPlace(seat){
+    const def = seat==="chaplain" ? "church" : "manor";
+    return this.buildings.find(b=>b.done && b.def===def) || null;
   }
 
   /* ================= étape 5 : bœufs de trait ================= */
@@ -2623,9 +2892,9 @@ class GameState {
     const kid = !this.isAdult(f);
     // un adulte valide sans ouvrage (journalier) reste aux aguets : il flâne moins et regarde souvent
     // s'il y a un chantier à servir. Avant, il pouvait rester des jours sans rien voir.
-    const ready = this.canWork(f) && !f.appr;
+    const ready = this.canWork(f) && !f.appr && !f.seat;
     if(this.rnd() < (kid ? 0.5 : ready ? 0.15 : 0.3)){
-      const home = this.homeOf(f);
+      const home = (f.seat && this.seatPlace(f.seat)) || this.homeOf(f);
       const hx = home?home.x:W/2, hy = home?home.y:H/2;
       const R = kid ? 3 : 5;
       const tx=Math.max(0,Math.min(W-1,Math.floor(hx+this.rnd()*R-(R>>1))));
@@ -2642,6 +2911,15 @@ class GameState {
   assignTask(f       ){
     if(f.cool>0){ if(this.workGate(f)) f.cool--; return; }
     if(this.unstick(f)) return;
+    // étape 7b : un conseiller passe ses journées au manoir (ou à l'église)
+    if(f.seat){
+      const pl = this.seatPlace(f.seat);
+      if(pl && Math.hypot(pl.x+pl.w/2-f.x, pl.y+pl.h/2-f.y) > 5){
+        const spot = this.spotFor(pl, f.x, f.y), p = spot ? this.astar(Math.floor(f.x), Math.floor(f.y), spot.x, spot.y) : null;
+        if(p && p.length){ f.path = p; f.state = "wander"; return; }
+      }
+      this.idleNearHome(f); return;
+    }
     // seuls les adultes valides (et les apprentis) travaillent
     if(!(this.canWork(f) || (f.appr && this.canApprentice(f)))){ this.idleNearHome(f); return; }
     const b = f.work>0 ? this.buildings.find(x=>x.id===f.work && x.done) : undefined;
@@ -3243,6 +3521,12 @@ class GameState {
     const kids = this.villagers.filter(c=>(c.mother===w.id || c.father===h.id || c.mother===h.id || c.father===w.id)
       && c.spouse<0 && this.ageOf(c)<AGE_ADULT && (c.fam===h.fam || c.fam===w.fam));
     if(fw && fw!==fh && !w.maiden) w.maiden = this.surnameOf(fw);
+    // étape 7b : le jeune foyer hérite de la moitié des souvenirs (et des rancunes) de ses parents
+    for(const pf of [fh, fw]) if(pf && Array.isArray(pf.mem)) for(const x of pf.mem){
+      if(x.k==="seat" || nf.mem && nf.mem.some(y=>y.k===x.k)) continue;
+      const e = this.memVal(x)/2;
+      if(Math.abs(e)>=1) this.addMem(nf, x.k, x.t+" (souvenir des parents)", Math.round(e), Math.max(6, x.n ? Math.ceil(x.m) : 12));
+    }
     for(const v of [h, w].concat(kids)) v.fam = nf.id;
     this.cleanFamilies();
     return nf;
@@ -3293,6 +3577,7 @@ class GameState {
       if((v.skills[sk]||0) < 60) continue;
       if(!this.villagers.some(o=>o!==v && (o.skills[sk]||0)>=40)) lost.push(SKILL_DEFS[sk].name.toLowerCase());
     }
+    if(f && (cause==="de faim" || cause==="de froid")) this.addMem(f, "death"+v.id, v.first+" mort"+(v.sex==="f"?"e":"")+" "+cause, -12, 18);   // étape 7b
     for(const o of this.villagers){
       if(o===v) continue;
       if(o.id===v.spouse || o.fam===v.fam || o.id===v.mother || o.id===v.father || o.mother===v.id || o.father===v.id){ o.grief = 6; o.griefFor = v.first; }
@@ -3414,7 +3699,7 @@ class GameState {
         const b = this.buildings.find(x=>x.id===v.work), sk = this.jobSkill(b);
         if(sk){
           const mst = this.masterOf(b), ms = mst ? (mst.skills[sk]||0) : 0;
-          up(v, sk, Math.min(1, total/60) * (1.5 + (ms>=40 ? 6*ms/100 : 0)));
+          up(v, sk, Math.min(1, total/60) * (1.5 + (ms>=40 ? 6*ms/100 : 0)) * (1 + 0.5*this.taskPower("chaplain", "school")));
         }
       } else {
         for(const sk of Object.keys(wt)) if(SKILL_DEFS[sk]) up(v, sk, Math.min(1, wt[sk]/60) * 4);
@@ -3460,6 +3745,7 @@ class GameState {
       if(this.stageOf(v)==="elder") why.push(["Fatigué par l'âge", -3]);
     }
     if(v.appr) why.push(["Apprend un métier", 3]);
+    if(f && Array.isArray(f.mem)) for(const x of f.mem){ const e = Math.round(this.memVal(x)); if(e) why.push([x.t, e]); }   // étape 7b
     return { total: why.reduce((s, w)=>s+w[1], 0), why };
   }
   // ce que fait un villageois, en quelques mots (pour l'interface)
@@ -3467,7 +3753,8 @@ class GameState {
     const st = this.stageOf(v), fem = v.sex==="f";
     const b = v.work>0 ? this.buildings.find(x=>x.id===v.work) : null;
     let s;
-    if(v.appr && b) s = "Apprenti"+(fem?"e":"")+" · "+BUILD_DEFS[b.def].name;
+    if(v.seat) s = this.seatTitle(v.seat, v)+" (conseil)";
+    else if(v.appr && b) s = "Apprenti"+(fem?"e":"")+" · "+BUILD_DEFS[b.def].name;
     else if(st==="baby") s = "Nourrisson";
     else if(st==="child") s = "Enfant";
     else if(st==="teen") s = "Adolescent"+(fem?"e":"")+(v.work<0 ? " · peut être apprenti"+(fem?"e":"") : "");
@@ -3481,7 +3768,7 @@ class GameState {
   /* ---------- camps de brigands & milice ---------- */
   campStep(){
     // spawn : un camp tous les ~2 ans à partir de 1178, max 2
-    if(this.mode().combat && this.time.year>=1177 && this.camps.length<2 && this.rnd()<0.004/TS*(this.mode().bandits||1)*this.diff().bandits){
+    if(this.mode().combat && this.time.year>=1177 && this.camps.length<2 && this.rnd()<0.004/TS*(this.mode().bandits||1)*this.diff().bandits*(1 - 0.6*this.taskPower("marshal", "roads"))){
       const c0 = this.settlementCenter();
       for(let tries=0; tries<40; tries++){
         const a = this.rnd()*Math.PI*2, dd = 9 + this.rnd()*9;
@@ -3524,7 +3811,8 @@ class GameState {
     const n = want-have;
     for(let i=0;i<n;i++){
       const b = this.buildings.find(b=>b.done && b.def==="manor") || this.buildings[0];
-      this.units.push({ id:this.nextU++, x:b.x+0.5, y:b.y+b.h+0.5, hp:10, maxHp:10, state:"guard", target:null, cool:0 });
+      const hp = Math.round(10*(1 + 0.4*this.taskPower("marshal", "train")));   // étape 7b : milice entraînée
+      this.units.push({ id:this.nextU++, x:b.x+0.5, y:b.y+b.h+0.5, hp, maxHp:hp, state:"guard", target:null, cool:0 });
     }
     this.toast("🛡️ Milice levée : "+n+" soldat(s) !","good");
     this.uiVersion++;
@@ -3582,9 +3870,10 @@ class GameState {
     if(!this.camps.length) return 0;
     let lost=0;
     for(const c of this.camps){
-      for(const k of FOOD_TYPES){ const take=Math.min(this.stock[k]||0, 1); this.stock[k]-=take; lost+=take; }
+      const guard = 1 - 0.5*this.taskPower("bailiff", "patrol");   // étape 7b : le bailli fait sa tournée
+      for(const k of FOOD_TYPES){ const take=Math.min(this.stock[k]||0, guard); this.stock[k]-=take; lost+=take; }
     }
-    return lost;
+    return Math.round(lost);
   }
 
   /* ---------- progression du temps ---------- */
@@ -3750,6 +4039,10 @@ class GameState {
     if(this.hasManor()) this.influence += 1;
     // ----- étape 4 : la vie des villageois (santé, naissances, mariages, décès, apprentissage) -----
     this.demography(winter, fuelRatio);
+    // ----- étape 7b : les souvenirs s'estompent, la réputation se fait ; le chapelain tient les registres -----
+    this.memMonth();
+    this.repMonth();
+    this.influence += Math.round(4*this.taskPower("chaplain", "registers"));
     // approbation : chaque cause est gardée pour être expliquée au joueur
     const why = [["Base", 50]];
     const add = (label, v)=>{ if(v) why.push([label, v]); };
@@ -3774,7 +4067,15 @@ class GameState {
       const lv = this.taxLevel(id), d = TAX_DEFS[id];
       if(!lv) continue;
       if(id==="corvee" && !this.fisc.corveeCalled) continue;   // personne n'a été appelé ce mois-ci
-      add(d.name+" : "+d.levels[lv].toLowerCase(), d.ap[lv]);
+      add(d.name+" : "+d.levels[lv].toLowerCase(), d.ap[lv]*(id==="corvee" ? 1 - 0.5*this.taskPower("bailiff", "corvee") : 1));
+    }
+    // étape 7b : conseil, réputation du seigneur, mémoire des familles
+    add("Le chapelain prêche", Math.round(4*this.taskPower("chaplain", "preach")));
+    if(this.camps.length || this.time.year>=1177) add("Le bailli fait sa tournée", Math.round(2*this.taskPower("bailiff", "patrol")));
+    for(const t of this.repTitles()) add("Réputation : "+t.name.toLowerCase(), t.ap);
+    if(this.families.length){
+      const mt = this.families.reduce((s, f)=>s + this.memTotal(f), 0)/this.families.length;
+      add(mt>=0 ? "Les familles se souviennent de vos bienfaits" : "Les familles vous gardent rancune", Math.max(-8, Math.min(8, Math.round(mt/2))));
     }
     if(this.fisc.missed>0) add("Dettes impayées", -3);
     if(this.policies.freeMarket) add("Marchés libres", 3);
@@ -3817,7 +4118,7 @@ class GameState {
       let ts = 0;
       for(const tb of this.buildings) if(tb.done && tb.def==="trade") for(const v of this.workersOf(tb)) ts = Math.max(ts, v.skills.trade||0);
       tradeSold = earned;
-      earned = Math.round(earned * (0.9 + 0.2*ts/100) * (1 - toll*0.5));
+      earned = Math.round(earned * (0.9 + 0.2*ts/100) * (1 - toll*0.5) * (1 + 0.15*this.taskPower("steward", "market")));
       this.money("trade", earned);
       this.wealth += earned * 0.6 * (1 - toll); // la richesse régionale reflète l'activité commerciale
       if(earned>0) this.toast("Comptoir : +"+earned+" deniers de ventes.","good");
@@ -3825,8 +4126,9 @@ class GameState {
       // sans comptoir, la richesse régionale vient des impôts locaux
       this.wealth = Math.max(0, this.wealth*0.98);
     }
-    // ----- étape 7a : taille, péages, dîme, intérêts -----
+    // ----- étape 7a : taille, péages, dîme, intérêts ; étape 7b : gages du conseil -----
     this.fiscMonth(m, tradeSold);
+    this.councilMonth();
     // cueilleurs : récolte passive de baies en saison, même sans ouvrier assigné
     if(this.berrySeason()){
       let anyBerry=false;
@@ -3899,12 +4201,15 @@ class GameState {
       }
     }
     const leavers=this.families.filter(c=>!c.founder);
-    if(this.approval<30 && this.families.length>1 && leavers.length>0){
-      // les nouveaux arrivants repartent en premier ; les survivants du départ restent toujours
-      let f=leavers[0];
-      for(const c of leavers) if(c.id>f.id && c.id<100000) f=c;
+    // étape 7b : une famille qui vous en veut depuis des mois part, même si le village va bien (sauf si l'on vous craint)
+    for(const c of leavers) c.sour = this.famOpinion(c) < (this.feared() ? 8 : 15) ? (c.sour||0) + 1 : 0;
+    const sour = leavers.find(c=>c.sour>=3);
+    if(this.families.length>1 && (sour || (this.approval<(this.feared() ? 20 : 30) && leavers.length>0))){
+      // la plus fâchée part la première (à égalité, la dernière arrivée) ; les survivants du départ restent toujours
+      let f = sour || leavers[0];
+      if(!sour) for(const c of leavers){ const d = this.famOpinion(c) - this.famOpinion(f); if(d<0 || (d===0 && c.id>f.id)) f = c; }
       this.removeFamily(f.id);
-      this.toast(f.name+" quitte la seigneurie, déçue…","bad");
+      this.toast(f.name+(sour ? " quitte la seigneurie : elle ne vous pardonne pas." : " quitte la seigneurie, déçue…"),"bad");
     }
     // postes voulus : on y place les adultes devenus libres
     this.fillJobs();
@@ -4069,7 +4374,7 @@ class GameState {
   spoilRate(k, m){
     const base = this.spoilBase(k); if(!base) return 0;
     const p = k==="milk" ? 0 : this.granaryShare();
-    return Math.min(1, base*this.seasonSpoil(m===undefined ? this.time.month : m)*(1 - p + p*GRANARY_MUL));
+    return Math.min(1, base*this.seasonSpoil(m===undefined ? this.time.month : m)*(1 - p + p*GRANARY_MUL)*(1 - 0.25*this.taskPower("steward", "granary")));
   }
   spoilMonth(){
     const lost = {}, m = this.time.month;
@@ -4312,6 +4617,9 @@ class GameState {
       taxes:this.taxes,
       fisc:this.fisc,
       book:this.book,
+      council:this.council,
+      rep:this.rep,
+      feastY:this.feastY,
     };
   }
   static load(data    )          {
@@ -4384,6 +4692,7 @@ class GameState {
     if(data.fisc && typeof data.fisc==="object"){
       for(const k of ["taille","harvest","debt","missed","corveeDays","corveeCalled","peageLast","corveeLast"]) if(num(data.fisc[k])) g.fisc[k] = Math.max(0, data.fisc[k]);
       for(const k of ["lastTaille","lastDime"]) if(data.fisc[k] && typeof data.fisc[k]==="object") g.fisc[k] = data.fisc[k];
+      if(data.fisc.corveeFam && typeof data.fisc.corveeFam==="object"){ g.fisc.corveeFam = {}; for(const k of Object.keys(data.fisc.corveeFam)) if(num(data.fisc.corveeFam[k])) g.fisc.corveeFam[k] = data.fisc.corveeFam[k]; }
     }
     if(data.book && typeof data.book==="object"){
       const clean = (o)=>{ const r = {}; if(o && typeof o==="object") for(const k of Object.keys(o)) if(BOOK_CATS[k] && num(o[k])) r[k] = o[k]; return r; };
@@ -4413,6 +4722,25 @@ class GameState {
     g.nextF = Math.max(0, ...g.families.map(f=>num(f.id)?f.id:0)) + 1;
     g.loadVillagers(data);
     g.nextD = Math.max(0, ...g.deer.map(d=>num(d.id)?d.id:0)) + 1;
+    // étape 7b : conseil (chaque siège et son titulaire doivent se correspondre), réputation, souvenirs des familles
+    if(data.council && typeof data.council==="object") for(const id of SEAT_ORDER){
+      const c = data.council[id], o = g.council[id];
+      if(!c || typeof c!=="object") continue;
+      if(num(c.vid)) o.vid = c.vid;
+      if(typeof c.task==="string" && SEAT_DEFS[id].tasks[c.task]) o.task = c.task;
+      o.unpaid = num(c.unpaid) ? Math.max(0, c.unpaid) : 0;
+      o.stolen = num(c.stolen) ? Math.max(0, c.stolen) : 0;
+      o.known = !!c.known;
+    }
+    for(const v of g.villagers){ if(v.seat && (!SEAT_DEFS[v.seat] || g.council[v.seat].vid!==v.id)) delete v.seat; if(!num(v.sxp)) delete v.sxp; }
+    for(const id of SEAT_ORDER){ const o = g.council[id], v = o.vid>0 ? g.villager(o.vid) : null; if(!v || v.seat!==id){ o.vid = -1; o.stolen = 0; o.known = false; } }
+    if(data.rep && typeof data.rep==="object"){ g.rep.gen = num(data.rep.gen) ? Math.max(-100, Math.min(100, data.rep.gen)) : 0; g.rep.sev = num(data.rep.sev) ? Math.max(0, Math.min(100, data.rep.sev)) : 0; }
+    g.feastY = num(data.feastY) ? data.feastY : 0;
+    for(const f of g.families){
+      if(!Array.isArray(f.mem)){ delete f.mem; continue; }
+      f.mem = f.mem.filter(x=>x && typeof x.k==="string" && typeof x.t==="string" && num(x.v) && num(x.m) && num(x.n)).map(x=>({ k:x.k, t:x.t, v:x.v, m:x.m, n:Math.max(0, x.n) }));
+      if(!num(f.sour)) delete f.sour;
+    }
     // étape 5 : bœufs (une sauvegarde v4 n'avait qu'un nombre), identifiants des bêtes, aléa du mois
     if(Array.isArray(data.oxen)) g.oxen = data.oxen.filter(o=>o && num(o.a)).map(o=>{
       const ox = { id:num(o.id) ? o.id : 0, a:Math.max(0, Math.round(o.a)), h:num(o.h) ? Math.max(0, Math.min(100, o.h)) : 100 };
@@ -4480,5 +4808,5 @@ class GameState {
 if(typeof module!=="undefined" && module.exports){
   module.exports = { T_FORD, REGION_NAMES, START_REGION_NAME, REGION_COLS, REGION_ROWS, rleEncode, rleDecode, HOUSE_CAP, FOOD_DEFS, FOOD_GROUPS, FOOD_GROUP_ORDER, STORE_SPOIL, GRUEL, GRANARY_CAP, GRANARY_MUL, VARIETY_APPROVAL, RECIPES, SMOKE_KEEP, HOME_BAKE, MAT_RES, PORTER_LOAD, OX_LOAD, OX_SPEED, DRAG_SPEED, DEPOT_DEFS, TS, WORK_DIV, TICKS_PER_DAY, DAYS_PER_MONTH, FIELD_MIN, FIELD_MAX, PLOT_MIN, CROP_CAL, GROW_RATE, SHEAF_RES, LIVESTOCK, LIVESTOCK_ORDER, GRASS, PASTURE_MIN, PASTURE_MAX, monthsTxt, isWinterMonth, MONTHS_ABBR, SKILL_DEFS, SKILL_ORDER, SKILL_LEVELS, skillLevel, FOOD_NEED, AGE_TEEN, AGE_ADULT, AGE_ELDER, AGE_RETIRE, STAGE_NAMES, JOB_TITLES, NAMES_M, NAMES_F, SURNAMES, BUILD_STAGES, buildStage, DIRS4, PLOT_FRONT, polyArea, pointInPoly, GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
     T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf, REGION_COST, POLICY_DEFS, POLICY_ORDER,
-    TAX_DEFS, TAX_ORDER, TAILLE_MONTHS, DIME_MONTH, KING_MONTH, LOAN_RATE, LOAN_STEP, LOAN_MISS_MAX, BOOK_CATS, BOOK_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, MODE_BY_ID, DIFFICULTIES, DIFF_BY_ID };
+    TRAIT_DEFS, SEAT_DEFS, SEAT_ORDER, COUNCIL_WAGE, EMBEZZLE, AUDIT_COST, ALMS_COST, FEAST_COST, REP_GEN, REP_SEV, TAX_DEFS, TAX_ORDER, TAILLE_MONTHS, DIME_MONTH, KING_MONTH, LOAN_RATE, LOAN_STEP, LOAN_MISS_MAX, BOOK_CATS, BOOK_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, MODE_BY_ID, DIFFICULTIES, DIFF_BY_ID };
 }

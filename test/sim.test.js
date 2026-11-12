@@ -2585,4 +2585,273 @@ test("étape 7a : sauvegarde — redevances, fisc et livre gardés ; l'ancien d�
   assert.strictEqual(g3.fisc.debt, 0);
 });
 
+/* ================= étape 7b : l'opinion, la réputation et le conseil ================= */
+const { TRAIT_DEFS, SEAT_DEFS, SEAT_ORDER, COUNCIL_WAGE, EMBEZZLE, AUDIT_COST, ALMS_COST, REP_GEN, REP_SEV } = require("../js/sim.js");
+function adultOf(g, pred){ return g.villagers.find(v=>g.isAdult(v) && v.health>=25 && !v.seat && (!pred || pred(v))); }
+
+test("étape 7b : chaque villageois a des traits fixes, et jamais deux traits contraires", () => {
+  const g = fresh();
+  for(const v of g.villagers){
+    const t = g.traitsOf(v);
+    assert.deepStrictEqual(t, g.traitsOf(v), "stables");
+    for(const k of t) assert.ok(TRAIT_DEFS[k], k);
+    assert.ok(!(t.includes("honest") && t.includes("greedy")));
+    assert.ok(!(t.includes("lazy") && t.includes("diligent")));
+  }
+  const all = new Set(); for(let id=1; id<300; id++) for(const k of g.traitsOf({ id })) all.add(k);
+  assert.strictEqual(all.size, Object.keys(TRAIT_DEFS).length, "tous les traits existent");
+});
+
+test("étape 7b : le conseil est facultatif — quatre sièges vides, sans aucun malus", () => {
+  const g = fresh(); doneBuilding(g, "manor"); doneBuilding(g, "church");
+  assert.deepStrictEqual(SEAT_ORDER, ["steward","bailiff","chaplain","marshal"]);
+  for(const id of SEAT_ORDER){ assert.strictEqual(g.seatHolder(id), null); assert.strictEqual(g.seatPower(id), 0); }
+  monthAt(g, 5);
+  assert.ok(!g.approvalWhy.some(w=>/conseil|bailli|chapelain|intendant/i.test(w[0])), "un conseil vide ne coûte rien");
+  assert.ok(!lastBook(g).lines.wages, "pas de gages");
+});
+
+test("étape 7b : nommer un conseiller — il quitte son poste, sa famille en est fière, il touche ses gages", () => {
+  const g = fresh();
+  const v = adultOf(g);
+  assert.ok(g.appoint("steward", v.id), "il faut un manoir");
+  doneBuilding(g, "manor");
+  assert.ok(g.appoint("chaplain", v.id), "il faut une église pour le chapelain");
+  const wc = doneBuilding(g, "woodcutter");
+  g.assignVillager(v.id, wc.id);
+  assert.strictEqual(v.work, wc.id);
+  assert.strictEqual(g.appoint("steward", v.id), null);
+  assert.strictEqual(v.seat, "steward");
+  assert.strictEqual(v.work, -1, "il quitte son poste");
+  assert.ok(!g.freeAdults().includes(v), "il n'est plus journalier");
+  assert.ok(g.assignVillager(v.id, wc.id), "on ne l'affecte pas tant qu'il siège");
+  assert.ok(g.memTotal(g.famOf(v)) > 0, "sa famille en est fière");
+  assert.ok(g.villagerStatus(v).startsWith("Intendant"));
+  g.treasury = 10;
+  monthAt(g, 5);
+  assert.strictEqual(lastBook(g).lines.wages, -COUNCIL_WAGE);
+  assert.strictEqual(v.sxp, 1, "un mois d'expérience");
+  g.dismiss("steward");
+  assert.ok(!v.seat);
+  assert.ok(g.memTotal(g.famOf(v)) < 0, "renvoyé : la famille le prend mal");
+});
+
+test("étape 7b : la compétence dépend du savoir-faire, des traits et de l'expérience", () => {
+  const g = fresh();
+  const v = adultOf(g);
+  v.skills.trade = 0; v.sxp = 0;
+  const c0 = g.competence(v, "steward");
+  v.skills.trade = 80;
+  assert.ok(g.competence(v, "steward") > c0);
+  v.sxp = 20;
+  assert.ok(g.competence(v, "steward") > c0 + 40);
+  assert.ok(g.competence(v, "steward") <= 100);
+  const cands = g.seatCandidates("steward", 3);
+  assert.ok(cands.length===3 && g.competence(cands[0], "steward") >= g.competence(cands[2], "steward"));
+});
+
+test("étape 7b : un intendant qui lève la taille en tire davantage", () => {
+  const mk = (withSteward)=>{
+    const g = fresh(); houses(g, 3); doneBuilding(g, "manor");
+    g.taxRate = 0.5;
+    if(withSteward){ const v = adultOf(g); g.appoint("steward", v.id); v.skills.trade = 100; v.sxp = 30; g.council.steward.task = "tax"; g.rnd = ()=>0.99; }
+    g.fisc.taille = 40; g.approval = 30; g.treasury = 50;
+    monthAt(g, 3);
+    return (lastBook(g).lines.taille||0) + g.council.steward.stolen;
+  };
+  assert.ok(mk(true) > mk(false), "plus de taille levée (vols compris)");
+});
+
+test("étape 7b : un intendant cupide détourne ; le bailli ou un contrôle le démasque, il rend gorge", () => {
+  const g = fresh(); houses(g, 3); doneBuilding(g, "manor");
+  let v = null;
+  for(let id=1; id<500 && !v; id++){ const o = adultOf(g); if(!o) break; if(g.traitsOf(o).includes("greedy")) v = o; else { o.id = 100000 + id; if(g.traitsOf(o).includes("greedy")) v = o; } }
+  assert.ok(v, "un villageois cupide");
+  g.appoint("steward", v.id);
+  assert.strictEqual(g.skim(100), 100*EMBEZZLE);
+  g.fisc.taille = 40; g.approval = 80; g.treasury = 50;
+  monthAt(g, 3);
+  assert.ok(g.council.steward.stolen > 0, "il garde une part de la taille");
+  g.influence = 0;
+  assert.ok(g.audit(), "il faut de l'influence pour vérifier");
+  g.influence = AUDIT_COST;
+  assert.strictEqual(g.audit(), null);
+  assert.ok(g.council.steward.known);
+  const t0 = g.treasury, back = Math.round(g.council.steward.stolen), f = g.famOf(v);
+  assert.strictEqual(g.punishSteward(), null);
+  assert.strictEqual(g.treasury, t0 + back, "les sommes reviennent au trésor");
+  assert.ok(!v.seat && !g.seatHolder("steward"));
+  assert.ok(f.mem.some(x=>x.k==="disgrace" && x.v<0), "la famille est déshonorée");
+});
+
+test("étape 7b : sans gages deux mois de suite, le conseiller s'en va", () => {
+  const g = fresh(); doneBuilding(g, "manor");
+  const v = adultOf(g); g.appoint("bailiff", v.id);
+  g.treasury = 0; monthAt(g, 5);
+  assert.strictEqual(v.seat, "bailiff");
+  g.treasury = 0; monthAt(g, 6);
+  assert.ok(!v.seat, "parti");
+  assert.ok(g.famOf(v).mem.some(x=>x.k==="unpaid"));
+});
+
+test("étape 7b : les missions du conseil ont leurs effets (greniers, prêche, milice, brigands)", () => {
+  const g = fresh(); doneBuilding(g, "manor"); doneBuilding(g, "church");
+  const r0 = g.spoilRate("meat", 6);
+  const a = adultOf(g); g.appoint("steward", a.id); g.setSeatTask("steward", "granary");
+  assert.ok(g.spoilRate("meat", 6) < r0, "moins de denrées gâtées");
+  const b = adultOf(g); g.appoint("chaplain", b.id); g.setSeatTask("chaplain", "preach");
+  g.treasury = 100; monthAt(g, 5);
+  assert.ok(g.approvalWhy.some(w=>w[0]==="Le chapelain prêche" && w[1]>0));
+  const c = adultOf(g); g.appoint("marshal", c.id); g.setSeatTask("marshal", "train");
+  g.raiseMilitia();
+  assert.ok(g.units.length && g.units[0].maxHp > 10, "milice entraînée");
+  assert.ok(g.setSeatTask("marshal", "nope"));
+  // un conseiller malade garde sa place mais n'apporte rien
+  c.sick = 2;
+  assert.strictEqual(g.seatPower("marshal"), 0);
+});
+
+test("étape 7b : un conseiller passe ses journées au manoir et ne va pas aux chantiers", () => {
+  const g = fresh(); const m = doneBuilding(g, "manor");
+  const v = adultOf(g); g.appoint("steward", v.id);
+  g.stock.timber = 40; placeInCenter(g, "storehouse");
+  let site = false;
+  quietSteps(g, 4*DAY, ()=>{ if(v.task && v.task.bid) site = true; return false; });
+  assert.ok(!site);
+  assert.ok(Math.hypot(v.x - m.x, v.y - m.y) < 8, "près du manoir");
+});
+
+test("étape 7b : la mort d'un conseiller libère son siège", () => {
+  const g = fresh(); doneBuilding(g, "manor");
+  const v = adultOf(g); g.appoint("marshal", v.id);
+  g.die(v, "de maladie", true);
+  assert.strictEqual(g.council.marshal.vid, -1);
+});
+
+test("étape 7b : la mémoire des familles s'estompe et pèse sur leur opinion", () => {
+  const g = fresh(); const f = g.families[0];
+  g.approval = 50;
+  g.addMem(f, "x", "Un affront", -12, 4);
+  assert.strictEqual(g.famOpinion(f), 38);
+  g.memMonth(); g.memMonth();
+  assert.strictEqual(g.memTotal(f), -6, "à moitié oublié");
+  g.memMonth(); g.memMonth();
+  assert.strictEqual(f.mem.length, 0, "oublié");
+  g.addMem(f, "x", "Pour toujours", 5, 0);
+  for(let k=0;k<20;k++) g.memMonth();
+  assert.strictEqual(g.memTotal(f), 5, "un souvenir permanent reste");
+  const v = g.membersOf(f.id)[0];
+  assert.ok(g.personalMood(v).why.some(w=>w[0]==="Pour toujours"), "le villageois le dit");
+});
+
+test("étape 7b : un bailli qui apaise les rancunes les fait oublier plus vite", () => {
+  const g = fresh(); doneBuilding(g, "manor");
+  const b = adultOf(g); g.appoint("bailiff", b.id); g.setSeatTask("bailiff", "quarrels");
+  b.skills.build = 100; b.sxp = 30;
+  const f = g.families.find(x=>x.id!==b.fam);
+  g.addMem(f, "x", "Un affront", -12, 12);
+  g.addMem(f, "y", "Un bienfait", 12, 12);
+  g.memMonth();
+  assert.ok(f.mem.find(x=>x.k==="x").m < f.mem.find(x=>x.k==="y").m, "le grief s'efface plus vite que le bienfait");
+});
+
+test("étape 7b : maison rasée, mort de faim, taille lourde, corvée : les familles s'en souviennent", () => {
+  const g = fresh(); houses(g, 3); doneBuilding(g, "manor");
+  const f = g.families.find(x=>x.home>0);
+  g.demolish(f.home);
+  assert.ok(f.mem.some(x=>x.k==="razed" && x.v<0));
+  const v = g.membersOf(f.id).find(x=>!g.isAdult(x)) || g.membersOf(f.id)[0];
+  g.die(v, "de faim", true);
+  if(g.families.includes(f)) assert.ok(f.mem.some(x=>/de faim/.test(x.t)));
+  g.taxRate = 0.5; g.fisc.taille = 10; monthAt(g, 3);
+  assert.ok(g.families.every(x=>x.mem && x.mem.some(y=>y.k==="taille")), "taille lourde");
+  g.fisc.corveeFam = { [g.families[0].id]: 3 }; monthAt(g, 4);
+  assert.ok(g.families[0].mem.some(x=>x.k==="corvee" && x.v===-3));
+});
+
+test("étape 7b : un jeune foyer hérite de la moitié des rancunes de ses parents", () => {
+  const g = fresh();
+  const fh = g.families[0];
+  g.addMem(fh, "old", "Une vieille rancune", -12, 0);
+  const h = g.membersOf(fh.id).find(v=>g.isAdult(v));
+  const w = g.villagers.find(v=>v.fam!==fh.id && g.isAdult(v));
+  const house = legacyHouse(g); house.done = true;
+  g.families.forEach(f=>{ if(f.home===house.id) f.home = -1; });
+  const nf = g.moveOut(h, w, house);
+  const x = nf.mem && nf.mem.find(y=>y.k==="old");
+  assert.ok(x && Math.round(g.memVal(x))===-6, "la moitié");
+});
+
+test("étape 7b : la famille la plus fâchée part la première ; une famille rancunière finit par partir", () => {
+  const g = fresh(); houses(g, 3);
+  for(const f of g.families) f.founder = false;
+  const [a, b, c] = g.families;
+  g.addMem(b, "x", "Grief", -40, 0);
+  g.approval = 20;
+  g.time.month = 4; g.onMonth(); g.pendingEvent = null;
+  assert.ok(!g.families.includes(b), "la plus fâchée est partie");
+  const g2 = fresh(); houses(g2, 3);
+  for(const f of g2.families) f.founder = false;
+  const t = g2.families[1];
+  g2.addMem(t, "x", "Grief", -90, 0);
+  for(let k=0;k<3 && g2.families.includes(t);k++){ g2.time.month = 4+k; g2.onMonth(); g2.pendingEvent = null; }
+  assert.ok(!g2.families.includes(t), "elle part au bout de trois mois de rancune");
+});
+
+test("étape 7b : la réputation — avare, généreux, craint", () => {
+  const g = fresh(); doneBuilding(g, "manor");
+  g.taxRate = 0.8;
+  for(let k=0;k<6;k++) g.repMonth();
+  assert.ok(g.rep.gen <= -REP_GEN && g.repTitles().some(t=>t.id==="miser"), "avare ("+g.rep.gen+")");
+  g.rep.gen = 40; assert.ok(g.repTitles().some(t=>t.id==="generous"));
+  g.rep.sev = REP_SEV + 5; assert.ok(g.feared());
+  monthAt(g, 5);
+  assert.ok(g.approvalWhy.some(w=>w[0]==="Réputation : craint"));
+});
+
+test("étape 7b : aumône et fête au village", () => {
+  const g = fresh();
+  g.treasury = 0;
+  assert.ok(g.giveAlms(), "il faut des deniers");
+  g.treasury = 100;
+  assert.strictEqual(g.giveAlms(), null);
+  assert.strictEqual(g.book.cur.alms, -ALMS_COST);
+  assert.strictEqual(g.families.filter(f=>f.mem && f.mem.some(x=>x.k==="alms")).length, Math.min(3, g.families.length));
+  assert.ok(g.rep.gen > 0);
+  const food = g.foodStock();
+  assert.strictEqual(g.giveFeast(), null);
+  assert.ok(g.foodStock() <= food - g.feastNeed() + 1e-9);
+  assert.ok(g.families.every(f=>f.mem.some(x=>x.k==="feast")));
+  assert.ok(g.giveFeast(), "une fête par an");
+});
+
+test("étape 7b : sauvegarde — conseil, réputation, souvenirs ; un siège mal formé est vidé", () => {
+  const g = fresh(); doneBuilding(g, "manor");
+  const v = adultOf(g); g.appoint("bailiff", v.id); g.setSeatTask("bailiff", "corvee");
+  v.sxp = 7; g.council.bailiff.unpaid = 1;
+  g.rep.gen = -12; g.rep.sev = 9; g.feastY = 1176;
+  g.addMem(g.families[1], "z", "Souvenir", -5, 6);
+  const data = JSON.parse(JSON.stringify(g.serialize()));
+  const g2 = GameState.load(data);
+  assert.deepStrictEqual(g2.council, g.council);
+  assert.strictEqual(g2.villager(v.id).seat, "bailiff");
+  assert.strictEqual(g2.villager(v.id).sxp, 7);
+  assert.deepStrictEqual(g2.rep, g.rep);
+  assert.strictEqual(g2.feastY, 1176);
+  assert.deepStrictEqual(g2.families[1].mem, g.families[1].mem);
+  const bad = JSON.parse(JSON.stringify(data));
+  bad.council.bailiff.vid = 99999; bad.council.bailiff.task = "nope";
+  bad.families[1].mem.push({ k:3 }, null);
+  const g3 = GameState.load(bad);
+  assert.strictEqual(g3.council.bailiff.vid, -1);
+  assert.strictEqual(g3.council.bailiff.task, "patrol");
+  assert.ok(!g3.villager(v.id).seat, "le villageois ne siège plus");
+  assert.strictEqual(g3.families[1].mem.length, 1);
+  const old = JSON.parse(JSON.stringify(data)); delete old.council; delete old.rep; delete old.feastY;
+  for(const x of old.villagers) delete x.seat;
+  const g4 = GameState.load(old);
+  assert.ok(SEAT_ORDER.every(id=>g4.council[id].vid===-1));
+  assert.deepStrictEqual(g4.rep, { gen:0, sev:0 });
+});
+
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));
