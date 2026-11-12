@@ -51,6 +51,7 @@ var ui = {
   flash:null, objOpen:false, layersOpen:false, tip:null, tipT:0, hoverTip:null,
   demolishArm:0, delArm:null, taxDrag:false, lastSpeed:1, endSeen:false,
   newMode:"prosperity", newDiff:"normal", newSlot:activeSlot,
+  selV:null, vJob:false, pFilter:"all",   /* étape 4 : fiche d'un villageois, choix du métier, filtre des habitants */
   layers:{ forest:false, stone:false, berry:false, soil:false }
 };
 
@@ -198,9 +199,9 @@ function revealAboveSheet(b){
 function clearLongPress(){ if(longPress){ clearTimeout(longPress); longPress = null; } }
 /* appui long : annule la pose / le tracé / la sélection */
 function cancelAll(){
-  var any = ui.buildSel || ui.roadMode || ui.zoneMode || ui.extPlace || ui.selId!=null || ui.cat || ui.sheet;
+  var any = ui.buildSel || ui.roadMode || ui.zoneMode || ui.extPlace || ui.selId!=null || ui.selV!=null || ui.cat || ui.sheet;
   clearTools();
-  ui.buildSel = null; ui.roadMode = false; ui.selId = null; ui.cat = null; ui.sheet = null; ui.layersOpen = false;
+  ui.buildSel = null; ui.roadMode = false; ui.selId = null; ui.selV = null; ui.cat = null; ui.sheet = null; ui.layersOpen = false;
   return any;
 }
 
@@ -368,8 +369,11 @@ canvas.addEventListener("pointerup", function(e){
     ui.cat = null; ui.sheet = null;
   }
   else {
+    /* un villageois sous le doigt ? sa fiche ; sinon le bâtiment */
+    var tv = villagerAt(game, w.wx, w.wy);
+    if(tv){ selectVillager(tv); renderUI(); return; }
     var b = game.buildingAt(w.tx, w.ty);
-    ui.selId = b ? b.id : null; ui.demolishArm = 0;
+    ui.selId = b ? b.id : null; ui.selV = null; ui.demolishArm = 0;
     if(b) revealAboveSheet(b);
     if(!b){ ui.tip = game.tileName(w.tx, w.ty); ui.tipT = Date.now() + 2600; }
   }
@@ -429,6 +433,25 @@ function cycleTextSize(){
   try{ window.localStorage.setItem("seigneurie-txt", String(_txtSize)); }catch(e){}
 }
 try{ var _ts = Number(window.localStorage.getItem("seigneurie-txt")||0); while(_txtSize!==_ts && _ts>0 && _ts<3) cycleTextSize(); }catch(e){}
+
+/* ----- étape 4 : villageois sous le doigt (les nourrissons restent à la maison) ----- */
+function villagerAt(g, wx, wy){
+  var best = null, bd = 1e9;
+  for(var i=0;i<g.villagers.length;i++){
+    var v = g.villagers[i], st = g.stageOf(v);
+    if(st==="baby") continue;
+    var h = st==="child" ? 0.65 : 0.85, dx = wx - v.x, up = v.y - wy;   /* up > 0 : au-dessus des pieds */
+    if(Math.abs(dx)<0.42 && up>-0.25 && up<h){
+      var d = Math.abs(dx) + Math.abs(up - h/2);
+      if(d<bd){ bd = d; best = v; }
+    }
+  }
+  return best;
+}
+function selectVillager(v){
+  ui.selV = v.id; ui.selId = null; ui.sheet = null; ui.cat = null; ui.vJob = false; ui.demolishArm = 0;
+  revealAboveSheet({ x:v.x-0.5, y:v.y-1, w:1, h:1 });
+}
 
 /* ----- clics de l'interface (délégation) ----- */
 document.addEventListener("pointerdown", function(e){ if(e.target && e.target.id==="taxSlider") ui.taxDrag = true; });
@@ -493,15 +516,25 @@ document.addEventListener("click", function(e){
     case "cancel":
       ui.buildSel = null; ui.roadMode = false; clearTools(); break;
     case "sheet":
-      ui.sheet = (ui.sheet===arg ? null : arg); ui.cat = null; ui.selId = null; ui.buildSel = null; ui.roadMode = false; ui.layersOpen = false; clearTools();
+      ui.sheet = (ui.sheet===arg ? null : arg); ui.cat = null; ui.selId = null; ui.selV = null; ui.buildSel = null; ui.roadMode = false; ui.layersOpen = false; clearTools();
       break;
-    case "closesheet": ui.sheet = null; ui.cat = null; ui.selId = null; break;
+    case "closesheet": ui.sheet = null; ui.cat = null; ui.selId = null; ui.selV = null; break;
+    /* --- étape 4 : villageois --- */
+    case "vsel": { var vv = g.villager(Number(arg)); if(vv) selectVillager(vv); break; }
+    case "vjob": ui.vJob = !ui.vJob; break;
+    case "vassign": if(ui.selV!=null){ var ve = g.assignVillager(ui.selV, Number(arg)); if(ve) flash(ve); else ui.vJob = false; } break;
+    case "vappr": if(ui.selV!=null){ var va = g.takeApprentice(Number(arg), ui.selV); if(va) flash(va); } break;
+    case "vlook": { var vl = ui.selV!=null ? g.villager(ui.selV) : null; if(vl){ cam.x = vl.x; cam.y = vl.y; cam.zoom = Math.max(cam.zoom, snapZoom(2)); revealAboveSheet({ x:vl.x-0.5, y:vl.y-1, w:1, h:1 }); } break; }
+    case "bsel": { var bb = g.buildings.filter(function(x){ return x.id===Number(arg); })[0]; if(bb){ ui.selId = bb.id; ui.selV = null; ui.sheet = null; ui.demolishArm = 0; revealAboveSheet(bb); } break; }
+    case "pfilter": ui.pFilter = arg; break;
+    case "appr": if(ui.selId!=null){ var ae = g.takeApprentice(ui.selId); if(ae) flash(ae); } break;
+    case "apprstop": if(ui.selId!=null) g.dropApprentice(ui.selId); break;
     case "obj": ui.objOpen = !ui.objOpen; break;
     case "layersbtn": ui.layersOpen = !ui.layersOpen; break;
     case "layer": ui.layers[arg] = !ui.layers[arg]; break;
     case "fieldsize": g.setFieldSize(Number(arg)); break;
     /* --- bâtiment sélectionné --- */
-    case "selclose": ui.selId = null; break;
+    case "selclose": ui.selId = null; ui.selV = null; break;
     case "assign": if(ui.selId!=null) g.assign(ui.selId); break;
     case "unassign": if(ui.selId!=null) g.unassign(ui.selId); break;
     case "ext":
@@ -643,6 +676,7 @@ function soundForToasts(g){
 function renderUI(){
   var g = game;
   if(g && ui.selId!=null && !g.buildings.some(function(b){ return b.id===ui.selId; })) ui.selId = null;
+  if(g && ui.selV!=null && !g.villager(ui.selV)) ui.selV = null;
   renderTop(g);
   renderHud(g);
   renderTip();
@@ -662,7 +696,7 @@ function renderTop(g){
      + "<span class='datebox'><span class='m'>"+MONTHS_SHORT[g.time.month]+"</span><span class='y'>"+g.time.year+"</span></span></button>";
   h += "<button class='stat' data-act='sheet' data-arg='realm'>"+ic("coin")+"<span class='v'>"+Math.floor(g.treasury)+"</span></button>";
   h += "<button class='stat "+apCls+"' data-act='sheet' data-arg='realm'>"+ic(heartIcon(g.approval))+"<span class='v'>"+g.approval+"%</span></button>";
-  h += "<button class='stat' data-act='sheet' data-arg='realm'>"+ic("family")+"<span class='v'>"+g.families.length+"</span>"
+  h += "<button class='stat' data-act='sheet' data-arg='people' aria-label='Habitants'>"+ic("family")+"<span class='v'>"+g.villagers.length+"</span>"
      + (homeless>0 ? "<span class='badge' title='Familles sans logis'>"+homeless+"</span>" : "")+"</button>";
   h += "<span class='grow'></span>";
   var paused = g.speed===0;
@@ -679,7 +713,7 @@ function renderTop(g){
   r += rc("timber", g.stock.timber, g.stock.timber<3);
   r += rc("firewood", g.stock.firewood, cold && g.stock.firewood < g.families.length*3);
   r += rc("stone", g.stock.stone, false);
-  r += "<span class='rc"+(food < g.families.length*2 ? " low" : "")+"'>"+ic("bread")+Math.floor(food)
+  r += "<span class='rc"+(food < g.foodNeed()*2 ? " low" : "")+"'>"+ic("bread")+Math.floor(food)
      + "<span class='dim' style='font-size:10px'>·"+kinds+"</span></span>";
   ["grain","barley","clothes","ale"].forEach(function(k){ if((g.stock[k]||0)>=1) r += rc(k, g.stock[k], false); });
   if(g.stock.ox>0) r += rc("ox", g.stock.ox, false);
@@ -772,14 +806,17 @@ function renderSheet(g){
   var h = "";
   if(g && !uiMenu){
     if(ui.cat) h = sheetBuild(g, ui.cat);
+    else if(ui.selV!=null) h = sheetVillager(g);
     else if(ui.selId!=null) h = sheetSelection(g);
+    else if(ui.sheet==="people") h = sheetPeople(g);
     else if(ui.sheet==="stock") h = sheetStock(g);
     else if(ui.sheet==="realm") h = sheetRealm(g);
     else if(ui.sheet==="menu") h = sheetMenu(g);
   }
-  var reset = elSheet._key !== (ui.cat||"")+"|"+ui.selId+"|"+(ui.sheet||"");
+  var key = (ui.cat||"")+"|"+ui.selId+"|"+ui.selV+"|"+(ui.sheet||"");
+  var reset = elSheet._key !== key;
   setHTML(elSheet, h);
-  if(reset){ elSheet._key = (ui.cat||"")+"|"+ui.selId+"|"+(ui.sheet||""); elSheet.scrollTop = 0; }
+  if(reset){ elSheet._key = key; elSheet.scrollTop = 0; }
 }
 function head(pic, title, sub){
   return "<div class='sh-head'>"+pic+"<div class='tt'><b>"+title+"</b>"+(sub?"<span>"+sub+"</span>":"")+"</div>"
@@ -799,7 +836,7 @@ function sheetBuild(g, catId){
     h += "<button class='card"+(ok?"":" off")+(ui.buildSel===id?" on":"")+"' data-act='build' data-arg='"+id+"'>"
        + "<span class='pic'>"+ICONS.th(id)+"</span><span class='nm'>"+esc(d.name)+"</span>"
        + "<span>"+costHtml(d.cost, g)+"</span>"
-       + "<span class='ws'>"+(d.fam>0 ? d.fam+" famille"+(d.fam>1?"s":"") : (id==="burgage" ? "loge 1 famille" : "sans ouvrier"))+(built ? " · "+built+" posé"+(built>1?"s":"") : "")+"</span></button>";
+       + "<span class='ws'>"+(d.fam>0 ? d.fam+" ouvrier"+(d.fam>1?"s":"") : (id==="burgage" ? "loge 1 famille" : "sans ouvrier"))+(built ? " · "+built+" posé"+(built>1?"s":"") : "")+"</span></button>";
   }
   var acts = cat.actions || [];
   for(var a=0;a<acts.length;a++){
@@ -825,19 +862,14 @@ function sheetSelection(g){
   h += "<div class='desc'>"+esc(d.desc)+"</div>";
   if(!sel.done){
     h += "<div class='row'><span class='dim'>Chantier</span>"+bar(sel.progress||0,"gold")+"<b>"+Math.round((sel.progress||0)*100)+" %</b></div>";
-    h += "<div class='dim' style='font-size:11px'>Les journaliers (familles sans emploi) construisent les chantiers.</div>";
+    h += "<div class='dim' style='font-size:11px'>Les journaliers (adultes sans poste) construisent les chantiers.</div>";
   }
-  if(d.fam>0){
-    h += "<div class='sec'>Ouvriers</div><div class='row'><div class='stepper'>"
-       + "<button class='b sq' data-act='unassign' aria-label='Retirer une famille'>−</button>"
-       + "<span class='n'>"+sel.families.length+"/"+d.fam+"</span>"
-       + "<button class='b sq' data-act='assign' aria-label='Affecter une famille'>+</button></div>"
-       + "<span class='dim'>"+ic("family","s")+" "+g.unemployed()+" journalier"+(g.unemployed()>1?"s":"")+" libre"+(g.unemployed()>1?"s":"")+"</span></div>";
-  }
+  if(d.fam>0) h += workersHtml(g, sel, d);
   if(sel.def==="burgage"){
     var fam = g.families.filter(function(f){ return f.home===sel.id; })[0];
     h += "<div class='kv'><span class='k'>"+ic("family","s")+(fam ? esc(fam.name) : "Logement vacant")+"</span>"
        + (sel.monthsGood>0 ? "<span class='v good'>Bien loti : "+sel.monthsGood+" mois</span>" : "")+"</div>";
+    if(fam) g.membersOf(fam.id).forEach(function(v){ h += vRow(g, v); });
     if(sel.done){
       var exts = sel.exts || [];
       if(sel.plot){
@@ -877,7 +909,7 @@ function sheetSelection(g){
     h += "<div class='kv'><span class='k'>Labour</span>"+bar(sel.f.plow,"gold")+"<span class='v'>"+Math.round(sel.f.plow*100)+" %</span></div>";
     h += "<div class='kv'><span class='k'>"+(sel.f.sown ? "Croissance" : (sel.f.growth>0 ? "Mûr" : "En attente"))+"</span>"+bar(sel.f.sown ? sel.f.growth : 0)+"<span class='v'>"+(sel.f.sown ? Math.round(sel.f.growth*100)+" %" : "—")+"</span></div>";
     if(sel.f.harvestP>0) h += "<div class='kv'><span class='k'>Moisson</span>"+bar(sel.f.harvestP,"gold")+"<span class='v'>"+Math.round(sel.f.harvestP*100)+" %</span></div>";
-    if(!g.buildings.some(function(b){ return b.def==="farm" && b.done && b.families.length>0; })) h += "<div class='bad' style='font-size:12px;margin-top:6px'>Aucune ferme active : ce champ ne sera pas travaillé.</div>";
+    if(!g.buildings.some(function(b){ return b.def==="farm" && b.done && g.workersOf(b).length>0; })) h += "<div class='bad' style='font-size:12px;margin-top:6px'>Aucune ferme active : ce champ ne sera pas travaillé.</div>";
   }
   if(sel.def==="farm" && sel.done){
     h += "<div class='kv'><span class='k'>"+ic("ox","s")+"Bœufs à l'écurie</span><span class='v'>"+(g.stock.ox||0)+"</span>"
@@ -912,6 +944,194 @@ function sheetSelection(g){
   return h;
 }
 
+/* ---------- étape 4 : les villageois ---------- */
+function ageTxt(a){ return a+" an"+(a>1?"s":""); }
+function moodCls(m){ return m>=60 ? "good" : m>=40 ? "gold" : "bad"; }
+function signed(n){ return (n>0 ? "+" : n<0 ? "−" : "")+Math.abs(n); }
+/* portrait : le sprite du villageois tel qu'il apparaît sur la carte */
+function portrait(g, v, sc){
+  var st = g.stageOf(v), n;
+  if(st==="baby") n = "baby";
+  else if(st==="child") n = "kid_"+(v.sex==="f" ? "f" : "m")+"_"+(v.id % 4)+"_idle";
+  else {
+    var b = v.work>0 ? g.buildings.filter(function(x){ return x.id===v.work; })[0] : null;
+    var job = b && SPR.JOBS.indexOf(b.def)>=0 ? b.def : "laborer";
+    n = "p_"+RENDER.lookOf(g, v)+"_"+job+"_idle";
+  }
+  return "<span class='ppw'>"+ICONS.pp(n, sc||2)+"</span>";
+}
+/* une ligne touchable : portrait, prénom, âge, ce qu'il fait, humeur */
+function vRow(g, v, sub){
+  return "<button class='vrow' data-act='vsel' data-arg='"+v.id+"'>"+portrait(g, v, 2)
+    + "<span class='t'><b>"+esc(v.first)+"</b> <span class='dim'>"+ageTxt(g.ageOf(v))+"</span>"
+    + "<span class='s"+(v.sick>0 ? " bad" : "")+"'>"+esc(sub!=null ? sub : g.villagerStatus(v))+"</span></span>"
+    + "<span class='mood "+moodCls(v.mood)+"'>"+ic(heartIcon(v.mood),"s")+Math.round(v.mood)+"</span></button>";
+}
+function skillTxt(v, sk){ return SKILL_DEFS[sk].name+" : "+skillLevel(v.skills[sk]).toLowerCase(); }
+/* panneau d'un bâtiment : ses ouvriers, son apprenti */
+function workersHtml(g, sel, d){
+  var ws = g.workersOf(sel), sk = d.skill, want = Math.max(Number(sel.want)||0, ws.length);
+  var h = "<div class='sec'>Ouvriers</div><div class='row'><div class='stepper'>"
+     + "<button class='b sq' data-act='unassign' aria-label='Un ouvrier de moins'>−</button>"
+     + "<span class='n'>"+ws.length+"/"+d.fam+"</span>"
+     + "<button class='b sq' data-act='assign' aria-label='Un ouvrier de plus'>+</button></div>"
+     + "<span class='dim'>"+ic("family","s")+" "+g.unemployed()+" journalier"+(g.unemployed()>1?"s":"")+" libre"+(g.unemployed()>1?"s":"")+"</span></div>";
+  if(!ws.length && want===0) h += "<div class='dim' style='font-size:11px'>+ embauche l'adulte libre le plus doué"+(sk ? " ("+SKILL_DEFS[sk].name.toLowerCase()+")" : "")+".</div>";
+  ws.forEach(function(v){ h += vRow(g, v, (g.jobTitle(v)||"")+(sk ? " · "+skillLevel(v.skills[sk]).toLowerCase() : "")); });
+  if(want>ws.length) h += "<div class='gold' style='font-size:12px;margin:4px 0'>"+(want-ws.length)+" poste"+(want-ws.length>1?"s":"")+" en attente d'un adulte libre.</div>";
+  if(sk && sel.done){
+    var ap = g.apprenticeOf(sel), m = g.masterOf(sel);
+    h += "<div class='sec'>Apprenti</div>";
+    if(ap){
+      h += vRow(g, ap, "Apprenti"+(ap.sex==="f"?"e":"")+" · "+skillLevel(ap.skills[sk]).toLowerCase());
+      h += "<div class='row'><span class='dim' style='flex:1 1 auto;font-size:11px'>"+(m && m.skills[sk]>=40
+           ? "Formé"+(ap.sex==="f"?"e":"")+" par "+esc(m.first)+" ("+skillLevel(m.skills[sk]).toLowerCase()+") : progrès rapides."
+           : "Sans maître confirmé (compagnon ou mieux), il apprend lentement.")+"</span><button class='b' data-act='apprstop'>Renvoyer</button></div>";
+    } else {
+      var teens = g.villagers.filter(function(v){ return g.canApprentice(v) && !v.appr; }).length;
+      h += "<div class='row'><span class='dim' style='flex:1 1 auto;font-size:11px'>Un adolescent de 12 à 15 ans apprend le métier auprès du meilleur ouvrier. "
+         + teens+" disponible"+(teens>1?"s":"")+".</span><button class='b"+(teens?"":" off")+"' data-act='appr'>Prendre un apprenti</button></div>";
+    }
+  }
+  return h;
+}
+
+/* fiche d'un villageois */
+function sheetVillager(g){
+  var v = g.villager(ui.selV); if(!v) return "";
+  var st = g.stageOf(v), age = g.ageOf(v), fam = g.famOf(v), fem = v.sex==="f";
+  var job = v.work>0 ? g.buildings.filter(function(x){ return x.id===v.work; })[0] : null;
+  var sub = ageTxt(age)+" · "+esc(g.villagerStatus(v))+(fam ? " · "+esc(fam.name) : "");
+  var h = head(portrait(g, v, 3), esc(g.fullName(v)), sub);
+  h += "<div class='kv'><span class='k'>"+ic(heartIcon(v.mood),"s")+"Humeur</span>"+bar(v.mood/100, v.mood<40?"red":v.mood<60?"gold":"")+"<span class='v'>"+Math.round(v.mood)+"</span></div>";
+  h += "<div class='kv'><span class='k'>Santé"+(v.sick>0 ? " <span class='bad'>· malade</span>" : "")+"</span>"+bar(v.health/100, v.health<40?"red":v.health<70?"gold":"")+"<span class='v'>"+Math.round(v.health)+"</span></div>";
+  /* pourquoi cette humeur : l'ambiance du village, puis ce qui le touche, lui */
+  h += "<div class='sec'>Pourquoi cette humeur</div><div class='why'>";
+  h += "<div><span>Ambiance du village (approbation)</span><b>"+g.approval+"</b></div>";
+  (v.why||[]).forEach(function(w){ h += "<div><span>"+esc(w[0])+"</span><b class='"+(w[1]>0?"good":"bad")+"'>"+signed(w[1])+"</b></div>"; });
+  if(!(v.why||[]).length) h += "<div class='dim'><span>Rien de particulier ce mois-ci</span></div>";
+  h += "</div>";
+  /* métier */
+  h += "<div class='sec'>Métier</div>";
+  if(g.canWork(v)){
+    if(job) h += "<div class='row'><span style='flex:1 1 auto'>"+esc(g.villagerStatus(v))+(g.jobSkill(job) ? " <span class='dim'>· "+esc(skillTxt(v, g.jobSkill(job)))+"</span>" : "")+"</span><button class='b' data-act='bsel' data-arg='"+job.id+"'>Voir</button></div>";
+    else h += "<div class='dim' style='font-size:12px'>"+(fem?"Journalière":"Journalier")+" : bâtit les chantiers quand il y en a.</div>";
+    h += "<button class='b wide"+(ui.vJob?" on":"")+"' data-act='vjob'>"+(ui.vJob ? "Fermer la liste" : "Changer de métier")+"</button>";
+    if(ui.vJob) h += jobChoices(g, v);
+  } else if(st==="teen"){
+    if(v.appr && job){
+      var m = g.masterOf(job), sk = g.jobSkill(job);
+      h += "<div class='row'><span style='flex:1 1 auto'>Apprenti"+(fem?"e":"")+" · "+esc(BUILD_DEFS[job.def].name)+(m ? " <span class='dim'>auprès de "+esc(m.first)+"</span>" : "")+" <span class='dim'>· "+esc(skillTxt(v, sk))+"</span></span>"
+         + "<button class='b' data-act='vassign' data-arg='-1'>Arrêter</button></div>";
+    } else h += "<div class='dim' style='font-size:12px'>"+(v.sick>0 ? "Malade : l'apprentissage attendra." : "Peut entrer en apprentissage jusqu'à 16 ans :")+"</div>";
+    if(!(v.sick>0)) h += apprChoices(g, v);
+    h += "<div class='dim' style='font-size:11px;margin-top:4px'>À 16 ans, "+(fem?"elle":"il")+" pourra prendre un poste.</div>";
+  } else if(st==="elder" && age>=AGE_RETIRE){
+    h += "<div class='dim' style='font-size:12px'>À la retraite depuis "+ageTxt(age-AGE_RETIRE)+".</div>";
+  } else if(st==="adult" || st==="elder"){
+    h += "<div class='bad' style='font-size:12px'>Trop faible pour travailler en ce moment ("+(v.sick>0 ? "malade" : "santé "+Math.round(v.health))+").</div>";
+  } else {
+    h += "<div class='dim' style='font-size:12px'>Trop jeune pour travailler. Apprentissage possible à 12 ans, métier à 16 ans.</div>";
+  }
+  /* savoir-faire */
+  h += "<div class='sec'>Savoir-faire</div>";
+  var jsk = job ? g.jobSkill(job) : null;
+  SKILL_ORDER.forEach(function(k){
+    var x = v.skills[k]||0;
+    h += "<div class='kv sk"+(k===jsk?" on":"")+"'><span class='k'>"+esc(SKILL_DEFS[k].name)+"</span>"+bar(x/100, k===jsk?"gold":"")+"<span class='v'>"+esc(skillLevel(x))+"</span></div>";
+  });
+  /* famille */
+  var rel = [];
+  var sp = v.spouse>=0 ? g.villager(v.spouse) : null;
+  if(sp) rel.push(["Conjoint"+(sp.sex==="f"?"e":""), [sp]]);
+  var par = [v.mother, v.father].map(function(id){ return id>=0 ? g.villager(id) : null; }).filter(Boolean);
+  if(par.length) rel.push(["Parents", par]);
+  var kids = g.villagers.filter(function(o){ return o.mother===v.id || o.father===v.id; });
+  if(kids.length) rel.push(["Enfants", kids]);
+  var sib = g.villagers.filter(function(o){ return o!==v && ((v.mother>=0 && o.mother===v.mother) || (v.father>=0 && o.father===v.father)); });
+  if(sib.length) rel.push(["Frères et sœurs", sib]);
+  h += "<div class='sec'>Famille</div>";
+  if(v.maiden) h += "<div class='dim' style='font-size:12px'>"+(fem?"Née":"Né")+" "+esc(v.maiden)+".</div>";
+  if(!rel.length) h += "<div class='dim' style='font-size:12px'>Aucun proche dans la seigneurie.</div>";
+  rel.forEach(function(r){
+    h += "<div class='rel'><span class='dim'>"+r[0]+"</span><span class='chips'>";
+    r[1].forEach(function(o){ h += "<button class='chip lnk' data-act='vsel' data-arg='"+o.id+"'>"+esc(o.first)+" · "+g.ageOf(o)+"</button>"; });
+    h += "</span></div>";
+  });
+  var home = fam && fam.home>0 ? g.buildings.filter(function(x){ return x.id===fam.home; })[0] : null;
+  h += "<div class='row' style='margin-top:10px'>";
+  if(g.stageOf(v)!=="baby") h += "<button class='b' data-act='vlook'>"+ic("flag","s")+"Voir sur la carte</button>";
+  if(home && home.def==="burgage") h += "<button class='b' data-act='bsel' data-arg='"+home.id+"'>"+ic("house","s")+"Sa maison</button>";
+  h += "<button class='b' data-act='sheet' data-arg='people'>"+ic("family","s")+"Habitants</button></div>";
+  return h;
+}
+/* les postes où l'on peut placer un adulte (avec son niveau dans chaque métier) */
+function jobChoices(g, v){
+  var h = "<div class='jobs'>";
+  if(v.work>0) h += "<button class='ext' data-act='vassign' data-arg='-1'><span class='t'><b>"+(v.sex==="f"?"Journalière":"Journalier")+"</b><span>Bâtit les chantiers</span></span></button>";
+  var any = false;
+  g.buildings.forEach(function(b){
+    var d = BUILD_DEFS[b.def]; if(!d || d.fam<=0 || b.id===v.work) return;
+    var n = g.workersOf(b).length, full = n>=d.fam, sk = d.skill;
+    any = true;
+    h += "<button class='ext"+(full?" off":"")+"' data-act='vassign' data-arg='"+b.id+"'><span class='tb'>"+ICONS.th(b.def)+"</span><span class='t'><b>"+esc(d.name)+(b.done ? "" : " (chantier)")+"</b>"
+       + "<span>"+n+"/"+d.fam+(full ? " · complet" : "")+(sk ? " · "+esc(skillTxt(v, sk)) : "")+"</span></span></button>";
+  });
+  if(!any) h += "<div class='dim' style='font-size:12px'>Aucun bâtiment n'emploie d'ouvriers pour l'instant.</div>";
+  return h + "</div>";
+}
+/* les ateliers qui peuvent prendre un apprenti */
+function apprChoices(g, v){
+  var h = "<div class='jobs'>", any = false;
+  g.buildings.forEach(function(b){
+    var d = BUILD_DEFS[b.def]; if(!d || !d.skill || !b.done || b.id===v.work) return;
+    var ap = g.apprenticeOf(b), m = g.masterOf(b);
+    any = true;
+    h += "<button class='ext"+(ap?" off":"")+"' data-act='vappr' data-arg='"+b.id+"'><span class='tb'>"+ICONS.th(b.def)+"</span><span class='t'><b>"+esc(d.name)+"</b>"
+       + "<span>"+(ap ? "Déjà un apprenti" : m ? "Maître : "+esc(m.first)+" ("+skillLevel(m.skills[d.skill]).toLowerCase()+")" : "Personne pour l'enseigner")+"</span></span></button>";
+  });
+  if(!any) h += "<div class='dim' style='font-size:12px'>Aucun atelier achevé pour l'instant.</div>";
+  return h + "</div>";
+}
+
+/* liste des habitants, foyer par foyer */
+function sheetPeople(g){
+  var all = g.villagers, camp = g.buildings.filter(function(b){ return b.def==="camp"; })[0];
+  var F = {
+    all:   { n:"Tous", f:function(){ return true; } },
+    free:  { n:"Journaliers", f:function(v){ return v.work<0 && !v.appr && g.canWork(v); } },
+    teen:  { n:"Adolescents", f:function(v){ return g.stageOf(v)==="teen"; } },
+    kids:  { n:"Enfants", f:function(v){ var s = g.stageOf(v); return s==="child" || s==="baby"; } },
+    sick:  { n:"Malades", f:function(v){ return v.sick>0 || v.health<40; } },
+  };
+  var filt = F[ui.pFilter] ? ui.pFilter : "all";
+  var adults = all.filter(function(v){ return g.isAdult(v); }).length;
+  var h = head(ic("family","l"), "Habitants · "+all.length, g.families.length+" foyer"+(g.families.length>1?"s":"")+" · "+adults+" adulte"+(adults>1?"s":"")+" · "+(all.length-adults)+" enfant"+(all.length-adults>1?"s":"")+" ou adolescent"+(all.length-adults>1?"s":""));
+  h += "<div class='chips' style='margin:2px 0 6px'>";
+  Object.keys(F).forEach(function(k){
+    var n = all.filter(F[k].f).length;
+    if(k!=="all" && !n) return;
+    h += "<button class='chip lnk"+(filt===k?" on":"")+"' data-act='pfilter' data-arg='"+k+"'>"+F[k].n+" · "+n+"</button>";
+  });
+  h += "</div>";
+  if(filt!=="all"){
+    var list = all.filter(F[filt].f);
+    if(!list.length) h += "<div class='dim'>Personne.</div>";
+    list.forEach(function(v){ h += vRow(g, v); });
+    return h;
+  }
+  g.families.forEach(function(f){
+    var mem = g.membersOf(f.id);
+    var where = f.home<0 ? "<span class='bad'>sans logis</span>" : (camp && f.home===camp.id) ? "au campement" : "";
+    var home = f.home>0 && !(camp && f.home===camp.id) ? f.home : null;
+    h += "<div class='fam'><span class='sec' style='margin:0'>"+esc(f.name)+"</span><span class='dim' style='font-size:11px;flex:1 1 auto'>"+where+"</span>"
+       + (home ? "<button class='b sm' data-act='bsel' data-arg='"+home+"'>"+ic("house","s")+"Maison</button>" : "")+"</div>";
+    mem.sort(function(a, b){ return g.ageOf(b) - g.ageOf(a); });
+    mem.forEach(function(v){ h += vRow(g, v); });
+  });
+  return h;
+}
+
 /* réserves détaillées */
 function sheetStock(g){
   var cap = g.capFor("timber");
@@ -936,8 +1156,14 @@ function sheetRealm(g){
   var h = head(ic("crown","l"), esc(g.settlementName()), esc(g.mode().name)+" · "+esc(g.diff().name)+" · "+MONTHS[g.time.month]+" "+g.time.year);
   h += "<div class='kv'><span class='k'>"+ic("coin")+"Trésor</span><span class='v'>"+Math.floor(g.treasury)+" deniers</span></div>";
   h += "<div class='kv'><span class='k'>"+ic(heartIcon(g.approval))+"Approbation</span>"+bar(g.approval/100, g.approval<40?"red":g.approval<60?"gold":"")+"<span class='v'>"+g.approval+" %</span></div>";
-  h += "<div class='kv'><span class='k'>"+ic("family")+"Familles</span><span class='v'>"+g.families.length+"</span></div>";
-  h += "<div class='kv'><span class='k' style='padding-left:24px'>Journaliers (sans emploi)</span><span class='v'>"+g.unemployed()+"</span></div>";
+  /* étape 4 : ce qui fait monter ou baisser l'approbation (bilan du dernier mois) */
+  if(g.approvalWhy && g.approvalWhy.length){
+    h += "<div class='why'>";
+    g.approvalWhy.forEach(function(w){ if(w[1]) h += "<div><span>"+esc(w[0])+"</span><b class='"+(w[0]==="Base" ? "dim" : w[1]>0 ? "good" : "bad")+"'>"+(w[0]==="Base" ? w[1] : signed(w[1]))+"</b></div>"; });
+    h += "</div>";
+  }
+  h += "<button class='kv lnk' data-act='sheet' data-arg='people'><span class='k'>"+ic("family")+"Habitants</span><span class='v'>"+g.villagers.length+" · "+g.families.length+" foyer"+(g.families.length>1?"s":"")+" ›</span></button>";
+  h += "<div class='kv'><span class='k' style='padding-left:24px'>Journaliers (adultes sans poste)</span><span class='v'>"+g.unemployed()+"</span></div>";
   h += "<div class='kv'><span class='k' style='padding-left:24px'>Bourgages libres</span><span class='v'>"+g.freeBurgages()+"</span></div>";
   if(homeless) h += "<div class='kv'><span class='k bad' style='padding-left:24px'>Sans logis</span><span class='v bad'>"+homeless+"</span></div>";
   h += "<div class='kv'><span class='k'>"+ic("crown")+"Influence</span><span class='v'>"+Math.floor(g.influence)+"</span></div>";
@@ -1078,10 +1304,11 @@ function modalRegions(g){
 }
 function modalHelp(){
   var h = "<h2>"+ic("help","l")+"Comment jouer</h2>";
-  h += "<h3>Premiers pas</h3><p>Ouvrez <b>Ressources</b> dans la barre du bas et posez un <b>camp de bûcherons</b> près d'une forêt. Touchez-le, puis <b>+</b> pour lui affecter une famille. Les familles sans emploi (journaliers) construisent les chantiers.</p>";
+  h += "<h3>Premiers pas</h3><p>Ouvrez <b>Récolte</b> dans la barre du bas et posez un <b>camp de bûcherons</b> près d'une forêt. Touchez-le, puis <b>+</b> pour embaucher un ouvrier : le jeu choisit l'adulte libre le plus doué. Les adultes sans poste (journaliers) construisent les chantiers.</p>";
+  h += "<h3>Les villageois</h3><p>Chaque habitant a un âge, une santé, une humeur et un savoir-faire par métier, qui progresse en travaillant (de novice à maître). Touchez un villageois sur la carte, ou le compteur d'habitants en haut, pour ouvrir sa fiche : vous y voyez pourquoi il est content ou non, et vous pouvez changer son métier. Les adolescents de 12 à 15 ans peuvent entrer en <b>apprentissage</b> : auprès d'un bon maître, ils apprennent vite. Les couples se marient, ont des enfants, vieillissent ; à 65 ans, on prend sa retraite. Si un maître meurt sans avoir formé personne, son savoir-faire disparaît.</p>";
   h += "<h3>Nourrir et chauffer</h3><p>Cueilleuses (baies, de mars à novembre) et chasseurs (viande) nourrissent le village. La <b>variété</b> de nourriture fait monter l'approbation, et il faut un <b>marché</b> actif pour la distribuer. L'hiver, la consommation de bois de chauffe double : faites des réserves avant décembre.</p>";
   h += "<h3>Agriculture</h3><p>Les champs sont gratuits ; une <b>ferme</b> les laboure au printemps et moissonne en septembre. Le <b>moulin</b> transforme le grain en pain. Une année de jachère restaure la fertilité.</p>";
-  h += "<h3>Croissance</h3><p>Une approbation d'au moins 55 % et un bourgage libre attirent une nouvelle famille. Les bourgages bien approvisionnés montent de niveau et débloquent des arrière-cours (potager, rucher, atelier…). Le <b>manoir</b> permet de lever l'impôt.</p>";
+  h += "<h3>Croissance</h3><p>Une approbation d'au moins 40 % et une maison libre attirent une nouvelle famille ; les jeunes couples du village qui vivent chez leurs parents passent avant. Les bourgages bien approvisionnés montent de niveau et débloquent des arrière-cours (potager, rucher, atelier…). Le <b>manoir</b> permet de lever l'impôt.</p>";
   h += "<h3>Commandes</h3><p>Glisser pour déplacer · pincer ou molette pour zoomer · toucher un bâtiment pour l'ouvrir · <b>appui long</b> pour annuler · toucher la minimap pour s'y rendre. Le bandeau des réserves et la date ouvrent le détail. Au clavier : Espace = pause, 1/2/3 = vitesse, ZQSD = caméra, Échap = annuler.</p>";
   h += "<h3>Sauvegarde</h3><p>Automatique sur cet appareil (3 emplacements). Le menu permet de copier un code pour continuer sur un autre appareil.</p>";
   return h + "<button class='b gold wide' data-act='modalclose'>Compris</button>";
@@ -1140,7 +1367,7 @@ function loop(now){
   if(game) soundForToasts(game);
   _uiAcc += dt;
   if(_uiAcc>300){ _uiAcc = 0; renderUI(); }
-  if(game){ RENDER.setOverlay(zoneOverlay(game)); drawGame(ctx, game, cam, canvas, hover, ui.buildSel, ui.selId, ui.layers, now); }
+  if(game){ RENDER.setOverlay(zoneOverlay(game)); RENDER.setSelVillager(ui.selV); drawGame(ctx, game, cam, canvas, hover, ui.buildSel, ui.selId, ui.layers, now); }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);

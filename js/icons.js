@@ -627,6 +627,22 @@ function init(){
 /* raccourcis HTML */
 function ic(name, cls){ return "<i class='ic ic-"+name+(cls?" "+cls:"")+"'></i>"; }
 function th(def){ return "<i class='th th-"+def+"'></i>"; }
+/* portrait d'un villageois : son sprite du jeu, agrandi d'un facteur entier (créé à la première demande) */
+var ppDone = {}, ppStyle = null;
+function pp(name, sc){
+  sc = sc || 2;
+  var key = String(name).replace(/[^a-z0-9_]/gi, "") + "_" + sc;
+  if(!ppDone[key]){
+    var f = typeof SPR!=="undefined" && SPR.frames ? SPR.frames[name] : null;
+    if(!f) return "";
+    var c = canvasOf(f.w, f.h);
+    c.getContext("2d").drawImage(SPR.atlas, f.x, f.y, f.w, f.h, 0, 0, f.w, f.h);
+    if(!ppStyle){ ppStyle = document.createElement("style"); ppStyle.id = "portrait-css"; document.head.appendChild(ppStyle); }
+    ppStyle.textContent += ".pp-"+key+"{background-image:url("+c.toDataURL()+");width:"+(f.w*sc)+"px;height:"+(f.h*sc)+"px}\n";
+    ppDone[key] = 1;
+  }
+  return "<i class='th pp pp-"+key+"'></i>";
+}
 
-return { init:init, ic:ic, th:th, names:function(){ return Object.keys(urls); }, sizes:sizes, MAPS:MAPS };
+return { init:init, ic:ic, th:th, pp:pp, names:function(){ return Object.keys(urls); }, sizes:sizes, MAPS:MAPS };
 })();

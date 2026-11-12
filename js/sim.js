@@ -44,18 +44,18 @@ const BUILD_DEFS                              = {
   camp:      { id:"camp",      name:"Campement",      icon:"⛺", w:2,h:1, cost:{}, fam:0, instant:true, desc:"Abri provisoire des survivants. Démonté quand toutes les familles ont une maison." },
   oxpost:    { id:"oxpost",    name:"Poteau du bœuf", icon:"🐂", w:1,h:1, cost:{timber:1}, fam:0, instant:true, desc:"Le bœuf y est attaché : il aide à porter les charges lourdes." },
   burgage:   { id:"burgage",   name:"Bourgage",       icon:"🏠", w:1,h:1, cost:{timber:1}, fam:0, instant:true, buildRate:2, desc:"Loge une famille. Évolue si ses besoins sont satisfaits." },
-  woodcutter:{ id:"woodcutter",name:"Camp de bûcherons",icon:"🪓", w:1,h:1, cost:{timber:2}, fam:2, radius:6, instant:false, desc:"Abat les arbres à proximité : bois d'œuvre + bois de chauffe." },
-  forager:   { id:"forager",   name:"Cabane de cueilleuses", icon:"🍒", w:1,h:1, cost:{timber:2}, fam:2, radius:6, instant:false, desc:"Cueille des baies (mars → novembre)." },
-  hunter:    { id:"hunter",    name:"Camp de chasse",  icon:"🏹", w:1,h:1, cost:{timber:2}, fam:2, radius:10, instant:false, desc:"Chasse le gibier des forêts : viande, toute l'année." },
-  quarry:    { id:"quarry",    name:"Carrière",        icon:"🪨", w:1,h:1, cost:{timber:2}, fam:1, onStone:true, instant:false, desc:"À poser SUR un gisement de pierre. S'épuise avec le temps." },
-  farm:      { id:"farm",      name:"Ferme",           icon:"🚜", w:2,h:2, cost:{timber:3}, fam:2, instant:false, desc:"Travaille les champs : labour/semailles au printemps, moisson en septembre." },
+  woodcutter:{ id:"woodcutter",name:"Camp de bûcherons",icon:"🪓", w:1,h:1, cost:{timber:2}, fam:2, skill:"wood", radius:6, instant:false, desc:"Abat les arbres à proximité : bois d'œuvre + bois de chauffe." },
+  forager:   { id:"forager",   name:"Cabane de cueilleuses", icon:"🍒", w:1,h:1, cost:{timber:2}, fam:2, skill:"gather", radius:6, instant:false, desc:"Cueille des baies (mars → novembre)." },
+  hunter:    { id:"hunter",    name:"Camp de chasse",  icon:"🏹", w:1,h:1, cost:{timber:2}, fam:2, skill:"hunt", radius:10, instant:false, desc:"Chasse le gibier des forêts : viande, toute l'année." },
+  quarry:    { id:"quarry",    name:"Carrière",        icon:"🪨", w:1,h:1, cost:{timber:2}, fam:1, skill:"stone", onStone:true, instant:false, desc:"À poser SUR un gisement de pierre. S'épuise avec le temps." },
+  farm:      { id:"farm",      name:"Ferme",           icon:"🚜", w:2,h:2, cost:{timber:3}, fam:2, skill:"farm", instant:false, desc:"Travaille les champs : labour/semailles au printemps, moisson en septembre." },
   field:     { id:"field",     name:"Champ",           icon:"🌾", w:4,h:4, uiSize:true, cost:{}, fam:0, instant:true,  desc:"Gratuit. Rendement selon la fertilité du sol (visible en mode pose). Jachère conseillée." },
-  windmill:  { id:"windmill",  name:"Moulin",          icon:"💨", w:2,h:2, cost:{timber:2,stone:2}, fam:1, instant:false, desc:"Transforme le grain en pain (meilleur variété alimentaire)." },
+  windmill:  { id:"windmill",  name:"Moulin",          icon:"💨", w:2,h:2, cost:{timber:2,stone:2}, fam:1, skill:"craft", instant:false, desc:"Transforme le grain en pain (meilleur variété alimentaire)." },
   granary:   { id:"granary",   name:"Grange",          icon:"🏚️", w:1,h:1, cost:{timber:2}, fam:0, instant:false, desc:"Réduit fortement le pourrissement des denrées." },
   storehouse:{ id:"storehouse",name:"Entrepôt",        icon:"📦", w:1,h:1, cost:{timber:2}, fam:0, instant:false, desc:"+150 de capacité de stockage pour chaque ressource." },
-  market:    { id:"market",    name:"Marché",          icon:"⛺", w:2,h:2, cost:{timber:2}, fam:3, instant:false, desc:"Sans marché actif, vos familles n'ont accès qu'à un seul type de nourriture." },
+  market:    { id:"market",    name:"Marché",          icon:"⛺", w:2,h:2, cost:{timber:2}, fam:3, skill:"trade", instant:false, desc:"Sans marché actif, vos familles n'ont accès qu'à un seul type de nourriture." },
   church:    { id:"church",    name:"Église",          icon:"⛪", w:2,h:2, cost:{timber:2,stone:2}, fam:0, instant:false, desc:"+6 d'approbation. Requise pour les bourgages de niveau 3." },
-  trade:     { id:"trade",     name:"Comptoir",       icon:"\u26fa", w:2,h:2, cost:{timber:3,stone:2}, fam:1, instant:false, desc:"Vente automatique des surplus chaque mois (prix fluctuants). +richesse régionale." },
+  trade:     { id:"trade",     name:"Comptoir",       icon:"\u26fa", w:2,h:2, cost:{timber:3,stone:2}, fam:1, skill:"trade", instant:false, desc:"Vente automatique des surplus chaque mois (prix fluctuants). +richesse régionale." },
   tower:     { id:"tower",     name:"Tour de guet",   icon:"\ud83d\udde1\ufe0f", w:1,h:1, cost:{timber:2,stone:3}, fam:0, instant:false, desc:"+4 approbation, repousse les raids (réduit le pillage de moitié)." },
   wall:      { id:"wall",      name:"Rempart",        icon:"⬛", w:1,h:1, cost:{stone:2}, fam:0, instant:false, wall:true, desc:"Mur défensif : les brigands ne passent pas dessus (case infranchissable)." },
   manor:     { id:"manor",     name:"Manoir",          icon:"🏰", w:2,h:2, cost:{timber:4,stone:3}, fam:0, instant:false, desc:"Permet de lever l'impôt (curseur dans le panneau du manoir)." },
@@ -182,7 +182,38 @@ const SETTLEMENT_LEVELS = [
 ];
 const RES_ICONS                        = { timber:"🪵", firewood:"🔥", stone:"🪨", grain:"🌾", bread:"🍞", berries:"🍒", meat:"🍗", eggs:"🥚", veg:"🥕", apples:"🍎", honey:"🍯", clothes:"👕", ale:"🍺", barley:"🌾", ox:"🐂" };
 
-const SURNAMES = ["Aldéric","Baptiste","Colin","Eudes","Garlin","Hersende","Mahaut","Odon","Perrot","Raoulin","Sanceline","Thomasse","Ysoré","Gaultier","Béatrice","Manessier","Ferrant","Alips","Jourdaine","Nicaise"];
+/* ---------- étape 4 : villageois individuels ---------- */
+const SURNAMES = ["Lefèvre","Charpentier","Dubois","Meunier","Fournier","Mercier","Bouvier","Berger","Tisserand","Lebrun",
+  "Leroux","Moreau","Fontaine","Desprez","Delorme","Vasseur","Marchand","Picard","Lenoir","Pasquier","Fauvel","Taillefer",
+  "Brisebois","Lacombe","Rivière","Granger","Vigneron","Chaumont"];
+const NAMES_M = ["Aldéric","Baudouin","Colin","Eudes","Gaultier","Guillaume","Hugues","Jehan","Josselin","Lambert","Mathieu",
+  "Nicaise","Odon","Perrot","Raoul","Renaud","Robin","Thibaut","Yvon","Enguerrand","Arnaud","Bertrand","Étienne","Garnier"];
+const NAMES_F = ["Adèle","Alips","Aude","Béatrice","Berthe","Clémence","Ermengarde","Guillemette","Hersende","Isabeau","Jehanne",
+  "Jourdaine","Mahaut","Margot","Perrine","Sanceline","Thomasse","Ysabel","Agnès","Aliénor","Blanche","Héloïse","Ide","Sibylle"];
+// âges charnières : enfant < 12 ≤ adolescent (apprenti possible) < 16 ≤ adulte < 55 ≤ ancien ; retraite à 65 ans
+const AGE_TEEN = 12, AGE_ADULT = 16, AGE_ELDER = 55, AGE_RETIRE = 65;
+const STAGE_NAMES = { baby:"Nourrisson", child:"Enfant", teen:"Adolescent", adult:"Adulte", elder:"Ancien" };
+// nourriture par mois selon l'âge (une famille de l'ancienne version mangeait 1 ; un foyer type mange à peu près autant)
+const FOOD_NEED = { baby:0.1, child:0.2, teen:0.3, adult:0.35, elder:0.3 };
+const SKILL_DEFS = {
+  farm:   { id:"farm",   name:"Champs" },
+  wood:   { id:"wood",   name:"Bois" },
+  gather: { id:"gather", name:"Cueillette" },
+  hunt:   { id:"hunt",   name:"Chasse" },
+  stone:  { id:"stone",  name:"Pierre" },
+  craft:  { id:"craft",  name:"Artisanat" },
+  trade:  { id:"trade",  name:"Commerce" },
+  build:  { id:"build",  name:"Construction" },
+};
+const SKILL_ORDER = ["farm","wood","gather","hunt","stone","craft","trade","build"];
+const SKILL_LEVELS = ["Novice","Initié","Compagnon","Confirmé","Maître"]; // tranches de 20 points
+function skillLevel(s){ return SKILL_LEVELS[Math.max(0, Math.min(4, Math.floor((Number(s)||0)/20)))]; }
+// métier exercé dans chaque bâtiment (masculin, féminin)
+const JOB_TITLES = {
+  woodcutter:["Bûcheron","Bûcheronne"], forager:["Cueilleur","Cueilleuse"], hunter:["Chasseur","Chasseresse"],
+  quarry:["Tailleur de pierre","Tailleuse de pierre"], farm:["Fermier","Fermière"], windmill:["Meunier","Meunière"],
+  market:["Marchand","Marchande"], trade:["Négociant","Négociante"],
+};
 
                                                                                                                                        
 
@@ -249,7 +280,9 @@ class GameState {
     this.prices = { bread:2, clothes:3, ale:2, apples:1, honey:4, meat:1, berries:1 };
     this.occupied = new Int32Array(W*H).fill(-1);
     this.buildings = []; this.nextB = 1;
-    this.families = []; this.nextF = 1;
+    this.families = []; this.nextF = 1;      // foyers (une maison, une marmite)
+    this.villagers = []; this.nextV = 1;     // étape 4 : chaque habitant, avec son âge, ses compétences, sa santé
+    this.approvalWhy = [];                    // détail de l'approbation du dernier mois [libellé, effet]
     this.deer = []; this.nextD = 1; this.deerTimer = 0;
     this.camps = []; this.nextC = 1;
     this.units = []; this.nextU = 1;
@@ -372,9 +405,13 @@ class GameState {
     if(free(spot.x+2, spot.y)){ const post = this.makeBuilding("oxpost", spot.x+2, spot.y); post.done = true; post.progress = 1; }
     for(let k=-3; k<=5; k++) if(free(spot.x+k, spot.y+1)) this.roads[(spot.y+1)*W+spot.x+k] = 1;
     this.stock.ox = Math.max(this.stock.ox||0, 1);
+    // trois familles de survivants : un couple avec un adolescent et un enfant, un jeune couple avec un petit,
+    // un ancien avec un jeune adulte encore célibataire et un adolescent
+    const kinds = ["family", "young", "elder"];
     for(let n=0; n<3; n++){
-      const f = this.makeFamily(); f.home = camp.id; f.x = spot.x+0.5+n*0.5; f.y = spot.y+0.8;
+      const f = this.makeFamily(); f.home = camp.id;
       f.founder = true; // survivants du départ : ils ne quittent jamais la seigneurie
+      this.populateFamily(f, kinds[n], spot.x+0.5+n*0.6, spot.y+0.8);
     }
     this.toast("Les survivants campent au bord du chemin. Tracez une zone de maisons le long de la route (tiroir Maisons).");
   }
@@ -401,7 +438,7 @@ class GameState {
   /* ---------- fabriques ---------- */
   makeBuilding(def       , x       , y       )         {
     const d = BUILD_DEFS[def];
-    const b          = { id:this.nextB++, def, x, y, w:d.w, h:d.h, done:false, progress:0, families:[], lvl:1, exts:[], monthsGood:0, f:null };
+    const b          = { id:this.nextB++, def, x, y, w:d.w, h:d.h, done:false, progress:0, want:0, lvl:1, exts:[], monthsGood:0, f:null };
     if(def==="field"){
       let s=0; for(let yy=0;yy<d.h;yy++) for(let xx=0;xx<d.w;xx++) s += this.soil[(y+yy)*W+(x+xx)];
       b.f = { fert: Math.min(1, s/(d.w*d.h)), plow:0, sown:false, growth:0, harvestP:0, crop:"wheat", usedThisYear:false, usedLastYear:false };
@@ -411,12 +448,140 @@ class GameState {
     return b;
   }
 
-  makeFamily()       {
-    const f        = { id:this.nextF++, name:"Famille "+SURNAMES[Math.floor(this.rnd()*SURNAMES.length)], home:-1, work:-1,
-      x:0.5, y:H/2, path:null, state:"settle", timer:0, task:null, carry:null,
-      cool:0, starving:0, lastAte:2, lastVariety:1 };
+  // un foyer : une maison, une marmite, un nom ; ses membres sont dans this.villagers (v.fam)
+  makeFamily(surname        ){
+    let sn = surname;
+    if(!sn){
+      const used = new Set(this.families.map(f=>this.surnameOf(f)));
+      const free = SURNAMES.filter(n=>!used.has(n));
+      const pool = free.length ? free : SURNAMES;
+      sn = pool[Math.floor(this.rnd()*pool.length)];
+    }
+    const f = { id:this.nextF++, name:"Famille "+sn, home:-1, starving:0, lastAte:1, fed:1, lastVariety:1, clothCool:0 };
     this.families.push(f);
     return f;
+  }
+  surnameOf(f){ return f && typeof f.name==="string" ? f.name.replace(/^Famille\s+/, "") : "?"; }
+
+  /* ---------- étape 4 : les villageois ---------- */
+  monthIdx(){ return this.time.year*12 + this.time.month; }
+  // nourriture mangée chaque mois par tout le village
+  foodNeed(){ return this.villagers.reduce((s, v)=>s+FOOD_NEED[this.stageOf(v)], 0); }
+  ageOf(v){ return Math.max(0, Math.floor((this.monthIdx() - (Number(v.bornAt)||0))/12)); }
+  stageOf(v){
+    const a = this.ageOf(v);
+    return a<3 ? "baby" : a<AGE_TEEN ? "child" : a<AGE_ADULT ? "teen" : a<AGE_ELDER ? "adult" : "elder";
+  }
+  isAdult(v){ const s=this.stageOf(v); return s==="adult" || s==="elder"; }
+  famOf(v){ return this.families.find(f=>f.id===v.fam) || null; }
+  membersOf(fid){ return this.villagers.filter(v=>v.fam===fid); }
+  villager(id){ return this.villagers.find(v=>v.id===id) || null; }
+  fullName(v){ return v ? v.first+" "+this.surnameOf(this.famOf(v)) : "?"; }
+  homeOf(v){ const f=this.famOf(v); return f && f.home>0 ? this.buildings.find(b=>b.id===f.home) || null : null; }
+  // peut tenir un poste : adulte ou ancien de moins de 65 ans, pas alité
+  canWork(v){
+    const s=this.stageOf(v);
+    return (s==="adult" || (s==="elder" && this.ageOf(v)<AGE_RETIRE)) && !(v.sick>0) && v.health>=25;
+  }
+  workersOf(b){ return this.villagers.filter(v=>v.work===b.id && !v.appr); }
+  apprenticeOf(b){ return this.villagers.find(v=>v.work===b.id && v.appr) || null; }
+  jobSkill(b){ const d=b && BUILD_DEFS[b.def]; return d && d.skill ? d.skill : null; }
+  bestSkill(v){ let k="build", m=-1; for(const s of SKILL_ORDER){ const x=v.skills[s]||0; if(x>m){ m=x; k=s; } } return k; }
+  jobTitle(v){
+    const b = v.work>0 ? this.buildings.find(x=>x.id===v.work) : null;
+    const t = b && JOB_TITLES[b.def];
+    return t ? t[v.sex==="f" ? 1 : 0] : null;
+  }
+  // vitesse de travail : 0,75 pour un novice, 1,25 pour un maître ; moins pour un ancien, un apprenti, un malade
+  skillMul(v, skill){
+    let m = 0.75 + 0.5*Math.max(0, Math.min(100, (v.skills && v.skills[skill]) || 0))/100;
+    if(this.stageOf(v)==="elder") m *= 0.75;
+    if(v.appr) m *= 0.5;
+    if(v.health<50) m *= 0.85;
+    return m;
+  }
+  noteWork(v, skill){ if(!v.wt) v.wt = {}; v.wt[skill] = (v.wt[skill]||0) + 1; }
+
+  // un prénom que personne ne porte encore dans la seigneurie (sinon, au moins pas dans la famille)
+  pickName(sex, fid){
+    const pool = sex==="f" ? NAMES_F : NAMES_M;
+    const village = new Set(this.villagers.map(o=>o.first));
+    const family = new Set(this.villagers.filter(o=>o.fam===fid).map(o=>o.first));
+    let list = pool.filter(n=>!village.has(n));
+    if(!list.length) list = pool.filter(n=>!family.has(n));
+    if(!list.length) list = pool;
+    return list[Math.floor(this.rnd()*list.length)];
+  }
+  // un nouveau villageois ; age en années, skills = compétences de départ (0 à 100)
+  makePerson(fam, sex, age, opts){
+    opts = opts || {};
+    const r = this.rnd;
+    const skills = {};
+    for(const s of SKILL_ORDER) skills[s] = 0;
+    if(age>=AGE_ADULT){
+      // un adulte sait déjà un peu de tout, et beaucoup d'une ou deux choses
+      for(const s of SKILL_ORDER) skills[s] = Math.round(4 + r()*14);
+      const n = age>=24 ? 2 : 1;
+      for(let k=0;k<n;k++){ const s=SKILL_ORDER[Math.floor(r()*SKILL_ORDER.length)]; skills[s] = Math.max(skills[s], Math.round(25 + r()*Math.min(45, (age-16)*2.5))); }
+    } else if(age>=8){
+      for(const s of SKILL_ORDER) skills[s] = Math.round(r()*8);
+    }
+    const v = {
+      id:this.nextV++, fam:fam.id, first:opts.first || this.pickName(sex, fam.id), sex,
+      bornAt: this.monthIdx() - age*12 - Math.floor(r()*12),
+      skills, health:100, sick:0, spouse:-1, mother:opts.mother||-1, father:opts.father||-1,
+      work:-1, appr:false, grief:0, griefFor:"", joy:0, joyFor:"", mood:this.approval, why:[], wt:{},
+      x:opts.x!==undefined ? opts.x : W/2, y:opts.y!==undefined ? opts.y : H/2,
+      path:null, state:"idle", timer:0, task:null, carry:null, cool:Math.floor(r()*20),
+    };
+    this.villagers.push(v);
+    return v;
+  }
+  marry(a, b){ a.spouse = b.id; b.spouse = a.id; }
+  // compose un foyer type autour d'un point de départ
+  populateFamily(f, kind, x, y){
+    const r = this.rnd, sx = ()=>r()<0.5 ? "m" : "f";
+    const at = (k)=>({ x:x + (k%3)*0.35, y:y + Math.floor(k/3)*0.3 });
+    let k = 0;
+    const mk = (sex, age, o)=>this.makePerson(f, sex, age, Object.assign(at(k++), o||{}));
+    const couple = (a0, a1)=>{ const h=mk("m", a0), w=mk("f", a1); this.marry(h, w); return [h, w]; };
+    const kids = (h, w, ages)=>ages.forEach(a=>mk(sx(), a, { mother:w.id, father:h.id }));
+    if(kind==="family"){ const [h,w]=couple(31+Math.floor(r()*7), 28+Math.floor(r()*6)); kids(h, w, [13+Math.floor(r()*3), 5+Math.floor(r()*5)]); }
+    else if(kind==="young"){ const [h,w]=couple(22+Math.floor(r()*5), 20+Math.floor(r()*5)); kids(h, w, [Math.floor(r()*3)]); }
+    else if(kind==="elder"){
+      const e = mk(sx(), 56+Math.floor(r()*7));
+      mk(e.sex==="m" ? "f" : "m", 18+Math.floor(r()*5), e.sex==="m" ? { father:e.id } : { mother:e.id });
+      mk(sx(), 12+Math.floor(r()*3), e.sex==="m" ? { father:e.id } : { mother:e.id });
+    }
+    else if(kind==="couple"){ const [h,w]=couple(18+Math.floor(r()*8), 17+Math.floor(r()*8)); }
+    else if(kind==="single"){ mk(sx(), 19+Math.floor(r()*14)); }
+    else if(kind==="parents"){ const [h,w]=couple(24+Math.floor(r()*12), 22+Math.floor(r()*12)); mk(sx(), 52+Math.floor(r()*10)); kids(h, w, [Math.floor(r()*9)]); }
+    else { // foyer courant : un couple et 0 à 2 enfants
+      const [h,w]=couple(25+Math.floor(r()*14), 23+Math.floor(r()*13));
+      const n = Math.floor(r()*3), ages = [];
+      for(let i=0;i<n;i++) ages.push(Math.floor(r()*13));
+      kids(h, w, ages);
+    }
+    return this.membersOf(f.id);
+  }
+  // composition tirée au hasard pour une famille qui arrive
+  randomFamilyKind(){
+    const x = this.rnd();
+    return x<0.55 ? "household" : x<0.75 ? "couple" : x<0.9 ? "single" : "parents";
+  }
+  // retire un foyer et tous ses membres (départ)
+  removeFamily(fid){
+    for(const v of this.membersOf(fid)) this.dropVillager(v);
+    this.families = this.families.filter(x=>x.id!==fid);
+  }
+  // retire un villageois de la simulation (décès ou départ) sans aucun message
+  dropVillager(v){
+    const i = this.villagers.indexOf(v); if(i<0) return;
+    this.villagers.splice(i, 1);
+    for(const o of this.villagers){
+      if(o.spouse===v.id) o.spouse = -1;
+    }
+    if(v.task && v.task.type==="hunt"){ const d=this.deer.find(dd=>dd.id===v.task.deer); if(d) d.frozen = false; }
   }
 
   toast(text       , kind="info"){
@@ -439,7 +604,8 @@ class GameState {
   mode(){ return MODE_BY_ID[this.modeId] || MODE_BY_ID.prosperity; }
   diff(){ return DIFF_BY_ID[this.diffId] || DIFF_BY_ID.normal; }
   berrySeason(){ const m=this.time.month; return m>=2 && m<=10; } // mars → novembre
-  unemployed(){ return this.families.filter(f=>f.work<0).length; }
+  // journaliers : adultes sans poste, qui bâtissent les chantiers
+  unemployed(){ return this.villagers.filter(v=>v.work<0 && !v.appr && this.canWork(v)).length; }
 
   canAfford(def       ){ const c=BUILD_DEFS[def].cost; return this.stock.timber>=(c.timber||0) && this.stock.stone>=(c.stone||0); }
   costText(def       ){ const c=BUILD_DEFS[def].cost; const p         =[]; if(c.timber)p.push(c.timber+" 🪵"); if(c.stone)p.push(c.stone+" 🪨"); return p.length?p.join(" "):"Gratuit"; }
@@ -493,11 +659,8 @@ class GameState {
     this.stock.stone += Math.floor((d.cost.stone||0)/2);
     for(let yy=0;yy<b.h;yy++) for(let xx=0;xx<b.w;xx++) this.occupied[(b.y+yy)*W+(b.x+xx)] = -1;
     if(b.plot) for(const i of b.plot.cells) if(this.occupied[i]===b.id) this.occupied[i] = -1;
-    for(const f of this.families){
-      if(f.work===b.id){ f.work=-1; f.task=null; f.path=null; f.state="idle"; f.carry=null; }
-      if(f.home===b.id) f.home = -1;
-    }
-    for(const o of this.buildings){ o.families = o.families.filter(fid=>this.families.some(ff=>ff.id===fid)); }
+    for(const v of this.villagers) if(v.work===b.id){ v.work=-1; v.appr=false; this.resetWorker(v); }
+    for(const f of this.families) if(f.home===b.id) f.home = -1;
     this.buildings.splice(idx,1);
     this.toast(d.name+" démoli (moitié du coût remboursée)");
   }
@@ -662,22 +825,120 @@ class GameState {
     return { edges, gate };
   }
 
-  assign(bid       ){
-    const b = this.buildings.find(x=>x.id===bid); if(!b) return;
-    const d = BUILD_DEFS[b.def];
-    if(d.fam<=0) return;
-    if(b.families.length>=d.fam) return;
-    const f = this.families.find(f=>f.work<0); if(!f) return;
-    f.work = bid; b.families.push(f.id);
-    this.resetWorker(f);
-    this.uiVersion++;
+  /* ---------- étape 4 : postes de travail, un par adulte ----------
+     b.want = nombre d'ouvriers voulus. Le jeu y place tout seul l'adulte libre le plus compétent,
+     tout de suite s'il y en a un, sinon dès qu'il y en a un (adolescent devenu adulte, nouvel arrivant…). */
+  // note d'un candidat pour un poste : sa compétence, un peu moins pour un ancien
+  jobScore(v, skill){ return ((v.skills && v.skills[skill]) || 0) * (this.stageOf(v)==="elder" ? 0.75 : 1); }
+  freeAdults(){ return this.villagers.filter(v=>v.work<0 && !v.appr && this.canWork(v)); }
+  // pourvoit les postes voulus d'un bâtiment (ou de tous) ; renvoie le nombre d'embauches
+  fillJobs(only){
+    let n = 0;
+    for(const b of this.buildings){
+      if(only && b!==only) continue;
+      const d = BUILD_DEFS[b.def]; if(!d || d.fam<=0) continue;
+      const want = Math.max(0, Math.min(d.fam, Number(b.want)||0));
+      let have = this.workersOf(b).length;
+      while(have<want){
+        const free = this.freeAdults(); if(!free.length) return n;
+        const sk = d.skill || "build";
+        free.sort((a, c)=>this.jobScore(c, sk) - this.jobScore(a, sk) || a.id - c.id);
+        const v = free[0];
+        v.work = b.id; this.resetWorker(v); have++; n++;
+      }
+    }
+    if(n) this.uiVersion++;
+    return n;
   }
+  // + : un ouvrier de plus (le plus compétent des adultes libres)
+  assign(bid       ){
+    const b = this.buildings.find(x=>x.id===bid); if(!b) return false;
+    const d = BUILD_DEFS[b.def];
+    if(d.fam<=0) return false;
+    const have = this.workersOf(b).length;
+    if(have>=d.fam) return false;
+    b.want = Math.min(d.fam, Math.max(Number(b.want)||0, have) + 1);
+    const n = this.fillJobs(b);
+    if(!n) this.toast("Aucun adulte libre : le poste sera pourvu dès que quelqu'un se libère.");
+    this.uiVersion++;
+    return n>0;
+  }
+  // − : un ouvrier de moins (le moins compétent repart comme journalier)
   unassign(bid       ){
     const b = this.buildings.find(x=>x.id===bid); if(!b) return;
-    const fid = b.families.pop(); if(fid===undefined) return;
-    const f = this.families.find(f=>f.id===fid); if(!f) return;
-    f.work = -1; this.resetWorker(f);
+    const ws = this.workersOf(b);
+    b.want = Math.max(0, Math.min(Number(b.want)||0, ws.length) - 1);
+    if(ws.length>b.want && ws.length){
+      const sk = this.jobSkill(b) || "build";
+      ws.sort((a, c)=>this.jobScore(a, sk) - this.jobScore(c, sk) || c.id - a.id);
+      const v = ws[0]; v.work = -1; this.resetWorker(v);
+    }
     this.uiVersion++;
+  }
+  // affectation à la main depuis la fiche d'un villageois (bid < 0 : redevient journalier)
+  assignVillager(vid, bid){
+    const v = this.villager(vid); if(!v) return "Villageois introuvable";
+    if(bid>0){
+      const b = this.buildings.find(x=>x.id===bid); if(!b) return "Bâtiment introuvable";
+      const d = BUILD_DEFS[b.def];
+      if(!d || d.fam<=0) return "Ce bâtiment n'emploie personne";
+      if(!this.canWork(v)) return this.stageOf(v)==="elder" ? "Trop âgé pour travailler" : (v.sick>0 || v.health<25 ? "Trop faible pour travailler" : "Trop jeune pour travailler");
+      if(v.work===bid && !v.appr) return null;
+      if(this.workersOf(b).length>=d.fam) return "Plus de place : "+d.name+" est complet";
+      this.leaveJob(v);
+      v.work = bid; v.appr = false; this.resetWorker(v);
+      b.want = Math.max(Number(b.want)||0, this.workersOf(b).length);
+      this.toast(this.fullName(v)+" travaille désormais : "+d.name+".");
+    } else {
+      if(v.work<0) return null;
+      this.leaveJob(v);
+      this.toast(this.fullName(v)+(v.appr ? " quitte son apprentissage." : " redevient journalier."));
+      v.appr = false;
+    }
+    this.uiVersion++;
+    return null;
+  }
+  // quitte son poste ; le bâtiment ne cherche pas à le remplacer (choix du joueur)
+  leaveJob(v){
+    const b = v.work>0 ? this.buildings.find(x=>x.id===v.work) : null;
+    if(b && !v.appr) b.want = Math.max(0, Math.min(Number(b.want)||0, this.workersOf(b).length) - 1);
+    v.work = -1; this.resetWorker(v);
+  }
+  // apprentissage : un adolescent (12-15 ans) par atelier, formé par le meilleur ouvrier du lieu
+  canApprentice(v){ const a=this.ageOf(v); return a>=AGE_TEEN && a<AGE_ADULT && !(v.sick>0); }
+  takeApprentice(bid, vid){
+    const b = this.buildings.find(x=>x.id===bid); if(!b) return "Bâtiment introuvable";
+    if(!this.jobSkill(b)) return "Pas d'apprentissage ici";
+    if(this.apprenticeOf(b)) return "Il y a déjà un apprenti";
+    let v = vid ? this.villager(vid) : null;
+    if(vid && !v) return "Villageois introuvable";
+    if(v && !this.canApprentice(v)) return "Seul un adolescent de 12 à 15 ans peut être apprenti";
+    if(!v){
+      const sk = this.jobSkill(b);
+      const c = this.villagers.filter(o=>this.canApprentice(o) && (o.work<0 || !o.appr));
+      if(!c.length) return "Aucun adolescent disponible";
+      c.sort((a, d)=>(d.skills[sk]||0)-(a.skills[sk]||0) || this.ageOf(d)-this.ageOf(a));
+      v = c[0];
+    }
+    v.work = b.id; v.appr = true; this.resetWorker(v);
+    const m = this.masterOf(b), sk = this.jobSkill(b);
+    this.toast(this.fullName(v)+" entre en apprentissage : "+BUILD_DEFS[b.def].name
+      +(m && (m.skills[sk]||0)>=40 ? ", auprès de "+this.fullName(m)+"." : " (sans maître confirmé : "+(v.sex==="f"?"elle":"il")+" apprendra lentement)."));
+    this.uiVersion++;
+    return null;
+  }
+  dropApprentice(bid){
+    const b = this.buildings.find(x=>x.id===bid); if(!b) return;
+    const a = this.apprenticeOf(b); if(!a) return;
+    a.work = -1; a.appr = false; this.resetWorker(a);
+    this.uiVersion++;
+  }
+  // le maître d'un atelier : son ouvrier le plus compétent
+  masterOf(b){
+    const sk = this.jobSkill(b); if(!sk) return null;
+    let best = null;
+    for(const v of this.workersOf(b)) if(!best || (v.skills[sk]||0)>(best.skills[sk]||0)) best = v;
+    return best;
   }
   resetWorker(f       ){ f.task=null; f.path=null; f.state="idle"; f.carry=null; f.timer=0; f.cool=0; }
 
@@ -896,7 +1157,7 @@ class GameState {
       if(!spot){ f.cool=30; return false; }
       gx=spot.x; gy=spot.y;
     }
-    if(sx===gx && sy===gy){ f.state="work"; f.timer=WORK_TIME[task.type]||15; f.task=task; return true; }
+    if(sx===gx && sy===gy){ f.state="work"; f.timer=this.workTime(f, task.type); f.task=task; return true; }
     const p=this.astar(sx,sy,gx,gy);
     if(!p){ f.cool=40; return false; }
     f.path=p; f.state="walk"; f.task=task;
@@ -906,7 +1167,7 @@ class GameState {
     const spot=this.spotFor(b, f.x, f.y);
     if(!spot){ f.cool=30; return false; }
     const sx=Math.floor(f.x), sy=Math.floor(f.y);
-    if(sx===spot.x && sy===spot.y){ f.state="work"; f.timer=WORK_TIME[task.type]||15; f.task=task; return true; }
+    if(sx===spot.x && sy===spot.y){ f.state="work"; f.timer=this.workTime(f, task.type); f.task=task; return true; }
     const p=this.astar(sx,sy,spot.x,spot.y);
     if(!p){ f.cool=40; return false; }
     f.path=p; f.state="walk"; f.task=task;
@@ -958,32 +1219,47 @@ class GameState {
   }
   fields(){ return this.buildings.filter(b=>b.done && b.def==="field" && b.f); }
 
+  // durée d'une tâche selon le savoir-faire de celui qui l'exécute
+  workTime(f, type){
+    const base = WORK_TIME[type]||15;
+    const b = f.work>0 ? this.buildings.find(x=>x.id===f.work) : null;
+    return Math.max(4, Math.round(base / this.skillMul(f, this.jobSkill(b) || "build")));
+  }
+  // enfants, anciens, malades, ou adultes sans rien à faire : ils restent autour de la maison
+  idleNearHome(f){
+    if(this.stageOf(f)==="baby"){ f.cool = 200; return; }   // un nourrisson reste à la maison
+    const kid = !this.isAdult(f);
+    if(this.rnd() < (kid ? 0.5 : 0.3)){
+      const home = this.homeOf(f);
+      const hx = home?home.x:W/2, hy = home?home.y:H/2;
+      const R = kid ? 3 : 5;
+      const tx=Math.max(0,Math.min(W-1,Math.floor(hx+this.rnd()*R-(R>>1))));
+      const ty=Math.max(0,Math.min(H-1,Math.floor(hy+1+this.rnd()*R-(R>>1))));
+      if(this.passable(tx,ty)){
+        const p=this.astar(Math.floor(f.x),Math.floor(f.y),tx,ty);
+        if(p && p.length<=12){ f.path=p; f.state="wander"; return; }
+      }
+    }
+    f.cool = 20 + Math.floor(this.rnd()*20);
+  }
   assignTask(f       ){
     if(f.cool>0){ f.cool--; return; }
+    // seuls les adultes valides (et les apprentis) travaillent
+    if(!(this.canWork(f) || (f.appr && this.canApprentice(f)))){ this.idleNearHome(f); return; }
     const b = f.work>0 ? this.buildings.find(x=>x.id===f.work && x.done) : undefined;
     const site = f.work>0 ? this.buildings.find(x=>x.id===f.work && !x.done) : undefined;
 
-    // chantier : les familles affectées à un bâtiment non terminé participent au chantier
+    // chantier : les ouvriers affectés à un bâtiment non terminé participent au chantier
     if(site){ this.taskBuild(f, site); return; }
     if(!b){
-      // journaliers : construisent le chantier le plus proche, sinon flânent
-      const sites = this.buildings.filter(s=>!s.done);
+      // journaliers : construisent le chantier le plus proche, sinon flânent (pas les apprentis)
+      const sites = f.appr ? [] : this.buildings.filter(s=>!s.done);
       if(sites.length>0){
         let nearest=sites[0], nd=Infinity;
         for(const s of sites){ const d=Math.hypot(s.x-f.x,s.y-f.y); if(d<nd){nd=d;nearest=s;} }
         this.taskBuild(f, nearest); return;
       }
-      if(this.rnd()<0.3){ // flâner près de chez soi
-        const home = f.home>0 ? this.buildings.find(x=>x.id===f.home) : null;
-        const hx = home?home.x:W/2, hy = home?home.y:H/2;
-        const tx=Math.max(0,Math.min(W-1,Math.floor(hx+this.rnd()*5-2)));
-        const ty=Math.max(0,Math.min(H-1,Math.floor(hy+this.rnd()*5-2)));
-        if(this.passable(tx,ty)){
-          const p=this.astar(Math.floor(f.x),Math.floor(f.y),tx,ty);
-          if(p){ f.path=p; f.state="wander"; return; }
-        }
-        f.cool=20;
-      }
+      this.idleNearHome(f);
       return;
     }
     const m=this.time.month;
@@ -1056,28 +1332,29 @@ class GameState {
     this.sendToBuilding(f, site, {type:"build", bid:site.id});
   }
 
-  stepFamily(f       ){
+  stepVillager(f       ){
+    const st = this.stageOf(f), sp = (st==="child" || st==="baby" || st==="elder") ? 0.8 : 1;
     switch(f.state){
       case "settle":
-        if(this.moveAlong(f, f.path, 0.25) || !f.path){ f.state="idle"; f.cool=0; f.path=null; }
+        if(this.moveAlong(f, f.path, 0.25*sp) || !f.path){ f.state="idle"; f.cool=0; f.path=null; }
         break;
       case "wander":
-        if(this.moveAlong(f, f.path, 0.18)){ f.state="idle"; f.cool=25; f.path=null; }
+        if(this.moveAlong(f, f.path, 0.18*sp)){ f.state="idle"; f.cool=25; f.path=null; }
         break;
       case "walk":
-        if(this.moveAlong(f, f.path, 0.25)){
+        if(this.moveAlong(f, f.path, 0.25*sp)){
           f.path=null;
           const t=f.task;
           if(!t){ f.state="idle"; break; }
           if(t.type==="build"||t.type==="plow"||t.type==="harvest"||t.type==="mill"||t.type==="stall"){ f.state="work"; f.timer=0; }
-          else { f.state="work"; f.timer=WORK_TIME[t.type]||15; }
+          else { f.state="work"; f.timer=this.workTime(f, t.type); }
         }
         break;
       case "work":
         this.doWork(f);
         break;
       case "return":
-        if(this.moveAlong(f, f.path, 0.25)){
+        if(this.moveAlong(f, f.path, 0.25*sp)){
           f.path=null;
           this.deposit(f);
           f.state="idle"; f.cool=2;
@@ -1093,6 +1370,10 @@ class GameState {
   doWork(f       ){
     const t=f.task; if(!t){ f.state="idle"; return; }
     const b = f.work>0 ? this.buildings.find(x=>x.id===f.work) : null;
+    // chaque moment passé à l'ouvrage fait progresser le savoir-faire correspondant (bilan mensuel)
+    const sk = t.type==="build" ? "build" : (t.type==="plow" || t.type==="harvest") ? "farm" : t.type==="mill" ? "craft"
+             : (t.type==="stall" || t.type==="trade") ? "trade" : (this.jobSkill(b) || "build");
+    this.noteWork(f, sk);
     switch(t.type){
       case "chop":{
         if(f.timer>0){ f.timer--; if(f.timer===0) this.finishWork(f); }
@@ -1105,7 +1386,7 @@ class GameState {
       case "build":{
         const site = t.bid!==undefined ? this.buildings.find(x=>x.id===t.bid) : null;
         if(!site || site.done){ f.task=null; f.state="idle"; f.cool=5; break; }
-        site.progress += 0.0045 * (BUILD_DEFS[site.def].buildRate || 1);
+        site.progress += 0.0045 * (BUILD_DEFS[site.def].buildRate || 1) * this.skillMul(f, "build");
         if(site.progress>=1){
           site.done=true; site.progress=1;
           this.toast(BUILD_DEFS[site.def].name+" est achevé(e) !","good");
@@ -1119,7 +1400,7 @@ class GameState {
         const fd = t.bid!==undefined ? this.buildings.find(x=>x.id===t.bid) : null;
         if(!fd || !fd.f){ f.task=null; f.state="idle"; break; }
         if(this.time.month>3){ f.task=null; f.state="idle"; f.cool=10; break; }
-        fd.f.plow = Math.min(1, fd.f.plow + 0.005);
+        fd.f.plow = Math.min(1, fd.f.plow + 0.005*this.skillMul(f, "farm"));
         if(fd.f.plow>=1 && !fd.f.sown && this.time.month<=3){
           fd.f.sown=true; fd.f.usedThisYear=true;
           this.toast("Les semailles sont faites !","good");
@@ -1130,7 +1411,7 @@ class GameState {
       case "harvest":{
         const fd = t.bid!==undefined ? this.buildings.find(x=>x.id===t.bid) : null;
         if(!fd || !fd.f || !fd.f.sown || (this.time.month!==8 && this.time.month!==9)){ f.task=null; f.state="idle"; f.cool=10; break; }
-        fd.f.harvestP = Math.min(1, fd.f.harvestP + 0.008);
+        fd.f.harvestP = Math.min(1, fd.f.harvestP + 0.008*this.skillMul(f, "farm"));
         if(fd.f.harvestP>=1){
           const cd = CROP_DEFS[fd.f.crop] || CROP_DEFS.wheat;
           const yieldQty = Math.round(fd.w*fd.h*4*fd.f.fert*fd.f.growth);
@@ -1144,7 +1425,7 @@ class GameState {
       }
       case "mill":{
         f.timer++;
-        if(f.timer>=12){
+        if(f.timer>=Math.round(12/this.skillMul(f, "craft"))){
           f.timer=0;
           if(this.stock.grain>0 && this.stock.bread<this.capFor("bread")){
             this.stock.grain--; this.stock.bread++;
@@ -1213,6 +1494,255 @@ class GameState {
       this.stock[k]+=Math.min(room, f.carry[k]);
     }
     f.carry=null;
+  }
+
+  /* ---------- étape 4 : la vie des villageois, mois après mois ---------- */
+  related(a, b){
+    const par = (x, y)=>x.mother===y.id || x.father===y.id;
+    if(par(a, b) || par(b, a)) return true;
+    if((a.mother>=0 && a.mother===b.mother) || (a.father>=0 && a.father===b.father)) return true;
+    return false;
+  }
+  // une maison libre, sauf si des familles attendent encore au campement ou sont sans logis
+  freeHouseFor(){
+    const camp = this.buildings.find(b=>b.def==="camp");
+    if(this.families.some(f=>f.home<0 || (camp && f.home===camp.id))) return null;
+    return this.buildings.find(bd=>bd.done && bd.def==="burgage" && !this.families.some(f=>f.home===bd.id)) || null;
+  }
+  // un couple (et ses enfants encore à charge) fonde son propre foyer dans la maison donnée
+  moveOut(h, w, house){
+    const fh = this.famOf(h), fw = this.famOf(w);
+    const nf = this.makeFamily(this.surnameOf(fh));
+    nf.home = house.id; nf.founder = !!((fh && fh.founder) || (fw && fw.founder));
+    const kids = this.villagers.filter(c=>(c.mother===w.id || c.father===h.id || c.mother===h.id || c.father===w.id)
+      && c.spouse<0 && this.ageOf(c)<AGE_ADULT && (c.fam===h.fam || c.fam===w.fam));
+    if(fw && fw!==fh && !w.maiden) w.maiden = this.surnameOf(fw);
+    for(const v of [h, w].concat(kids)) v.fam = nf.id;
+    this.cleanFamilies();
+    return nf;
+  }
+  wed(h, w){
+    this.marry(h, w);
+    const fh = this.famOf(h), fw = this.famOf(w);
+    const wName = w.first+" "+(w.maiden || this.surnameOf(fw));
+    for(const v of [h, w]){ v.joy = 3; v.joyFor = "Mariage avec "+(v===h ? w : h).first; }
+    const house = this.freeHouseFor();
+    let where;
+    if(house){ this.moveOut(h, w, house); where = " Ils s'installent dans leur propre maison."; }
+    else {
+      // faute de maison libre, l'épouse rejoint la famille de son mari
+      if(fw && fw!==fh){ w.maiden = w.maiden || this.surnameOf(fw); w.fam = h.fam; }
+      where = " Faute de maison libre, ils vivent chez les "+this.surnameOf(fh)+".";
+      this.cleanFamilies();
+    }
+    this.toast("Mariage de "+h.first+" "+this.surnameOf(fh)+" et "+wName+"."+where, "good");
+  }
+  // les jeunes couples logés chez leurs parents prennent une maison dès qu'il y en a une
+  rehouseCouples(){
+    for(const f of this.families.slice()){
+      const mem = this.membersOf(f.id);
+      const couples = [];
+      for(const v of mem) if(v.sex==="m" && v.spouse>=0){ const w = mem.find(o=>o.id===v.spouse); if(w) couples.push([v, w]); }
+      if(couples.length<2) continue;
+      couples.sort((a, b)=>this.ageOf(b[0]) - this.ageOf(a[0]));   // le couple le plus âgé garde la maison
+      for(const c of couples.slice(1)){
+        const house = this.freeHouseFor(); if(!house) return;
+        this.moveOut(c[0], c[1], house);
+        this.toast(c[0].first+" et "+c[1].first+" quittent la maison familiale pour la leur.", "good");
+      }
+    }
+  }
+  // un foyer sans plus personne disparaît (sa maison se libère)
+  cleanFamilies(){
+    const n = this.families.length;
+    this.families = this.families.filter(f=>this.villagers.some(v=>v.fam===f.id));
+    if(this.families.length!==n) this.uiVersion++;
+  }
+  die(v, cause, silent){
+    if(this.villagers.indexOf(v)<0) return;
+    const f = this.famOf(v), age = this.ageOf(v), name = this.fullName(v);
+    // un savoir-faire de haut niveau que personne d'autre n'a appris disparaît avec lui
+    const lost = [];
+    for(const sk of SKILL_ORDER){
+      if((v.skills[sk]||0) < 60) continue;
+      if(!this.villagers.some(o=>o!==v && (o.skills[sk]||0)>=40)) lost.push(SKILL_DEFS[sk].name.toLowerCase());
+    }
+    for(const o of this.villagers){
+      if(o===v) continue;
+      if(o.id===v.spouse || o.fam===v.fam || o.id===v.mother || o.id===v.father || o.mother===v.id || o.father===v.id){ o.grief = 6; o.griefFor = v.first; }
+    }
+    this.dropVillager(v);
+    if(!silent) this.toast("Décès de "+name+", "+age+" an"+(age>1?"s":"")+", "+cause+".", cause==="de vieillesse" ? "info" : "bad");
+    if(lost.length) this.toast("Le savoir-faire ("+lost.join(", ")+") disparaît avec "+name+" : personne ne l'avait appris.", "bad");
+    // orphelins : recueillis par une autre famille s'il ne reste aucun adulte au foyer
+    if(f){
+      const mem = this.membersOf(f.id);
+      if(mem.length && !mem.some(o=>this.isAdult(o))){
+        const hosts = this.families.filter(o=>o!==f && this.membersOf(o.id).some(x=>this.isAdult(x)));
+        hosts.sort((a, b)=>this.membersOf(a.id).length - this.membersOf(b.id).length);
+        if(hosts.length){
+          for(const c of mem){ c.maiden = c.maiden || this.surnameOf(f); c.fam = hosts[0].id; }
+          this.toast("Les enfants "+this.surnameOf(f)+" sont recueillis par la famille "+this.surnameOf(hosts[0])+".", "info");
+        }
+      }
+    }
+    this.cleanFamilies();
+    this.uiVersion++;
+  }
+  demography(winter, fuelRatio){
+    const r = this.rnd, now = this.monthIdx();
+    for(const v of this.villagers){ if(v.grief>0) v.grief--; if(v.joy>0) v.joy--; }
+    // 1) anniversaires : 12 ans (apprentissage possible), 16 ans (âge de travailler), 65 ans (retraite)
+    for(const v of this.villagers.slice()){
+      if(now<=v.bornAt || (now - v.bornAt) % 12 !== 0) continue;
+      const age = this.ageOf(v), name = this.fullName(v);
+      if(age===AGE_TEEN && v.work<0) this.toast(name+" a 12 ans : "+(v.sex==="f"?"elle":"il")+" peut entrer en apprentissage.");
+      if(age===AGE_ADULT){
+        const b = v.appr ? this.buildings.find(x=>x.id===v.work) : null;
+        if(b){
+          const d = BUILD_DEFS[b.def], sk = this.jobSkill(b), n = this.workersOf(b).length;
+          v.appr = false;
+          if(n<d.fam){
+            b.want = Math.max(Number(b.want)||0, n+1);
+            this.toast(name+" a fini son apprentissage : "+this.jobTitle(v).toLowerCase()+" ("+skillLevel(v.skills[sk]).toLowerCase()+").", "good");
+          } else {
+            v.work = -1; this.resetWorker(v);
+            this.toast(name+" a fini son apprentissage ("+skillLevel(v.skills[sk]).toLowerCase()+"), mais l'atelier est complet : "+(v.sex==="f"?"journalière":"journalier")+".", "good");
+          }
+        } else this.toast(name+" a 16 ans : "+(v.sex==="f"?"elle":"il")+" est en âge de travailler.");
+      }
+      if(age===AGE_RETIRE && v.work>0 && !v.appr){
+        v.work = -1; this.resetWorker(v);   // le poste reste voulu : un autre adulte le reprendra
+        this.toast(name+" prend sa retraite à 65 ans.");
+      }
+    }
+    // 2) santé : faim, froid, maladie ; on se remet quand tout va bien
+    for(const v of this.villagers){
+      const st = this.stageOf(v), age = this.ageOf(v), f = this.famOf(v);
+      const fed = f ? (f.fed===undefined ? 1 : f.fed) : 1;
+      const frag = (st==="baby" || st==="elder") ? 1.4 : 1;
+      let dh = 0;
+      v.cause = null;
+      if(fed<0.5){ dh -= 15*frag; v.cause = "de faim"; } else if(fed<0.999) dh -= 5*frag;
+      if(winter && fuelRatio<1){ dh -= (fuelRatio<0.5 ? 10 : 4)*frag; if(!v.cause) v.cause = "de froid"; }
+      if(!f || f.home<0) dh -= 3;
+      if(v.sick>0){ dh -= 12*frag; v.sick--; if(!v.cause) v.cause = "de maladie"; }
+      else {
+        const p = 0.006 + (winter ? 0.008 : 0) + (fed<0.999 ? 0.01 : 0) + (winter && fuelRatio<1 ? 0.01 : 0) + (st==="elder" ? 0.006 : 0);
+        if(r()<p){ v.sick = 1 + Math.floor(r()*3); dh -= 8; if(!v.cause) v.cause = "de maladie"; }
+      }
+      if(dh===0) dh = 6;
+      const cap = age>=60 ? Math.max(40, 100-(age-60)*2) : 100;
+      v.health = Math.round(Math.max(0, Math.min(cap, v.health + dh)));
+    }
+    // 3) décès
+    for(const v of this.villagers.slice()){
+      const age = this.ageOf(v);
+      let cause = null;
+      if(v.health<=0) cause = v.cause || "de maladie";
+      else if(age>=AGE_ELDER && r() < 0.002*Math.pow(1.12, age-AGE_ELDER)*(v.health<50 ? 2 : 1)) cause = "de vieillesse";
+      if(cause) this.die(v, cause);
+    }
+    // 4) naissances : un couple logé dans une maison, bien nourri, dans un village pas trop malheureux
+    for(const f of this.families){
+      const home = f.home>0 ? this.buildings.find(b=>b.id===f.home) : null;
+      if(!home || home.def!=="burgage" || !home.done) continue;
+      if((f.fed===undefined ? 1 : f.fed) < 0.999 || this.approval < 25) continue;
+      const mem = this.membersOf(f.id);
+      if(mem.filter(v=>this.ageOf(v)<AGE_TEEN).length>=3) continue;
+      for(const w of mem){
+        if(w.sex!=="f" || w.spouse<0 || w.sick>0 || w.health<50) continue;
+        const h = mem.find(o=>o.id===w.spouse); if(!h) continue;
+        const a = this.ageOf(w); if(a<17 || a>42) continue;
+        if(this.villagers.some(c=>c.mother===w.id && now - c.bornAt < 15)) continue;
+        if(r() < 1/36){
+          const sex = r()<0.5 ? "m" : "f";
+          const baby = this.makePerson(f, sex, 0, { mother:w.id, father:h.id, x:w.x, y:w.y });
+          baby.bornAt = now;
+          for(const o of mem){ o.joy = 3; o.joyFor = "Naissance de "+baby.first; }
+          this.toast("Naissance de "+baby.first+" "+this.surnameOf(f)+", "+(sex==="f" ? "fille" : "fils")+" de "+w.first+" et "+h.first+".", "good");
+          break;
+        }
+      }
+    }
+    // 5) mariages : deux célibataires d'âge voisin, sans lien de parenté
+    if(r()<0.3){
+      const singles = this.villagers.filter(v=>v.spouse<0 && !(v.sick>0) && this.ageOf(v)>=17 && this.ageOf(v)<=50);
+      let best = null, bd = Infinity;
+      for(const h of singles) if(h.sex==="m") for(const w of singles) if(w.sex==="f"){
+        if(this.related(h, w)) continue;
+        const d = Math.abs(this.ageOf(h) - this.ageOf(w) - 2);
+        if(d>12) continue;
+        const sc = d + r()*4;
+        if(sc<bd){ bd = sc; best = [h, w]; }
+      }
+      if(best) this.wed(best[0], best[1]);
+    }
+    // 6) savoir-faire : on progresse en travaillant ; l'apprenti progresse vite auprès d'un bon maître
+    const up = (v, sk, g)=>{ const s0 = v.skills[sk]||0; v.skills[sk] = Math.round(Math.min(100, s0 + g*(1 - s0/105))*10)/10; };
+    for(const v of this.villagers){
+      const wt = v.wt || {};
+      const total = Object.keys(wt).reduce((s, k)=>s+(wt[k]||0), 0);
+      if(v.appr && v.work>0){
+        const b = this.buildings.find(x=>x.id===v.work), sk = this.jobSkill(b);
+        if(sk){
+          const mst = this.masterOf(b), ms = mst ? (mst.skills[sk]||0) : 0;
+          up(v, sk, Math.min(1, total/60) * (1.5 + (ms>=40 ? 6*ms/100 : 0)));
+        }
+      } else {
+        for(const sk of Object.keys(wt)) if(SKILL_DEFS[sk]) up(v, sk, Math.min(1, wt[sk]/60) * 4);
+      }
+      v.wt = {};
+      // les enfants apprennent un peu le métier de leurs parents en les regardant faire
+      const age = this.ageOf(v);
+      if(age>=6 && age<AGE_ADULT){
+        for(const pid of [v.mother, v.father]){
+          const p = pid>=0 ? this.villager(pid) : null;
+          if(!p || p.work<=0 || p.appr) continue;
+          const sk = this.jobSkill(this.buildings.find(x=>x.id===p.work)); if(!sk) continue;
+          const target = 0.4*(p.skills[sk]||0), cur = v.skills[sk]||0;
+          if(cur<target) v.skills[sk] = Math.round((cur + 0.03*(target - cur))*10)/10;
+        }
+      }
+    }
+  }
+  // ce qui rend un villageois plus ou moins heureux que l'ambiance du village
+  personalMood(v, campB){
+    const why = [];
+    const f = this.famOf(v);
+    const fed = f ? (f.fed===undefined ? 1 : f.fed) : 1;
+    if(fed<0.5) why.push(["A faim", -15]); else if(fed<0.999) why.push(["Mange trop peu", -6]);
+    if(v.sick>0) why.push(["Malade", -10]); else if(v.health<40) why.push(["Santé fragile", -5]);
+    if(v.grief>0) why.push(["En deuil"+(v.griefFor ? " de "+v.griefFor : ""), -12]);
+    if(v.joy>0) why.push([v.joyFor || "Heureux événement", 8]);
+    if(!f || f.home<0) why.push(["Sans logis", -10]);
+    else if(campB && f.home===campB.id) why.push(["Vit au campement", -4]);
+    if(v.work>0 && !v.appr && this.canWork(v)){
+      const b = this.buildings.find(x=>x.id===v.work), sk = this.jobSkill(b);
+      if(sk){
+        const best = this.bestSkill(v), bs = v.skills[best]||0, js = v.skills[sk]||0;
+        if(js>=30 && js>=bs-5) why.push(["Aime son métier", 4]);
+        else if(bs>=40 && js<bs-25) why.push(["Voudrait travailler : "+SKILL_DEFS[best].name.toLowerCase(), -5]);
+      }
+      if(this.stageOf(v)==="elder") why.push(["Fatigué par l'âge", -3]);
+    }
+    if(v.appr) why.push(["Apprend un métier", 3]);
+    return { total: why.reduce((s, w)=>s+w[1], 0), why };
+  }
+  // ce que fait un villageois, en quelques mots (pour l'interface)
+  villagerStatus(v){
+    const st = this.stageOf(v), fem = v.sex==="f";
+    const b = v.work>0 ? this.buildings.find(x=>x.id===v.work) : null;
+    let s;
+    if(v.appr && b) s = "Apprenti"+(fem?"e":"")+" · "+BUILD_DEFS[b.def].name;
+    else if(st==="baby") s = "Nourrisson";
+    else if(st==="child") s = "Enfant";
+    else if(st==="teen") s = "Adolescent"+(fem?"e":"")+(v.work<0 ? " · peut être apprenti"+(fem?"e":"") : "");
+    else if(st==="elder" && this.ageOf(v)>=AGE_RETIRE) s = "Retraité"+(fem?"e":"");
+    else if(b) s = (this.jobTitle(v) || BUILD_DEFS[b.def].name)+(b.done ? "" : " (chantier)");
+    else s = fem ? "Journalière" : "Journalier";
+    if(v.sick>0) s += " · malade";
+    return s;
   }
 
   /* ---------- camps de brigands & milice ---------- */
@@ -1316,7 +1846,7 @@ class GameState {
         }
       }
     }
-    for(const f of this.families) this.stepFamily(f);
+    for(const v of this.villagers) this.stepVillager(v);
     // cerfs
     if(t.tick%6===0){
       for(const d of this.deer){
@@ -1340,7 +1870,7 @@ class GameState {
       // libère les cerfs dont le chasseur a disparu
       if(t.tick%200===0){
         const hunting=new Set        ();
-        for(const f of this.families) if(f.task && f.task.type==="hunt" && f.task.deer!==undefined && f.state!=="idle") hunting.add(f.task.deer);
+        for(const f of this.villagers) if(f.task && f.task.type==="hunt" && f.task.deer!==undefined && f.state!=="idle") hunting.add(f.task.deer);
         for(const d of this.deer) if(d.frozen && !hunting.has(d.id)) d.frozen=false;
       }
     }
@@ -1412,25 +1942,30 @@ class GameState {
       if(y<H-1&&this.tiles[i+W]===T_FOREST)nf++;
       if(nf>=2){ this.tiles[i]=T_FOREST; this.treeWood[i]=3; planted++; }
     }
-    // ----- consommation des foyers (1 nourriture + bois de chauffe par mois) -----
+    // ----- consommation des foyers : chacun mange selon son âge ; bois de chauffe par maison -----
     const market=this.marketActive();
     const available=FOOD_TYPES.filter(k=>this.stock[k]>0.5);
     const accessible=market?available:available.slice(0,1);
     const varietyVillage=accessible.length; // variété offerte par le marché
     let starved=0;
     for(const f of this.families){
-      let need=1, ate=0, turn=0;
-      while(need>0 && accessible.length>0){
+      const mem = this.membersOf(f.id);
+      let need = mem.reduce((s,v)=>s+FOOD_NEED[this.stageOf(v)], 0);
+      const want = need;
+      let ate=0, turn=0;
+      while(need>0.001 && accessible.length>0){
         accessible.sort((a,b)=>this.stock[b]-this.stock[a]);
         // on alterne les types pour la variété alimentaire (comme les étals d'un marché)
         const k = (turn%2===1 && accessible.length>1) ? accessible[1] : accessible[0];
         turn++;
-        if(this.stock[k]<1) break;
-        this.stock[k]-=1; ate++; need--;
-        if(this.stock[k]<1){ const ix=accessible.indexOf(k); if(ix>=0) accessible.splice(ix,1); }
+        const bite = Math.min(need, 0.5);
+        if(this.stock[k]<bite) break;
+        this.stock[k]-=bite; ate+=bite; need-=bite;
+        if(this.stock[k]<0.5){ const ix=accessible.indexOf(k); if(ix>=0) accessible.splice(ix,1); }
       }
-      f.lastAte=ate; f.lastVariety=varietyVillage;
-      if(ate===0){ f.starving++; starved++; } else f.starving=0;
+      f.lastAte=Math.round(ate*100)/100; f.lastVariety=varietyVillage;
+      f.fed = want>0 ? Math.min(1, ate/want) : 1;
+      if(want>0 && f.fed<0.5){ f.starving=(f.starving||0)+1; starved++; } else f.starving=0;
     }
     // bois de chauffe (neige = +1 par famille en plus)
     const fuelNeed=this.families.length*(winter?2:1)+(this.weather==="snow"?this.families.length:0);
@@ -1463,25 +1998,38 @@ class GameState {
     // influence passive : église + manoir
     if(this.hasChurch()) this.influence += 1 + this.churchBonus().influence;
     if(this.hasManor()) this.influence += 1;
-    // approbation
-    let a=50;
-    if(varietyVillage>=3) a+=12; else if(varietyVillage===2) a+=6; else if(varietyVillage===1) a-=2; else a-=8;
-    if(fuelRatio>=1) a+=4; else if(fuelRatio>=0.5) a-=5; else a-=15;
-    if(clothRatio>=1) a+=4; else if(clothRatio>=0.5) a-=3; else a-=8;
-    if(winter){ if(aleRatio>=1) a+=3; else if(aleRatio<0.5) a-=6; }
-    if(this.hasChurch()) a+=6 + this.churchBonus().approval;
-    if(this.buildings.some(b=>b.done&&b.def==="tower")) a+=4;
-    if(this.buildings.some(b=>b.done&&b.def==="market")) a+=4; else a-=4;
+    // ----- étape 4 : la vie des villageois (santé, naissances, mariages, décès, apprentissage) -----
+    this.demography(winter, fuelRatio);
+    // approbation : chaque cause est gardée pour être expliquée au joueur
+    const why = [["Base", 50]];
+    const add = (label, v)=>{ if(v) why.push([label, v]); };
+    add(varietyVillage>=3 ? "Nourriture variée ("+varietyVillage+" sortes)" : varietyVillage===2 ? "Deux sortes de nourriture" : varietyVillage===1 ? "Une seule sorte de nourriture" : "Plus rien à manger",
+        varietyVillage>=3 ? 12 : varietyVillage===2 ? 6 : varietyVillage===1 ? -2 : -8);
+    add(fuelRatio>=1 ? "Bois de chauffe suffisant" : "Manque de bois de chauffe", fuelRatio>=1 ? 4 : fuelRatio>=0.5 ? -5 : -15);
+    add(clothRatio>=1 ? "Vêtements pour tous" : "Manque de vêtements", clothRatio>=1 ? 4 : clothRatio>=0.5 ? -3 : -8);
+    if(winter) add(aleRatio>=1 ? "Ale pour l'hiver" : "Pas d'ale cet hiver", aleRatio>=1 ? 3 : aleRatio<0.5 ? -6 : 0);
+    if(this.hasChurch()) add("Église", 6 + this.churchBonus().approval);
+    if(this.buildings.some(b=>b.done&&b.def==="tower")) add("Tour de guet", 4);
+    add(this.buildings.some(b=>b.done&&b.def==="market") ? "Marché" : "Pas de marché", this.buildings.some(b=>b.done&&b.def==="market") ? 4 : -4);
     const homeless=this.families.filter(f=>f.home<0).length;
-    a-=Math.min(24, homeless*12);
+    add("Familles sans logis", -Math.min(24, homeless*12));
     const campB=this.buildings.find(b=>b.def==="camp");
-    if(campB) a-=Math.min(6, this.families.filter(f=>f.home===campB.id).length*2); // vie au campement (léger)
-    a-=(this.taxRate-0.1)*40;
-    if(this.policies.tithe) a-=4;
-    if(this.policies.freeMarket) a+=3;
-    if(this.policies.militiaService) a-=3;
-    if(starved>0) a-=8;
+    if(campB) add("Vie au campement", -Math.min(6, this.families.filter(f=>f.home===campB.id).length*2)); // (léger)
+    add("Impôt de "+Math.round(this.taxRate*100)+" %", -(this.taxRate-0.1)*40);
+    if(this.policies.tithe) add("Dîme", -4);
+    if(this.policies.freeMarket) add("Marchés libres", 3);
+    if(this.policies.militiaService) add("Service militaire", -3);
+    if(starved>0) add("Des familles ont faim", -8);
+    // humeur des habitants : deuils, maladies, joies, métier (effet modéré sur l'ensemble)
+    const pers = this.villagers.map(v=>this.personalMood(v, campB));
+    if(pers.length){
+      const avg = pers.reduce((s,p)=>s+p.total, 0)/pers.length;
+      add("Humeur des habitants", Math.max(-6, Math.min(3, Math.round(avg/2))));
+    }
+    let a = why.reduce((s,w)=>s+w[1], 0);
+    this.approvalWhy = why.map(w=>[w[0], Math.round(w[1])]);
     this.approval=Math.max(0,Math.min(100,Math.round(a)));
+    this.villagers.forEach((v, i)=>{ v.mood = Math.max(0, Math.min(100, Math.round(this.approval + pers[i].total))); v.why = pers[i].why; });
     if(this.approval<=5 && this.families.length>0){ this.lowApprovalStreak++; } else { this.lowApprovalStreak=0; }
     if(this.lowApprovalStreak>=6){ this.defeat=true; this.endReason="approbation à 0 (6 mois)"; this.toast("💀 La seigneurie sombre dans le chaos…","bad"); }
     if(this.approval>=50) this.objectives.happyStreak=(this.objectives.happyStreak||0)+1; else this.objectives.happyStreak=0;
@@ -1493,7 +2041,7 @@ class GameState {
       this.treasury+=levels*this.taxRate*(this.policies.freeMarket?0.9:1);
     }
     // ----- commerce régional : comptoir vend les surplus, prix fluctuants -----
-    const tradeActive = this.buildings.some(b=>b.done && b.def==="trade" && b.families.length>0);
+    const tradeActive = this.buildings.some(b=>b.done && b.def==="trade" && this.workersOf(b).length>0);
     if(tradeActive){
       let earned = 0;
       for(const k of Object.keys(this.prices)){
@@ -1507,6 +2055,10 @@ class GameState {
         // fluctuation des prix +-20%
         this.prices[k] = Math.max(1, Math.round(p * (0.8 + this.rnd()*0.4)));
       }
+      // un négociant habile vend mieux (de −10 % pour un novice à +10 % pour un maître)
+      let ts = 0;
+      for(const tb of this.buildings) if(tb.done && tb.def==="trade") for(const v of this.workersOf(tb)) ts = Math.max(ts, v.skills.trade||0);
+      earned = Math.round(earned * (0.9 + 0.2*ts/100));
       this.treasury += earned;
       this.wealth += earned * 0.6; // la richesse régionale reflète l'activité commerciale
       if(earned>0) this.toast("Comptoir : +"+earned+" deniers de ventes.","good");
@@ -1550,7 +2102,7 @@ class GameState {
       if(b.def!=="burgage"||!b.done) continue;
       const res=this.families.find(f=>f.home===b.id);
       if(!res) continue;
-      const ok=res.lastAte>=1 && fuelRatio>=1 && market && varietyVillage>=2 && clothRatio>=1;
+      const ok=(res.fed!==undefined ? res.fed>=0.999 : res.lastAte>=1) && fuelRatio>=1 && market && varietyVillage>=2 && clothRatio>=1;
       if(ok) b.monthsGood++; else b.monthsGood=0;
       if(b.lvl===1 && b.monthsGood>=3 && this.stock.timber>=2){ this.stock.timber-=2; b.lvl=2; this.toast("Un bourgage évolue : niveau 2 !","good"); }
       else if(b.lvl===2 && b.monthsGood>=3 && this.approval>=65 && this.hasChurch() && this.stock.timber>=2 && this.stock.stone>=2){
@@ -1558,28 +2110,32 @@ class GameState {
       }
     }
     this.rehouseCamp();
+    // les jeunes couples qui vivent chez leurs parents prennent les maisons libres avant les nouveaux venus
+    this.rehouseCouples();
     // migration (personne ne s'installe dans un village au bord de la famine)
     if(this.approval>=40){
       const free=this.freeBurgages();
       const foodTotal=FOOD_TYPES.reduce((s,k)=>s+this.stock[k],0);
       const n=(this.approval>=75)?2:1;
       for(let i=0;i<n && i<free;i++){
-        if(foodTotal < (this.families.length+i+1)*0.8) break;
+        if(foodTotal < (this.foodNeed()+i+1)*0.8) break;
         const fb=this.buildings.find(bd=>bd.done&&bd.def==="burgage"&&!this.families.some(f=>f.home===bd.id));
         if(!fb) break;
         const f=this.makeFamily();
         f.home=fb.id;
-        // point d'entrée praticable sur le bord ouest
+        // point d'entrée praticable sur le bord ouest : toute la famille arrive à pied
         let ey=Math.floor(H/2);
         for(let y2=0;y2<H;y2++){ const yy=(Math.floor(H/2)+y2)%H; if(this.passable(0,yy)){ ey=yy; break; } }
-        f.x=0.5; f.y=ey+0.5;
-        const spot=this.spotFor(fb, f.x, f.y);
-        if(spot){
-          const p=this.astar(0,ey,spot.x,spot.y);
-          if(p && p.length>0){ f.path=p; f.state="settle"; }
-          else { f.x=spot.x+0.5; f.y=spot.y+0.5; f.state="idle"; }
-        } else { f.x=fb.x+0.5; f.y=fb.y+0.5; f.state="idle"; }
-        this.toast(f.name+" s'installe dans la seigneurie !","good");
+        const mem = this.populateFamily(f, this.randomFamilyKind(), 0.5, ey+0.5);
+        const spot=this.spotFor(fb, 0.5, ey+0.5);
+        const p0 = spot ? this.astar(0,ey,spot.x,spot.y) : null;
+        mem.forEach((v, k)=>{
+          v.x = 0.5 - k*0.4; v.y = ey+0.5;
+          if(p0 && p0.length>0){ v.path = p0.map(q=>({ x:q.x, y:q.y })); v.state="settle"; }
+          else if(spot){ v.x=spot.x+0.5; v.y=spot.y+0.5; v.state="idle"; }
+          else { v.x=fb.x+0.5; v.y=fb.y+0.5; v.state="idle"; }
+        });
+        this.toast(f.name+" s'installe dans la seigneurie ("+mem.length+" personne"+(mem.length>1?"s":"")+") !","good");
       }
     }
     const leavers=this.families.filter(c=>!c.founder);
@@ -1587,11 +2143,11 @@ class GameState {
       // les nouveaux arrivants repartent en premier ; les survivants du départ restent toujours
       let f=leavers[0];
       for(const c of leavers) if(c.id>f.id && c.id<100000) f=c;
-      const fid=f.id;
-      this.families=this.families.filter(x=>x.id!==fid);
-      for(const o of this.buildings) o.families=o.families.filter(id=>id!==fid);
+      this.removeFamily(f.id);
       this.toast(f.name+" quitte la seigneurie, déçue…","bad");
     }
+    // postes voulus : on y place les adultes devenus libres
+    this.fillJobs();
     // objectifs
     this.objectives.wood=this.objectives.wood||this.buildings.some(b=>b.done&&b.def==="woodcutter");
     this.objectives.pop=this.objectives.pop||this.families.length>=8;
@@ -1640,15 +2196,7 @@ class GameState {
     if(this.time.year>=1178 && this.rnd()<0.02){
       const roll=this.rnd();
       if(roll<0.33){
-        // peste : quelques familles meurent ou partent
-        const n=Math.min(this.families.length-1, 1+Math.floor(this.rnd()*2));
-        for(let i=0;i<n;i++){
-          const f=this.families[this.families.length-1];
-          this.families.splice(this.families.indexOf(f),1);
-          for(const o of this.buildings) o.families=o.families.filter(id=>id!==f.id);
-        }
-        this.approval=Math.max(0,this.approval-10);
-        this.toast("☠️ Une peste frappe la seigneurie ! "+n+" famille(s) disparue(s).","bad");
+        this.plague();
       } else if(roll<0.66){
         // incendie : perte de bois et approbation
         this.stock.timber=Math.floor(this.stock.timber*0.6);
@@ -1663,6 +2211,19 @@ class GameState {
     // ----- IA du Baron rival -----
     this.baronStep();
     this.uiVersion++;
+  }
+
+  // peste : les plus fragiles (anciens, petits, malades) en meurent, d'autres tombent malades
+  plague(){
+    const n=Math.max(0, Math.min(this.villagers.length-1, 2+Math.floor(this.rnd()*3)));
+    const frail=(v)=>v.health - (this.stageOf(v)==="elder" ? 30 : this.stageOf(v)==="baby" ? 20 : 0) + this.rnd()*25;
+    const victims=this.villagers.slice().sort((a,b)=>frail(a)-frail(b)).slice(0, n);
+    for(const v of this.villagers) if(victims.indexOf(v)<0 && this.rnd()<0.25){ v.sick=Math.max(v.sick||0, 2); }
+    this.approval=Math.max(0,this.approval-10);
+    this.toast("☠️ Une peste frappe la seigneurie ! "+(victims.length ? victims.map(v=>this.fullName(v)).join(", ")+" en "+(victims.length>1?"meurent":"meurt")+"." : ""),"bad");
+    for(const v of victims) this.die(v, "de la peste", true);
+    this.cleanFamilies();
+    return victims.length;
   }
 
   baronStep(){
@@ -1705,7 +2266,8 @@ class GameState {
   workStatus(b         )       {
     const d=BUILD_DEFS[b.def];
     if(!b.done) return "En construction : "+BUILD_STAGES[buildStage(b)].name.toLowerCase()+" ("+Math.round(b.progress*100)+" %)";
-    if(d.fam>0 && b.families.length===0) return "Aucune famille affectée";
+    const nw = d.fam>0 ? this.workersOf(b).length : 0;
+    if(d.fam>0 && nw===0) return (Number(b.want)||0)>0 ? "En attente d'un adulte libre" : "Aucun ouvrier";
     switch(b.def){
       case "woodcutter": return this.findForestNear(b)<0 ? "Plus d'arbres à portée" : "Abattage en cours";
       case "forager": return !this.berrySeason() ? "Repos d'hiver" : (this.findBerryNear(b)<0 ? "Plus de baies à portée" : "Cueillette en cours");
@@ -1713,8 +2275,8 @@ class GameState {
       case "quarry": { const i=b.y*W+b.x; return this.stoneAmt[i]<=0 ? "Carrière épuisée" : "Extraction en cours"; }
       case "farm": return "Ferme ("+this.fields().length+" champ(s))";
       case "windmill": return this.stock.grain>0 ? "Mouture du grain" : "En attente de grain";
-      case "market": return b.families.length>0 ? "Étals tenus" : "Marché inactif";
-      case "trade": return b.families.length>0 ? "Comptoir actif (ventes auto)" : "Comptoir inactif";
+      case "market": return nw>0 ? "Étals tenus" : "Marché inactif";
+      case "trade": return nw>0 ? "Comptoir actif (ventes auto)" : "Comptoir inactif";
       default: return "";
     }
   }
@@ -1730,9 +2292,68 @@ class GameState {
   }
 
   /* ---------- sauvegarde ---------- */
+  // villageois d'une sauvegarde : vérifiés un par un ; une sauvegarde v3 ou plus ancienne (familles
+  // anonymes qui marchaient elles-mêmes) est convertie : chaque famille reçoit ses membres, et le
+  // premier adulte reprend la place, le métier et la tâche en cours de l'ancienne famille.
+  loadVillagers(data){
+    const num = (v)=>typeof v==="number" && isFinite(v);
+    const bIds = new Set(this.buildings.map(b=>b.id));
+    this.villagers = [];
+    if(Array.isArray(data.villagers)){
+      const fIds = new Set(this.families.map(f=>f.id));
+      for(const v of data.villagers){
+        if(!v || typeof v!=="object" || !num(v.id) || !fIds.has(v.fam)) continue;
+        const sk = {};
+        for(const k of SKILL_ORDER) sk[k] = Math.max(0, Math.min(100, num(v.skills && v.skills[k]) ? v.skills[k] : 0));
+        const o = Object.assign({}, v, {
+          first: typeof v.first==="string" ? v.first : "?", sex: v.sex==="f" ? "f" : "m",
+          bornAt: num(v.bornAt) ? Math.round(v.bornAt) : this.monthIdx() - 25*12, skills: sk,
+          health: num(v.health) ? Math.max(0, Math.min(100, v.health)) : 100, sick: num(v.sick) ? Math.max(0, v.sick) : 0,
+          spouse: num(v.spouse) ? v.spouse : -1, mother: num(v.mother) ? v.mother : -1, father: num(v.father) ? v.father : -1,
+          work: num(v.work) && bIds.has(v.work) ? v.work : -1, appr: !!v.appr,
+          grief: num(v.grief) ? v.grief : 0, joy: num(v.joy) ? v.joy : 0, mood: num(v.mood) ? v.mood : this.approval,
+          why: Array.isArray(v.why) ? v.why : [], wt: (v.wt && typeof v.wt==="object") ? v.wt : {},
+          x: num(v.x) ? Math.max(0, Math.min(W, v.x)) : W/2, y: num(v.y) ? Math.max(0, Math.min(H, v.y)) : H/2,
+          path: Array.isArray(v.path) ? v.path : null, timer: num(v.timer) ? v.timer : 0, cool: num(v.cool) ? v.cool : 0,
+          state: typeof v.state==="string" ? v.state : "idle",
+        });
+        if(o.work<0) o.appr = false;
+        this.villagers.push(o);
+      }
+      const vIds = new Set(this.villagers.map(v=>v.id));
+      for(const v of this.villagers) if(v.spouse>=0 && !vIds.has(v.spouse)) v.spouse = -1;
+    } else {
+      const first = new Map();
+      for(const f of this.families){
+        const kind = f.founder ? (this.rnd()<0.5 ? "family" : "household") : this.randomFamilyKind();
+        const fx = num(f.x) ? f.x : W/2, fy = num(f.y) ? f.y : H/2;
+        const mem = this.populateFamily(f, kind==="single" ? "household" : kind, fx, fy);
+        const lead = mem.find(v=>this.isAdult(v)) || mem[0];
+        if(lead){
+          first.set(f.id, lead);
+          for(const k of ["path","state","timer","task","carry","cool"]) if(f[k]!==undefined) lead[k] = f[k];
+          lead.x = fx; lead.y = fy;
+          lead.work = num(f.work) && bIds.has(f.work) ? f.work : -1;
+        }
+        for(const k of ["x","y","path","state","timer","task","carry","cool","work"]) delete f[k];
+        f.fed = num(f.lastAte) && f.lastAte>=1 ? 1 : 0.5;
+      }
+      // les postes : autant d'ouvriers voulus qu'il y avait de familles affectées
+      for(const b of this.buildings) if(Array.isArray(b.families)) b.want = b.families.filter(id=>first.has(id)).length;
+    }
+    for(const b of this.buildings){
+      delete b.families;
+      if(!num(b.want)) b.want = this.workersOf(b).length;
+      const d = BUILD_DEFS[b.def];
+      b.want = Math.max(0, Math.min(d ? d.fam : 0, b.want));
+    }
+    this.cleanFamilies();
+    this.nextV = Math.max(0, ...this.villagers.map(v=>v.id)) + 1;
+    if(Array.isArray(data.approvalWhy)) this.approvalWhy = data.approvalWhy.filter(w=>Array.isArray(w) && w.length===2 && typeof w[0]==="string" && num(w[1]));
+  }
   serialize(){
     return {
-      v:3, // v3 : parcelles de bourgage (b.plot, contour b.plot.poly), champ optionnel ignoré par les versions précédentes
+      v:4, // v4 : villageois individuels (villagers), foyers sans position ; v3 : parcelles de bourgage (b.plot)
       seed:this.seed,
       modeId:this.modeId,
       weather:this.weather,
@@ -1744,6 +2365,8 @@ class GameState {
       stoneAmt:Array.from(this.stoneAmt),
       buildings:this.buildings,
       families:this.families,
+      villagers:this.villagers,
+      approvalWhy:this.approvalWhy,
       deer:this.deer,
       stock:this.stock,
       time:this.time,
@@ -1794,7 +2417,8 @@ class GameState {
       }
       return b;
     });
-    g.families = Array.isArray(data.families) ? data.families : [];
+    g.families = Array.isArray(data.families) ? data.families.filter(f=>f && typeof f==="object" && num(f.id)) : [];
+    for(const f of g.families){ if(typeof f.name!=="string") f.name = "Famille ?"; if(!num(f.home)) f.home = -1; }
     g.deer = Array.isArray(data.deer) ? data.deer : [];
     if(data.stock && typeof data.stock==="object") g.stock = Object.assign(g.stock, data.stock);
     // une seule chose par arrière-cour : les agrandissements en trop des anciennes sauvegardes sont remboursés
@@ -1835,6 +2459,7 @@ class GameState {
     g.winterWarned = !!data.winterWarned;
     g.nextB = Math.max(0, ...g.buildings.map(b=>num(b.id)?b.id:0)) + 1;
     g.nextF = Math.max(0, ...g.families.map(f=>num(f.id)?f.id:0)) + 1;
+    g.loadVillagers(data);
     g.nextD = Math.max(0, ...g.deer.map(d=>num(d.id)?d.id:0)) + 1;
     // reconstruit l'occupation du sol à partir des bâtiments (bornes vérifiées)
     g.occupied = new Int32Array(W*H).fill(-1);
@@ -1851,6 +2476,6 @@ class GameState {
 }
 
 if(typeof module!=="undefined" && module.exports){
-  module.exports = { BUILD_STAGES, buildStage, DIRS4, PLOT_FRONT, polyArea, pointInPoly, GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
+  module.exports = { SKILL_DEFS, SKILL_ORDER, SKILL_LEVELS, skillLevel, FOOD_NEED, AGE_TEEN, AGE_ADULT, AGE_ELDER, AGE_RETIRE, STAGE_NAMES, JOB_TITLES, NAMES_M, NAMES_F, SURNAMES, BUILD_STAGES, buildStage, DIRS4, PLOT_FRONT, polyArea, pointInPoly, GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
     T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf, REGION_DEFS, REGION_COST, POLICY_DEFS, POLICY_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, MODE_BY_ID, DIFFICULTIES, DIFF_BY_ID };
 }
