@@ -18,6 +18,8 @@ function test(name, fn){
 function fresh(){ return new GameState(1176, "peace", "normal"); } // mode combat pour les tests baron/camps
 function placeInCenter(g, def){
   g.setFieldSize(3);
+  // étape 7c : les métiers d'artisan demandent des bourgeois ; les tests d'avant les supposent disponibles
+  if(["windmill","bakery","dairy","smokehouse","market","trade"].includes(def)) for(const f of g.families) if(f.ord==="serf") f.ord = "bourg";
   if(def==="quarry"){   // sur la grande carte, la pierre n'est pas forcément dans le carré du départ : le gisement à vous le plus proche
     const c = g.buildings.find(b=>b.def==="camp") || { x:W/2, y:H/2 };
     const st = []; for(let i=0;i<W*H;i++) if(g.tiles[i]===T_STONE && g.occupied[i]<0 && g.regionOwned(i%W, (i/W)|0)) st.push(i);
@@ -2852,6 +2854,101 @@ test("étape 7b : sauvegarde — conseil, réputation, souvenirs ; un siège mal
   const g4 = GameState.load(old);
   assert.ok(SEAT_ORDER.every(id=>g4.council[id].vid===-1));
   assert.deepStrictEqual(g4.rep, { gen:0, sev:0 });
+});
+
+/* ================= étape 7c : les ordres et le coutumier ================= */
+const { SKILLED, ENNOBLE_COST, LAW_DEFS, LAW_COST, LAW_COOLDOWN, MAINMORTE } = require("../js/sim.js");
+
+test("étape 7c : les serfs ne tiennent pas un métier d'artisan ; une maison de niveau 2 fait entrer la famille dans la bourgeoisie", () => {
+  const g = fresh(); houses(g, 3);
+  assert.ok(g.families.every(f=>f.ord==="serf"), "on commence serfs");
+  const bk = doneBuilding(g, "woodcutter"); for(const f of g.families) f.ord = "serf";
+  g.stock.timber = 20; g.stock.stone = 20;
+  const b = placeInCenter(g, "bakery"); b.done = true; for(const f of g.families) f.ord = "serf";
+  const v = g.freeAdults()[0];
+  assert.ok(/bourgeois/.test(g.assignVillager(v.id, b.id)), "refusé à un serf");
+  assert.strictEqual(g.assignVillager(v.id, bk.id), null, "un poste de base, oui");
+  g.assign(b.id);
+  assert.strictEqual(g.workersOf(b).length, 0, "aucun serf embauché");
+  const f = g.famOf(v), h = g.buildings.find(x=>x.id===f.home) || legacyHouse(g);
+  f.home = h.id; h.lvl = 1; h.monthsGood = 5; g.stock.timber = 50;
+  for(const k of Object.keys(g.stock)) if(k!=="ox") g.stock[k] = Math.max(g.stock[k], 40);
+  doneBuilding(g, "market"); for(const o of g.families) o.ord = "serf";
+  for(const o of g.families){ o.fed = 1; o.variety = 3; }
+  g.time.month = 5; g.onMonth(); g.pendingEvent = null;
+  if(h.lvl>=2) assert.strictEqual(f.ord, "bourg", "maison de niveau 2 : bourgeois");
+  f.ord = "bourg";
+  assert.strictEqual(g.assignVillager(v.id, b.id), null, "un bourgeois peut être boulanger");
+});
+
+test("étape 7c : la corvée n'appelle que les serfs ; les nobles ne travaillent pas et ne paient pas la taille", () => {
+  const g = fresh(); houses(g, 3); doneBuilding(g, "manor");
+  const v = g.freeAdults()[0];
+  g.famOf(v).ord = "bourg";
+  g.taxes.corvee = 3; g.time.day = 0;
+  g.stock.timber = 40; placeInCenter(g, "storehouse"); for(const f of g.families) f.ord = f===g.famOf(v) ? "bourg" : "serf";
+  assert.strictEqual(g.corveeCall(v), false, "un bourgeois ne doit pas la corvée");
+  const f = g.famOf(v), h = g.buildings.find(x=>x.id===f.home);
+  h.lvl = 3; g.taxRate = 0.5;
+  const t0 = g.tailleMonthly();
+  assert.ok(g.ennoble(f.id), "il faut de l'influence");
+  g.influence = ENNOBLE_COST;
+  assert.strictEqual(g.ennoble(f.id), null);
+  assert.strictEqual(g.influence, 0);
+  assert.ok(g.tailleMonthly() < t0, "les nobles sont exempts de taille");
+  assert.ok(!g.freeAdults().some(x=>x.fam===f.id), "ni journaliers ni ouvriers");
+  assert.ok(g.membersOf(f.id).filter(x=>g.isAdult(x)).every(x=>x.office==="court"));
+  assert.ok(g.competence(v, "steward") >= 40, "un noble fait un conseiller instruit");
+  g.stock.clothes = 0; g.stock.cheese = 0; g.stock.honey = 0; g.stock.smoked = 0; g.stock.ale = 0;
+  g.nobleUpkeep();
+  assert.ok(f.mem.some(x=>x.k==="upkeep"), "le train de vie manque");
+});
+
+test("étape 7c : une loi coûte de l'influence, prend effet le mois suivant et ne se change pas aussitôt", () => {
+  const g = fresh();
+  assert.ok(g.proclaim("deadwood", 1), "il faut un manoir");
+  doneBuilding(g, "manor");
+  g.influence = 0;
+  assert.ok(g.proclaim("deadwood", 1), "il faut de l'influence");
+  g.influence = 40;
+  assert.strictEqual(g.proclaim("deadwood", 1), null);
+  assert.strictEqual(g.influence, 40 - LAW_COST);
+  assert.strictEqual(g.law("deadwood"), 0, "pas encore en vigueur");
+  monthAt(g, 3);
+  assert.strictEqual(g.law("deadwood"), 1);
+  assert.ok(/encore/.test(g.proclaim("deadwood", 0)), "délai avant d'y revenir");
+  assert.ok(g.proclaim("succession", 1), "verrouillée jusqu'à la dynastie");
+  g.laws.arms = 1;
+  assert.ok(g.militiaCount() > Math.floor(g.families.length/2));
+});
+
+test("étape 7c : la mainmorte prend sa part à la mort d'un serf adulte", () => {
+  const g = fresh(); doneBuilding(g, "manor");
+  const v = g.villagers.find(x=>g.isAdult(x)), f = g.famOf(v);
+  const t0 = g.treasury;
+  g.die(v, "de maladie", true);
+  assert.strictEqual(g.treasury, t0 + MAINMORTE);
+  assert.strictEqual(g.book.cur.rights, MAINMORTE);
+  if(g.families.includes(f)) assert.ok(f.mem.some(x=>x.k==="mainmorte"));
+});
+
+test("étape 7c : sauvegarde — lois et ordres gardés ; une partie d'avant garde ses artisans", () => {
+  const g = fresh(); doneBuilding(g, "manor");
+  g.influence = 50; g.proclaim("curfew", 1);
+  g.families[0].ord = "noble";
+  const data = JSON.parse(JSON.stringify(g.serialize()));
+  const g2 = GameState.load(data);
+  assert.deepStrictEqual(g2.laws, g.laws);
+  assert.deepStrictEqual(g2.lawPending, g.lawPending);
+  assert.strictEqual(g2.families[0].ord, "noble");
+  const old = JSON.parse(JSON.stringify(data)); delete old.laws; delete old.lawPending;
+  for(const f of old.families) delete f.ord;
+  const mill = old.buildings.find(b=>b.def==="manor"); mill.def = "windmill";
+  old.villagers.find(v=>v.fam===old.families[1].id && g.isAdult(v)).work = mill.id;
+  const g3 = GameState.load(old);
+  assert.strictEqual(g3.families[1].ord, "bourg", "le meunier d'avant reste meunier");
+  assert.strictEqual(g3.families[2].ord, "serf");
+  assert.strictEqual(g3.law("curfew"), 0);
 });
 
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));

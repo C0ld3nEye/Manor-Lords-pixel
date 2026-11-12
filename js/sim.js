@@ -343,6 +343,7 @@ const BOOK_CATS = {
   wages:    { name:"Gages du conseil" },
   alms:     { name:"Aumônes et fêtes" },
   recovered:{ name:"Sommes recouvrées", inc:true },
+  rights:   { name:"Droits seigneuriaux", inc:true },
   repay:    { name:"Remboursements" },
   other:    { name:"Divers" },
 };
@@ -386,7 +387,57 @@ const AUDIT_COST = 5;              // influence pour faire vérifier les comptes
 const ALMS_COST = 10, FEAST_COST = 10;
 const REP_GEN = 25, REP_SEV = 30;  // seuils des réputations (généreux / avare, craint)
 
-const BOOK_ORDER = ["taille","peage","trade","sales","loot","loan","recovered","wages","alms","king","tribute","livestock","food","mercs","regions","interest","repay","other"];
+/* ---------- étape 7c : les trois ordres et le coutumier ----------
+   À la façon de Foundation : les serfs font les tâches de base et la corvée ; une famille dont la maison atteint
+   le niveau 2 entre dans la bourgeoisie et peut tenir les métiers d'artisan ; une famille d'une maison de niveau 3
+   peut être anoblie : elle ne travaille plus, sert à la cour, au clergé ou comme lettrée, et ne paie pas la taille. */
+const ORDER_DEFS = {
+  serf:  { id:"serf",  name:"Serfs",       one:["Serf","Serve"],          desc:"Tâches de base, chantiers et corvée." },
+  bourg: { id:"bourg", name:"Bourgeois",   one:["Bourgeois","Bourgeoise"], desc:"Maison de niveau 2 : métiers d'artisan (moulin, boulangerie, laiterie, fumoir, marché, comptoir). Exempts de corvée." },
+  noble: { id:"noble", name:"Nobles",      one:["Noble","Noble"],         desc:"Maison de niveau 3, anoblie : cour, clergé, lettres. Ne travaillent pas, ne paient pas la taille, mènent grand train." },
+};
+const ORDER_RANK = { serf:0, bourg:1, noble:2 };
+const SKILLED = ["windmill","bakery","dairy","smokehouse","market","trade"];   // métiers d'artisan : bourgeois seulement
+const ENNOBLE_COST = 30;          // influence pour anoblir une famille
+const NOBLE_OFFICES = {
+  court:  { id:"court",   name:"Courtisan", fem:"Courtisane", desc:"Tient votre cour : +1 influence par mois." },
+  clergy: { id:"clergy",  name:"Clerc",     fem:"Moniale",    desc:"Sert l'Église (il faut une église) : +1 influence et +1 approbation par mois (3 au plus)." },
+  scholar:{ id:"scholar", name:"Lettré",    fem:"Lettrée",    desc:"Enseigne aux jeunes : les apprentis apprennent 15 % plus vite (45 % au plus)." },
+};
+const NOBLE_OFFICE_ORDER = ["court","clergy","scholar"];
+const LAW_CHAPTERS = { forest:"Chasse et forêt", order:"Ordre public", society:"Société", succession:"Succession" };
+const LAW_DEFS = {
+  hunting:   { id:"hunting",   ch:"forest",  name:"Droit de chasse", opts:[
+    { name:"Réservé au seigneur", desc:"Seuls vos chasseurs traquent le gibier.", ap:0 },
+    { name:"Ouvert à tous",       desc:"Les familles chassent pour leur compte : un peu de viande chaque mois, mais le gibier se raréfie.", ap:2 } ] },
+  deadwood:  { id:"deadwood",  ch:"forest",  name:"Bois mort", opts:[
+    { name:"Interdit",            desc:"La forêt est au seigneur.", ap:0 },
+    { name:"Permis",              desc:"Les familles ramassent le bois mort : un quart de bois de chauffe en moins à fournir ; les jeunes arbres repoussent moitié moins.", ap:1 } ] },
+  arms:      { id:"arms",      ch:"order",   name:"Port d'armes", opts:[
+    { name:"Interdit",            desc:"Seule la milice est armée.", ap:0 },
+    { name:"Permis",              desc:"Un milicien de plus par groupe de quatre familles, au moins un.", ap:1 } ] },
+  curfew:    { id:"curfew",    ch:"order",   name:"Couvre-feu", opts:[
+    { name:"Aucun",               desc:"Chacun veille à sa guise.", ap:0 },
+    { name:"Couvre-feu",          desc:"Les feux s'éteignent à la nuit : moitié moins d'incendies.", ap:-1 } ] },
+  mainmorte: { id:"mainmorte", ch:"society", name:"Mainmorte", opts:[
+    { name:"Coutumière",          desc:"À la mort d'un serf adulte, le seigneur prend 5 deniers sur son héritage ; sa famille s'en souvient.", ap:0 },
+    { name:"Abolie",              desc:"Les serfs héritent librement.", ap:1 } ] },
+  charter:   { id:"charter",   ch:"society", name:"Charte du bourg", needs:"market", opts:[
+    { name:"Aucune",              desc:"Le bourg vit sous la coutume du seigneur.", ap:0 },
+    { name:"Charte de franchise", desc:"Les bourgeois paient 30 % de taille en moins ; des familles bourgeoises viennent s'installer dans les maisons de niveau 2 ; +3 richesse par mois (il faut un marché).", ap:0 } ] },
+  nobleTax:  { id:"nobleTax",  ch:"society", name:"Taille des nobles", opts:[
+    { name:"Exemptés",            desc:"Privilège de la noblesse.", ap:0 },
+    { name:"Soumis",              desc:"Les nobles paient la taille comme les autres ; ils vous en veulent.", ap:0 } ] },
+  succession:{ id:"succession",ch:"succession", name:"Succession", locked:"Arrive avec la dynastie (étape 10).", opts:[
+    { name:"Partage",             desc:"Les terres se partagent entre les enfants.", ap:0 },
+    { name:"Primogéniture",       desc:"L'aîné hérite de tout.", ap:0 } ] },
+};
+const LAW_ORDER = ["hunting","deadwood","arms","curfew","mainmorte","charter","nobleTax","succession"];
+const LAW_COST = 15;              // influence pour proclamer une loi
+const LAW_COOLDOWN = 12;          // mois avant de pouvoir y revenir
+const MAINMORTE = 5;
+
+const BOOK_ORDER = ["taille","peage","rights","trade","sales","loot","loan","recovered","wages","alms","king","tribute","livestock","food","mercs","regions","interest","repay","other"];
 
 const CHURCH_UPGRADES = {
   altar:  { id:"altar",  name:"Autel",   cost:{stone:3},           bonus:{approval:3, influence:2}, desc:"+3 approbation, +2 influence/mois." },
@@ -527,6 +578,9 @@ class GameState {
     for(const id of SEAT_ORDER) this.council[id] = { vid:-1, task:Object.keys(SEAT_DEFS[id].tasks)[0], unpaid:0, stolen:0, known:false };
     this.rep = { gen:0, sev:0 };
     this.feastY = 0;
+    // étape 7c : le coutumier (option en vigueur, proclamations en attente, dernier changement)
+    this.laws = {}; for(const id of LAW_ORDER) this.laws[id] = 0;
+    this.lawPending = {}; this.lawChanged = {};
     this.prices = { bread:2, clothes:3, ale:2, apples:1, honey:4, meat:1, berries:1, wool:2, cheese:3 };
     this.occupied = new Int32Array(W*H).fill(-1);
     this.buildings = []; this.nextB = 1;
@@ -838,7 +892,7 @@ class GameState {
       const pool = free.length ? free : SURNAMES;
       sn = pool[Math.floor(this.rnd()*pool.length)];
     }
-    const f = { id:this.nextF++, name:"Famille "+sn, home:-1, starving:0, lastAte:1, fed:1, lastVariety:1, clothCool:0 };
+    const f = { id:this.nextF++, name:"Famille "+sn, home:-1, starving:0, lastAte:1, fed:1, lastVariety:1, clothCool:0, ord:"serf" };
     this.families.push(f);
     return f;
   }
@@ -991,7 +1045,7 @@ class GameState {
   diff(){ return DIFF_BY_ID[this.diffId] || DIFF_BY_ID.normal; }
   berrySeason(){ const m=this.time.month; return m>=2 && m<=10; } // mars → novembre
   // journaliers : adultes sans poste, qui bâtissent les chantiers
-  unemployed(){ return this.villagers.filter(v=>v.work<0 && !v.appr && !v.seat && this.canWork(v)).length; }
+  unemployed(){ return this.villagers.filter(v=>v.work<0 && !v.appr && !v.seat && this.canWork(v) && !this.isNoble(v)).length; }
 
   canAfford(def       ){ return this.hasFree(BUILD_DEFS[def].cost); }
   costText(def       ){ const c=BUILD_DEFS[def].cost; const p         =[]; if(c.timber)p.push(c.timber+" 🪵"); if(c.stone)p.push(c.stone+" 🪨"); return p.length?p.join(" "):"Gratuit"; }
@@ -1255,7 +1309,7 @@ class GameState {
      tout de suite s'il y en a un, sinon dès qu'il y en a un (adolescent devenu adulte, nouvel arrivant…). */
   // note d'un candidat pour un poste : sa compétence, un peu moins pour un ancien
   jobScore(v, skill){ return ((v.skills && v.skills[skill]) || 0) * (this.stageOf(v)==="elder" ? 0.75 : 1); }
-  freeAdults(){ return this.villagers.filter(v=>v.work<0 && !v.appr && !v.seat && this.canWork(v)); }
+  freeAdults(){ return this.villagers.filter(v=>v.work<0 && !v.appr && !v.seat && this.canWork(v) && !this.isNoble(v)); }
   // pourvoit les postes voulus d'un bâtiment (ou de tous) ; renvoie le nombre d'embauches
   fillJobs(only){
     let n = 0;
@@ -1265,7 +1319,7 @@ class GameState {
       const want = Math.max(0, Math.min(d.fam, Number(b.want)||0));
       let have = this.workersOf(b).length;
       while(have<want){
-        const free = this.freeAdults(); if(!free.length) return n;
+        const free = this.freeAdults().filter(v=>this.canHold(v, b)); if(!free.length) break;   // étape 7c : artisans bourgeois
         const sk = d.skill || "build";
         free.sort((a, c)=>this.jobScore(c, sk) - this.jobScore(a, sk) || a.id - c.id);
         const v = free[0];
@@ -1284,7 +1338,7 @@ class GameState {
     if(have>=d.fam) return false;
     b.want = Math.min(d.fam, Math.max(Number(b.want)||0, have) + 1);
     const n = this.fillJobs(b);
-    if(!n) this.toast("Aucun adulte libre : le poste sera pourvu dès que quelqu'un se libère.");
+    if(!n) this.toast(this.isSkilled(b) && this.freeAdults().length ? "Aucun bourgeois libre : il faut un artisan d'une famille bourgeoise (maison de niveau 2)." : "Aucun adulte libre : le poste sera pourvu dès que quelqu'un se libère.");
     this.uiVersion++;
     return n>0;
   }
@@ -1310,6 +1364,7 @@ class GameState {
       const d = BUILD_DEFS[b.def];
       if(!d || d.fam<=0) return "Ce bâtiment n'emploie personne";
       if(!this.canWork(v)) return this.stageOf(v)==="elder" ? "Trop âgé pour travailler" : (v.sick>0 || v.health<25 ? "Trop faible pour travailler" : "Trop jeune pour travailler");
+      const he = this.holdErr(v, b); if(he) return he;
       if(v.work===bid && !v.appr) return null;
       if(this.workersOf(b).length>=d.fam) return "Plus de place : "+d.name+" est complet";
       this.leaveJob(v);
@@ -1340,9 +1395,10 @@ class GameState {
     let v = vid ? this.villager(vid) : null;
     if(vid && !v) return "Villageois introuvable";
     if(v && !this.canApprentice(v)) return "Seul un adolescent de 12 à 15 ans peut être apprenti";
+    if(v && !this.canHold(v, b)) return this.holdErr(v, b);
     if(!v){
       const sk = this.jobSkill(b);
-      const c = this.villagers.filter(o=>this.canApprentice(o) && (o.work<0 || !o.appr));
+      const c = this.villagers.filter(o=>this.canApprentice(o) && (o.work<0 || !o.appr) && this.canHold(o, b));
       if(!c.length) return "Aucun adolescent disponible";
       c.sort((a, d)=>(d.skills[sk]||0)-(a.skills[sk]||0) || this.ageOf(d)-this.ageOf(a));
       v = c[0];
@@ -1413,9 +1469,16 @@ class GameState {
   tailleMonthly(){
     if(!this.hasManor()) return 0;
     let levels = 0;
-    for(const b of this.buildings) if(b.done && b.def==="burgage" && this.families.some(f=>f.home===b.id)) levels += [0,1,3,6][b.lvl] || 0;
+    for(const b of this.buildings){
+      if(!b.done || b.def!=="burgage") continue;
+      const f = this.families.find(x=>x.home===b.id); if(!f) continue;
+      // étape 7c : les nobles en sont exempts (sauf loi contraire), la charte du bourg allège celle des bourgeois
+      const k = f.ord==="noble" ? (this.law("nobleTax")===1 ? 1 : 0) : f.ord==="bourg" && this.charterOn() ? 0.7 : 1;
+      levels += ([0,1,3,6][b.lvl] || 0)*k;
+    }
     return levels*this.taxRate*(this.policies.freeMarket ? 0.9 : 1);
   }
+  charterOn(){ return this.law("charter")===1 && this.marketActive(); }
   // part de la taille vraiment payée : des familles mécontentes cachent leurs deniers
   tailleRate(){ return this.approval>=40 ? 1 : this.approval>=25 ? 0.8 : 0.6; }
   // mois (0-11) de la prochaine levée parmi months, et dans combien de mois
@@ -1433,7 +1496,7 @@ class GameState {
   }
   // l'ouvrier d'un poste répond à la corvée s'il y a un chantier à servir ; renvoie vrai s'il y part
   corveeCall(f){
-    if(f.appr || !this.corveeToday()) return false;
+    if(f.appr || !this.corveeToday() || this.ordOf(f)!=="serf") return false;   // étape 7c : la corvée est due par les serfs
     const sites = this.buildings.filter(s=>!s.done);
     const job = sites.length ? this.siteJob(f, sites) : null;
     if(!job) return false;
@@ -1452,7 +1515,7 @@ class GameState {
     if(!this.corveeToday() || !this.buildings.some(s=>!s.done)) return 0;
     let n = 0;
     for(const v of this.villagers){
-      if(!(v.work>0) || v.appr || v.carry || !this.canWork(v)) continue;
+      if(!(v.work>0) || v.appr || v.carry || !this.canWork(v) || this.ordOf(v)!=="serf") continue;
       const t = v.task;
       if(t && (t.type==="haul" || t.type==="build" || t.type==="fetch")) continue;
       const b = this.buildings.find(x=>x.id===v.work);
@@ -1700,6 +1763,7 @@ class GameState {
     let c = 20 + (d.skill ? 0.6*(v.skills[d.skill]||0) : 15) + Math.min(30, (v.sxp||0)*1.5);
     const t = this.traitsOf(v);
     if(t.includes(d.trait)) c += 20;
+    if(this.isNoble(v)) c += 20;   // étape 7c : éducation de la noblesse
     if(t.includes("diligent")) c *= 1.25;
     if(t.includes("lazy")) c *= 0.75;
     return Math.max(5, Math.min(100, Math.round(c)));
@@ -1805,6 +1869,114 @@ class GameState {
   seatPlace(seat){
     const def = seat==="chaplain" ? "church" : "manor";
     return this.buildings.find(b=>b.done && b.def===def) || null;
+  }
+
+  /* ================= étape 7c : les ordres ================= */
+  ordOf(v){ const f = v && v.fam!==undefined ? this.famOf(v) : v; return f && ORDER_DEFS[f.ord] ? f.ord : "serf"; }
+  isNoble(v){ return this.ordOf(v)==="noble"; }
+  orderName(v){ const o = ORDER_DEFS[this.ordOf(v)]; return o.one[v && v.sex==="f" ? 1 : 0]; }
+  isSkilled(b){ return !!b && SKILLED.includes(b.def); }
+  // qui peut tenir ce poste : pas un noble ; un métier d'artisan demande un bourgeois
+  canHold(v, b){
+    const o = this.ordOf(v);
+    if(o==="noble") return false;
+    return !this.isSkilled(b) || o==="bourg";
+  }
+  holdErr(v, b){
+    if(this.isNoble(v)) return "Un noble ne prend pas de poste";
+    if(this.isSkilled(b) && this.ordOf(v)!=="bourg") return BUILD_DEFS[b.def].name+" : il faut un artisan bourgeois (famille d'une maison de niveau 2)";
+    return null;
+  }
+  // une famille monte dans la bourgeoisie (maison de niveau 2) ; renvoie vrai si elle change d'ordre
+  promote(f, ord){
+    if(!f || (ORDER_RANK[ord]||0) <= (ORDER_RANK[f.ord]||0)) return false;
+    f.ord = ord;
+    return true;
+  }
+  canEnnoble(f){
+    if(!f) return "Famille introuvable";
+    if(f.ord==="noble") return "Déjà noble";
+    const h = f.home>0 ? this.buildings.find(b=>b.id===f.home) : null;
+    if(!h || h.def!=="burgage" || !h.done || h.lvl<3) return "Il faut une maison de niveau 3";
+    if(this.influence<ENNOBLE_COST) return "Il faut "+ENNOBLE_COST+" d'influence";
+    return null;
+  }
+  ennoble(fid){
+    const f = this.families.find(x=>x.id===fid), e = this.canEnnoble(f);
+    if(e) return e;
+    this.influence -= ENNOBLE_COST;
+    f.ord = "noble";
+    for(const v of this.membersOf(f.id)){
+      if(v.work>0 && !v.appr) this.leaveJob(v);
+      if(v.appr){ v.work = -1; v.appr = false; this.resetWorker(v); }
+      if(this.isAdult(v) && !v.office) v.office = "court";
+    }
+    this.addMem(f, "ennobled", "Anoblie par le seigneur", 15, 24);
+    this.toast("👑 La "+f.name.toLowerCase()+" est anoblie : elle sert désormais à votre cour.","good");
+    this.uiVersion++;
+    return null;
+  }
+  setOffice(vid, office){
+    const v = this.villager(vid);
+    if(!v || !this.isNoble(v) || !this.isAdult(v)) return "Seul un noble adulte a une charge";
+    if(!NOBLE_OFFICES[office]) return "Charge inconnue";
+    v.office = office; this.uiVersion++;
+    return null;
+  }
+  // les nobles adultes qui tiennent une charge (pas ceux qui siègent au conseil)
+  officers(office){ return this.villagers.filter(v=>v.office===office && !v.seat && this.isNoble(v) && this.isAdult(v) && !(v.sick>0)); }
+  scholarMul(){ return 1 + Math.min(0.45, 0.15*this.officers("scholar").length); }
+  // le train de vie des nobles : chaque famille veut des vêtements et une bonne table (ale, miel, fromage ou viande fumée)
+  nobleUpkeep(){
+    for(const f of this.families){
+      if(f.ord!=="noble") continue;
+      let ok = (this.stock.clothes||0)>=1;
+      if(ok) this.stock.clothes -= 1;
+      const fine = ["cheese","honey","smoked","ale"].find(k=>(this.stock[k]||0)>=1);
+      if(fine) this.stock[fine] -= 1; else ok = false;
+      if(!ok) this.addMem(f, "upkeep", "Train de vie indigne de son rang", -8, 3);
+    }
+  }
+
+  /* ================= étape 7c : le coutumier ================= */
+  law(id){ return this.laws[id]|0; }
+  lawLock(id){
+    const d = LAW_DEFS[id]; if(!d) return "Loi inconnue";
+    if(d.locked) return d.locked;
+    if(!this.hasManor()) return "Il faut un manoir pour proclamer les lois";
+    return null;
+  }
+  lawWait(id){ const c = this.lawChanged[id]; return c===undefined ? 0 : Math.max(0, c + LAW_COOLDOWN - this.monthIdx()); }
+  proclaim(id, opt){
+    const d = LAW_DEFS[id], lk = this.lawLock(id);
+    if(lk) return lk;
+    opt = Math.round(Number(opt)||0);
+    if(opt<0 || opt>=d.opts.length) return "Option inconnue";
+    if(this.lawPending[id]) return "Une proclamation est déjà en cours";
+    if(opt===this.law(id)) return null;
+    const w = this.lawWait(id);
+    if(w>0) return "On ne change pas la coutume si vite : encore "+w+" mois";
+    if(this.influence<LAW_COST) return "Il faut "+LAW_COST+" d'influence";
+    this.influence -= LAW_COST;
+    this.lawPending[id] = { opt, at:this.monthIdx()+1 };
+    this.toast("📜 Proclamation : « "+d.name+" : "+d.opts[opt].name.toLowerCase()+" ». La loi prendra effet le mois prochain.");
+    this.uiVersion++;
+    return null;
+  }
+  lawsMonth(){
+    for(const id of Object.keys(this.lawPending)){
+      const p = this.lawPending[id];
+      if(!LAW_DEFS[id]){ delete this.lawPending[id]; continue; }
+      if(this.monthIdx()<p.at) continue;
+      this.laws[id] = p.opt; this.lawChanged[id] = this.monthIdx();
+      delete this.lawPending[id];
+      this.toast("📜 La loi est en vigueur : "+LAW_DEFS[id].name+" — "+LAW_DEFS[id].opts[p.opt].name.toLowerCase()+".","good");
+    }
+    // les nobles soumis à la taille gardent une rancune tant que la loi dure
+    for(const f of this.families){
+      if(f.ord==="noble" && this.law("nobleTax")===1) { if(!(f.mem||[]).some(x=>x.k==="nobleTax")) this.addMem(f, "nobleTax", "Noblesse soumise à la taille", -10, 0); }
+      else this.dropMem(f, "nobleTax");
+    }
   }
 
   /* ================= étape 5 : bœufs de trait ================= */
@@ -2892,7 +3064,7 @@ class GameState {
     const kid = !this.isAdult(f);
     // un adulte valide sans ouvrage (journalier) reste aux aguets : il flâne moins et regarde souvent
     // s'il y a un chantier à servir. Avant, il pouvait rester des jours sans rien voir.
-    const ready = this.canWork(f) && !f.appr && !f.seat;
+    const ready = this.canWork(f) && !f.appr && !f.seat && !this.isNoble(f);
     if(this.rnd() < (kid ? 0.5 : ready ? 0.15 : 0.3)){
       const home = (f.seat && this.seatPlace(f.seat)) || this.homeOf(f);
       const hx = home?home.x:W/2, hy = home?home.y:H/2;
@@ -2912,6 +3084,7 @@ class GameState {
     if(f.cool>0){ if(this.workGate(f)) f.cool--; return; }
     if(this.unstick(f)) return;
     // étape 7b : un conseiller passe ses journées au manoir (ou à l'église)
+    if(this.isNoble(f) && !f.seat && !f.appr){ if(f.work>0) this.leaveJob(f); this.idleNearHome(f); return; }   // étape 7c : un noble ne travaille pas
     if(f.seat){
       const pl = this.seatPlace(f.seat);
       if(pl && Math.hypot(pl.x+pl.w/2-f.x, pl.y+pl.h/2-f.y) > 5){
@@ -3518,6 +3691,7 @@ class GameState {
     const fh = this.famOf(h), fw = this.famOf(w);
     const nf = this.makeFamily(this.surnameOf(fh));
     nf.home = house.id; nf.founder = !!((fh && fh.founder) || (fw && fw.founder));
+    nf.ord = [fh, fw].reduce((o, x)=>x && ORDER_RANK[x.ord]>ORDER_RANK[o] ? x.ord : o, "serf");   // étape 7c : on garde le rang le plus haut
     const kids = this.villagers.filter(c=>(c.mother===w.id || c.father===h.id || c.mother===h.id || c.father===w.id)
       && c.spouse<0 && this.ageOf(c)<AGE_ADULT && (c.fam===h.fam || c.fam===w.fam));
     if(fw && fw!==fh && !w.maiden) w.maiden = this.surnameOf(fw);
@@ -3576,6 +3750,10 @@ class GameState {
     for(const sk of SKILL_ORDER){
       if((v.skills[sk]||0) < 60) continue;
       if(!this.villagers.some(o=>o!==v && (o.skills[sk]||0)>=40)) lost.push(SKILL_DEFS[sk].name.toLowerCase());
+    }
+    if(f && f.ord==="serf" && this.isAdult(v) && this.law("mainmorte")===0 && this.hasManor()){
+      this.money("rights", MAINMORTE);
+      this.addMem(f, "mainmorte", "Mainmorte prise sur l'héritage de "+v.first, -6, 12);
     }
     if(f && (cause==="de faim" || cause==="de froid")) this.addMem(f, "death"+v.id, v.first+" mort"+(v.sex==="f"?"e":"")+" "+cause, -12, 18);   // étape 7b
     for(const o of this.villagers){
@@ -3699,7 +3877,7 @@ class GameState {
         const b = this.buildings.find(x=>x.id===v.work), sk = this.jobSkill(b);
         if(sk){
           const mst = this.masterOf(b), ms = mst ? (mst.skills[sk]||0) : 0;
-          up(v, sk, Math.min(1, total/60) * (1.5 + (ms>=40 ? 6*ms/100 : 0)) * (1 + 0.5*this.taskPower("chaplain", "school")));
+          up(v, sk, Math.min(1, total/60) * (1.5 + (ms>=40 ? 6*ms/100 : 0)) * (1 + 0.5*this.taskPower("chaplain", "school")) * this.scholarMul());
         }
       } else {
         for(const sk of Object.keys(wt)) if(SKILL_DEFS[sk]) up(v, sk, Math.min(1, wt[sk]/60) * 4);
@@ -3754,6 +3932,7 @@ class GameState {
     const b = v.work>0 ? this.buildings.find(x=>x.id===v.work) : null;
     let s;
     if(v.seat) s = this.seatTitle(v.seat, v)+" (conseil)";
+    else if(this.isNoble(v) && this.isAdult(v)){ const o = NOBLE_OFFICES[v.office||"court"]; s = (fem ? o.fem : o.name)+" · noble"; }
     else if(v.appr && b) s = "Apprenti"+(fem?"e":"")+" · "+BUILD_DEFS[b.def].name;
     else if(st==="baby") s = "Nourrisson";
     else if(st==="child") s = "Enfant";
@@ -3803,7 +3982,7 @@ class GameState {
     }
     return best || { x:Math.floor(c.x), y:Math.floor(c.y) };
   }
-  militiaCount(){ return Math.floor(this.families.length/2) + this.militiaBonus(); }
+  militiaCount(){ return Math.floor(this.families.length/2) + this.militiaBonus() + (this.law("arms")===1 ? Math.ceil(this.families.length/4) : 0); }
   raiseMilitia(){
     const want = this.militiaCount();
     const have = this.units.length;
@@ -3991,7 +4170,8 @@ class GameState {
     // reforestation lente : de jeunes arbres repoussent en lisière
     let planted=0;
     const scale = W*H/1564;   // même densité de jeunes arbres que sur l'ancienne petite carte
-    for(let tries=0; tries<50*scale && planted<3*scale; tries++){
+    const plantMax = 3*scale*(this.law("deadwood")===1 ? 0.5 : 1);   // étape 7c : le bois mort ramassé, la forêt repousse moins
+    for(let tries=0; tries<50*scale && planted<plantMax; tries++){
       const i=Math.floor(this.rnd()*W*H);
       if(this.tiles[i]!==T_GRASS || this.occupied[i]>=0) continue;
       const x=i%W, y=(i/W)|0;
@@ -4008,7 +4188,7 @@ class GameState {
     const meal = this.eatMonth(market);
     const starved = meal.starved, varietyAvg = meal.variety;
     // bois de chauffe (neige = +1 par famille en plus)
-    const fuelNeed=this.families.length*(winter?2:1)+(this.weather==="snow"?this.families.length:0);
+    const fuelNeed=(this.families.length*(winter?2:1)+(this.weather==="snow"?this.families.length:0))*(this.law("deadwood")===1 ? 0.75 : 1);
     const fuelGot=Math.min(this.stock.firewood, fuelNeed);
     this.stock.firewood-=fuelGot;
     const fuelRatio=fuelNeed>0?fuelGot/fuelNeed:1;
@@ -4040,8 +4220,17 @@ class GameState {
     // ----- étape 4 : la vie des villageois (santé, naissances, mariages, décès, apprentissage) -----
     this.demography(winter, fuelRatio);
     // ----- étape 7b : les souvenirs s'estompent, la réputation se fait ; le chapelain tient les registres -----
+    this.lawsMonth();
     this.memMonth();
     this.repMonth();
+    // ----- étape 7c : effets du coutumier, train de vie et charges des nobles -----
+    if(this.law("hunting")===1 && this.families.length){
+      this.stock.meat = Math.min(this.capFor("meat"), (this.stock.meat||0) + 0.3*this.families.length);
+      for(let k=Math.floor(this.families.length/4); k>0 && this.deer.length>3; k--) this.deer.splice(Math.floor(this.rnd()*this.deer.length), 1);
+    }
+    if(this.charterOn()) this.wealth += 3;
+    this.nobleUpkeep();
+    this.influence += this.officers("court").length + (this.hasChurch() ? this.officers("clergy").length : 0);
     this.influence += Math.round(4*this.taskPower("chaplain", "registers"));
     // approbation : chaque cause est gardée pour être expliquée au joueur
     const why = [["Base", 50]];
@@ -4073,6 +4262,8 @@ class GameState {
     add("Le chapelain prêche", Math.round(4*this.taskPower("chaplain", "preach")));
     if(this.camps.length || this.time.year>=1177) add("Le bailli fait sa tournée", Math.round(2*this.taskPower("bailiff", "patrol")));
     for(const t of this.repTitles()) add("Réputation : "+t.name.toLowerCase(), t.ap);
+    for(const id of LAW_ORDER){ const o = LAW_DEFS[id].opts[this.law(id)]; if(o && o.ap) add("Coutume : "+o.name.toLowerCase()+" ("+LAW_DEFS[id].name.toLowerCase()+")", o.ap); }
+    if(this.hasChurch()) add("Le clergé noble", Math.min(3, this.officers("clergy").length));
     if(this.families.length){
       const mt = this.families.reduce((s, f)=>s + this.memTotal(f), 0)/this.families.length;
       add(mt>=0 ? "Les familles se souviennent de vos bienfaits" : "Les familles vous gardent rancune", Math.max(-8, Math.min(8, Math.round(mt/2))));
@@ -4167,9 +4358,11 @@ class GameState {
       if(!res) continue;
       const ok=(res.fed!==undefined ? res.fed>=0.999 : res.lastAte>=1) && fuelRatio>=1 && market && (res.variety||0)>=2 && !res.gruel && clothRatio>=1;
       if(ok) b.monthsGood++; else b.monthsGood=0;
-      if(b.lvl===1 && b.monthsGood>=3 && this.freeStock("timber")>=2){ this.stock.timber-=2; b.lvl=2; this.toast("Un bourgage évolue : niveau 2 !","good"); }
+      if(b.lvl===1 && b.monthsGood>=3 && this.freeStock("timber")>=2){ this.stock.timber-=2; b.lvl=2;
+        this.toast("Un bourgage évolue : niveau 2 !"+(this.promote(res, "bourg") ? " La "+res.name.toLowerCase()+" entre dans la bourgeoisie : ses adultes peuvent tenir un métier d'artisan." : ""),"good"); }
       else if(b.lvl===2 && b.monthsGood>=3 && this.approval>=65 && this.hasChurch() && this.freeStock("timber")>=2 && this.freeStock("stone")>=2){
-        this.stock.timber-=2; this.stock.stone-=2; b.lvl=3; this.toast("Un bourgage évolue : niveau 3 ! Impôts accrus.","good");
+        this.stock.timber-=2; this.stock.stone-=2; b.lvl=3; this.promote(res, "bourg");
+        this.toast("Un bourgage évolue : niveau 3 ! Impôts accrus."+(res.ord!=="noble" ? " La "+res.name.toLowerCase()+" pourrait être anoblie ("+ENNOBLE_COST+" d'influence)." : ""),"good");
       }
     }
     this.rehouseCamp();
@@ -4182,10 +4375,12 @@ class GameState {
       const n=(this.approval>=75)?2:1;
       for(let i=0;i<n && i<free;i++){
         if(foodTotal < (this.foodNeed()+i+1)*0.8) break;
-        const fb=this.buildings.find(bd=>bd.done&&bd.def==="burgage"&&!this.families.some(f=>f.home===bd.id));
+        const freeH = this.buildings.filter(bd=>bd.done&&bd.def==="burgage"&&!this.families.some(f=>f.home===bd.id));
+        const fb = (this.charterOn() && freeH.find(bd=>bd.lvl>=2)) || freeH[0];
         if(!fb) break;
         const f=this.makeFamily();
         f.home=fb.id;
+        if(fb.lvl>=2 && this.charterOn()) f.ord = "bourg";   // étape 7c : la charte attire des bourgeois
         // ils arrivent à pied, par le bord de vos terres
         const ep = this.entryPoint(), ex = ep.x, ey = ep.y;
         const mem = this.populateFamily(f, this.randomFamilyKind(), ex+0.5, ey+0.5);
@@ -4265,6 +4460,8 @@ class GameState {
       const roll=this.rnd();
       if(roll<0.33){
         this.plague();
+      } else if(roll<0.66 && this.law("curfew")===1 && this.rnd()<0.5){
+        this.toast("Un début d'incendie est vite étouffé : le couvre-feu a du bon.","good");
       } else if(roll<0.66){
         // incendie : perte de bois et approbation
         this.stock.timber=Math.floor(this.stock.timber*0.6);
@@ -4620,6 +4817,9 @@ class GameState {
       council:this.council,
       rep:this.rep,
       feastY:this.feastY,
+      laws:this.laws,
+      lawPending:this.lawPending,
+      lawChanged:this.lawChanged,
     };
   }
   static load(data    )          {
@@ -4736,6 +4936,17 @@ class GameState {
     for(const id of SEAT_ORDER){ const o = g.council[id], v = o.vid>0 ? g.villager(o.vid) : null; if(!v || v.seat!==id){ o.vid = -1; o.stolen = 0; o.known = false; } }
     if(data.rep && typeof data.rep==="object"){ g.rep.gen = num(data.rep.gen) ? Math.max(-100, Math.min(100, data.rep.gen)) : 0; g.rep.sev = num(data.rep.sev) ? Math.max(0, Math.min(100, data.rep.sev)) : 0; }
     g.feastY = num(data.feastY) ? data.feastY : 0;
+    // étape 7c : coutumier ; l'ordre de chaque famille (une partie d'avant : bourgeoise si sa maison est de niveau 2
+    // ou si l'un des siens tient déjà un métier d'artisan, pour ne renvoyer personne)
+    if(data.laws && typeof data.laws==="object") for(const id of LAW_ORDER) if(num(data.laws[id])) g.laws[id] = Math.max(0, Math.min(LAW_DEFS[id].opts.length-1, Math.round(data.laws[id])));
+    if(data.lawPending && typeof data.lawPending==="object") for(const id of Object.keys(data.lawPending)){ const p = data.lawPending[id]; if(LAW_DEFS[id] && p && num(p.opt) && num(p.at) && p.opt>=0 && p.opt<LAW_DEFS[id].opts.length) g.lawPending[id] = { opt:p.opt, at:p.at }; }
+    if(data.lawChanged && typeof data.lawChanged==="object") for(const id of Object.keys(data.lawChanged)) if(LAW_DEFS[id] && num(data.lawChanged[id])) g.lawChanged[id] = data.lawChanged[id];
+    for(const f of g.families){
+      if(ORDER_DEFS[f.ord]) continue;
+      const h = f.home>0 ? g.buildings.find(b=>b.id===f.home) : null;
+      f.ord = (h && h.def==="burgage" && h.lvl>=2) || g.membersOf(f.id).some(v=>v.work>0 && g.isSkilled(g.buildings.find(b=>b.id===v.work))) ? "bourg" : "serf";
+    }
+    for(const v of g.villagers) if(v.office && (!NOBLE_OFFICES[v.office] || !g.isNoble(v))) delete v.office;
     for(const f of g.families){
       if(!Array.isArray(f.mem)){ delete f.mem; continue; }
       f.mem = f.mem.filter(x=>x && typeof x.k==="string" && typeof x.t==="string" && num(x.v) && num(x.m) && num(x.n)).map(x=>({ k:x.k, t:x.t, v:x.v, m:x.m, n:Math.max(0, x.n) }));
@@ -4808,5 +5019,6 @@ class GameState {
 if(typeof module!=="undefined" && module.exports){
   module.exports = { T_FORD, REGION_NAMES, START_REGION_NAME, REGION_COLS, REGION_ROWS, rleEncode, rleDecode, HOUSE_CAP, FOOD_DEFS, FOOD_GROUPS, FOOD_GROUP_ORDER, STORE_SPOIL, GRUEL, GRANARY_CAP, GRANARY_MUL, VARIETY_APPROVAL, RECIPES, SMOKE_KEEP, HOME_BAKE, MAT_RES, PORTER_LOAD, OX_LOAD, OX_SPEED, DRAG_SPEED, DEPOT_DEFS, TS, WORK_DIV, TICKS_PER_DAY, DAYS_PER_MONTH, FIELD_MIN, FIELD_MAX, PLOT_MIN, CROP_CAL, GROW_RATE, SHEAF_RES, LIVESTOCK, LIVESTOCK_ORDER, GRASS, PASTURE_MIN, PASTURE_MAX, monthsTxt, isWinterMonth, MONTHS_ABBR, SKILL_DEFS, SKILL_ORDER, SKILL_LEVELS, skillLevel, FOOD_NEED, AGE_TEEN, AGE_ADULT, AGE_ELDER, AGE_RETIRE, STAGE_NAMES, JOB_TITLES, NAMES_M, NAMES_F, SURNAMES, BUILD_STAGES, buildStage, DIRS4, PLOT_FRONT, polyArea, pointInPoly, GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
     T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf, REGION_COST, POLICY_DEFS, POLICY_ORDER,
+    ORDER_DEFS, ORDER_RANK, SKILLED, ENNOBLE_COST, NOBLE_OFFICES, NOBLE_OFFICE_ORDER, LAW_CHAPTERS, LAW_DEFS, LAW_ORDER, LAW_COST, LAW_COOLDOWN, MAINMORTE,
     TRAIT_DEFS, SEAT_DEFS, SEAT_ORDER, COUNCIL_WAGE, EMBEZZLE, AUDIT_COST, ALMS_COST, FEAST_COST, REP_GEN, REP_SEV, TAX_DEFS, TAX_ORDER, TAILLE_MONTHS, DIME_MONTH, KING_MONTH, LOAN_RATE, LOAN_STEP, LOAN_MISS_MAX, BOOK_CATS, BOOK_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, MODE_BY_ID, DIFFICULTIES, DIFF_BY_ID };
 }
