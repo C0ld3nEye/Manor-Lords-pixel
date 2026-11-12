@@ -31,7 +31,13 @@ button { font:inherit; color:inherit; touch-action:manipulation; }
 .mono { font-family: ui-monospace, "Courier New", monospace; letter-spacing:.5px; }
 
 #app { position:relative; display:flex; flex-direction:column; height:100dvh;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  padding: 0 env(safe-area-inset-right) 0 env(safe-area-inset-left); }
+/* marges haut/bas de l'encoche seulement en plein écran (appli installée) : dans un onglet de navigateur,
+   certains navigateurs Android annoncent quand même la barre d'état, d'où une bande noire en haut */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  #app { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+}
+#cv { -webkit-touch-callout:none; }
 
 /* ---------- cadres et boutons « pixel » (biseau 2 px) ---------- */
 .frame { background:var(--panel); border:2px solid var(--line);
