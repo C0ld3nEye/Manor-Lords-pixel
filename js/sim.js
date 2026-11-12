@@ -41,6 +41,8 @@ function hash2(x        , y        ){ return ((x * 73856093) ^ (y * 19349663)) >
  
 
 const BUILD_DEFS                              = {
+  camp:      { id:"camp",      name:"Campement",      icon:"⛺", w:2,h:1, cost:{}, fam:0, instant:true, desc:"Abri provisoire des survivants. Démonté quand toutes les familles ont une maison." },
+  oxpost:    { id:"oxpost",    name:"Poteau du bœuf", icon:"🐂", w:1,h:1, cost:{timber:1}, fam:0, instant:true, desc:"Le bœuf y est attaché : il aide à porter les charges lourdes." },
   burgage:   { id:"burgage",   name:"Bourgage",       icon:"🏠", w:1,h:1, cost:{timber:1}, fam:0, instant:true, buildRate:2, desc:"Loge une famille. Évolue si ses besoins sont satisfaits." },
   woodcutter:{ id:"woodcutter",name:"Camp de bûcherons",icon:"🪓", w:1,h:1, cost:{timber:2}, fam:2, radius:6, instant:false, desc:"Abat les arbres à proximité : bois d'œuvre + bois de chauffe." },
   forager:   { id:"forager",   name:"Cabane de cueilleuses", icon:"🍒", w:1,h:1, cost:{timber:2}, fam:2, radius:6, instant:false, desc:"Cueille des baies (mars → novembre)." },
@@ -58,7 +60,7 @@ const BUILD_DEFS                              = {
   wall:      { id:"wall",      name:"Rempart",        icon:"⬛", w:1,h:1, cost:{stone:2}, fam:0, instant:false, wall:true, desc:"Mur défensif : les brigands ne passent pas dessus (case infranchissable)." },
   manor:     { id:"manor",     name:"Manoir",          icon:"🏰", w:2,h:2, cost:{timber:4,stone:3}, fam:0, instant:false, desc:"Permet de lever l'impôt (curseur dans le panneau du manoir)." },
 };
-const BUILD_ORDER = ["burgage","woodcutter","forager","hunter","quarry","farm","field","windmill","granary","storehouse","market","trade","church","tower","wall","manor"];
+const BUILD_ORDER = ["woodcutter","forager","hunter","quarry","farm","field","windmill","granary","storehouse","market","trade","church","tower","wall","manor"];
 
 const FOOD_TYPES = ["berries","meat","bread","eggs","veg","apples","honey"];
 
@@ -353,21 +355,47 @@ class GameState {
     }
   }
 
+  // Départ façon Manor Lords : un campement de survivants, le poteau du bœuf et un bout de chemin.
+  // Aucune maison : le joueur trace sa première zone le long du chemin.
   placeStart(){
     const cx = Math.floor(W/2), cy = Math.floor(H/2);
-    const spots = [ {x:cx-2,y:cy-1}, {x:cx+1,y:cy-1}, {x:cx-2,y:cy+2} ];
-    for(const s of spots){
-      if(this.tiles[s.y*W+s.x]!==T_GRASS) continue;
-      const b = this.makeBuilding("burgage", s.x, s.y);
-      b.done = true; b.progress = 1;
-      const f = this.makeFamily();
-      f.home = b.id; f.x = s.x+0.5; f.y = s.y+0.5;
+    const free = (x,y)=>x>=0&&y>=0&&x<W&&y<H && this.tiles[y*W+x]===T_GRASS && this.occupied[y*W+x]<0 && this.regionOwned(x);
+    let spot = null;
+    for(let r=0; r<10 && !spot; r++) for(let dy=-r; dy<=r && !spot; dy++) for(let dx=-r; dx<=r && !spot; dx++){
+      const x=cx+dx, y=cy+dy;
+      let ok = true;
+      for(let k=-3; k<=5 && ok; k++){ if(!free(x+k, y+1)) ok=false; if(k>=0 && k<=2 && !free(x+k, y)) ok=false; }
+      if(ok) spot = { x, y };
     }
-    if(this.families.length===0){
-      const b = this.makeBuilding("burgage", cx, cy); b.done=true; b.progress=1;
-      const f = this.makeFamily(); f.home=b.id; f.x=cx+0.5; f.y=cy+0.5;
+    if(!spot) spot = { x:cx, y:cy };
+    const camp = this.makeBuilding("camp", spot.x, spot.y); camp.done = true; camp.progress = 1;
+    if(free(spot.x+2, spot.y)){ const post = this.makeBuilding("oxpost", spot.x+2, spot.y); post.done = true; post.progress = 1; }
+    for(let k=-3; k<=5; k++) if(free(spot.x+k, spot.y+1)) this.roads[(spot.y+1)*W+spot.x+k] = 1;
+    this.stock.ox = Math.max(this.stock.ox||0, 1);
+    for(let n=0; n<3; n++){
+      const f = this.makeFamily(); f.home = camp.id; f.x = spot.x+0.5+n*0.5; f.y = spot.y+0.8;
     }
+    this.toast("Les survivants campent au bord du chemin. Tracez une zone de maisons le long de la route (tiroir Maisons).");
   }
+
+  // Les familles du campement emménagent dès qu'une maison est prête ; le campement vide est démonté.
+  rehouseCamp(){
+    const camp = this.buildings.find(b=>b.def==="camp"); if(!camp) return;
+    for(const f of this.families){
+      if(f.home!==camp.id) continue;
+      const fb = this.buildings.find(bd=>bd.done && bd.def==="burgage" && !this.families.some(o=>o.home===bd.id));
+      if(!fb) break;
+      f.home = fb.id;
+      this.toast("Une famille quitte le campement pour sa maison.","good");
+    }
+    if(!this.families.some(f=>f.home===camp.id)){
+      for(let yy=0;yy<camp.h;yy++) for(let xx=0;xx<camp.w;xx++) if(this.occupied[(camp.y+yy)*W+camp.x+xx]===camp.id) this.occupied[(camp.y+yy)*W+camp.x+xx] = -1;
+      this.buildings.splice(this.buildings.indexOf(camp), 1);
+      this.toast("Toutes les familles sont logées : le campement est démonté.","good");
+    }
+    this.uiVersion++;
+  }
+
 
   /* ---------- fabriques ---------- */
   makeBuilding(def       , x       , y       )         {
@@ -552,6 +580,30 @@ class GameState {
     return { plots, err:null, limited, n:plots.length, nMin, nMax, suggested, poly };
   }
 
+  // Point du contour « aimanté » : collé au bord d'une route à moins d'une demi-case,
+  // et un trait presque parallèle à la route reste bien droit (prev = point précédent).
+  snapZonePoint(x        , y        , prev        ){
+    const R = 0.5;
+    let sx = Math.round(x*SNAP)/SNAP, sy = Math.round(y*SNAP)/SNAP, bx = null, by = null, bdx = R, bdy = R;
+    const tx = Math.floor(x), ty = Math.floor(y);
+    for(let yy=ty-1; yy<=ty+1; yy++) for(let xx=tx-1; xx<=tx+1; xx++){
+      if(!this.roadAt(xx, yy)) continue;
+      if(x>=xx-0.25 && x<=xx+1.25) for(const [ly, ny] of [[yy, yy-1], [yy+1, yy+1]])
+        if(!this.roadAt(xx, ny)){ const d=Math.abs(y-ly); if(d<bdy){ bdy=d; by=ly; } }
+      if(y>=yy-0.25 && y<=yy+1.25) for(const [lx, nx] of [[xx, xx-1], [xx+1, xx+1]])
+        if(!this.roadAt(nx, yy)){ const d=Math.abs(x-lx); if(d<bdx){ bdx=d; bx=lx; } }
+    }
+    if(by!==null) sy = by;
+    if(bx!==null) sx = bx;
+    if(prev && Array.isArray(prev)){
+      const edgeH = (p)=>Number.isInteger(p[1]) && [Math.floor(p[0]), Math.floor(p[0]-0.01)].some(c=>this.roadAt(c, p[1]-1)!==this.roadAt(c, p[1]));
+      const edgeV = (p)=>Number.isInteger(p[0]) && [Math.floor(p[1]), Math.floor(p[1]-0.01)].some(c=>this.roadAt(p[0]-1, c)!==this.roadAt(p[0], c));
+      if(by===null && edgeH(prev) && Math.abs(y-prev[1])<0.6 && Math.abs(x-prev[0])>=1) sy = prev[1];
+      if(bx===null && edgeV(prev) && Math.abs(x-prev[0])<0.6 && Math.abs(y-prev[1])>=1) sx = prev[0];
+    }
+    return [Math.max(0, Math.min(W, sx)), Math.max(0, Math.min(H, sy))];
+  }
+
   // Trace la zone : une maison en chantier par parcelle, bâtie par les journaliers.
   traceZone(pts        , n        )               {
     const plan = this.planZone(pts, n);
@@ -562,7 +614,7 @@ class GameState {
       this.stock.stone -= (c.stone||0);
       const h = p.cells[0];
       const b = this.makeBuilding("burgage", h%W, (h/W)|0);
-      b.plot = { cells:p.cells.slice(), dir:p.dir, extAt:{}, poly:p.poly };
+      b.plot = { cells:p.cells.slice(), dir:p.dir, poly:p.poly };
       for(const i of p.cells) this.occupied[i] = b.id;
     }
     const nb = plan.plots.length;
@@ -572,12 +624,24 @@ class GameState {
     return null;
   }
 
-  // cases de cour d'un bourgage tracé (hors maison) et celles encore libres
+  // arrière-cour d'un bourgage tracé : ses cases hors maison, et le rendement qu'elle permet
   yardCells(b         )           { return b.plot ? b.plot.cells.slice(1) : []; }
-  freeYardCells(b         )           {
-    if(!b.plot) return [];
-    const used = new Set(Object.values(b.plot.extAt));
-    return this.yardCells(b).filter(i=>!used.has(i));
+  yardSize(b         )         { return b.plot ? b.plot.cells.length-1 : 0; }
+  // 1 case → ×1, 4 cases → ×1,5, 9 cases → ×2, plafonné à ×2,5 : plus grand rapporte plus, mais de moins en moins
+  yardFactor(b         )         {
+    if(!b.plot) return 1;
+    const n = this.yardSize(b);
+    return n<=0 ? 0 : Math.min(2.5, 0.5 + 0.5*Math.sqrt(n));
+  }
+  // retire l'agrandissement d'une arrière-cour (moitié du prix rendue)
+  removeExtension(bid       ){
+    const b = this.buildings.find(x=>x.id===bid);
+    if(!b || !b.plot || b.exts.length===0) return;
+    const d = EXT_DEFS[b.exts[0]];
+    if(d) for(const k of Object.keys(d.cost)) this.stock[k] = (this.stock[k]||0) + Math.floor(d.cost[k]/2);
+    b.exts = [];
+    this.toast("Arrière-cour libérée"+(d ? " ("+d.name+" retiré)" : "")+".");
+    this.uiVersion++;
   }
 
   // Clôture : chaque bord de case qui donne hors de la parcelle, sauf le portail de la maison côté route.
@@ -633,24 +697,21 @@ class GameState {
     b.f.crop = crop; this.uiVersion++; return true;
   }
 
-  buyExtension(bid       , ext       , cell        ){
+  buyExtension(bid       , ext       ){
     const b = this.buildings.find(x=>x.id===bid); if(!b || b.def!=="burgage" || !b.done) return;
     const d = EXT_DEFS[ext]; if(!d) return;
     if(b.exts.includes(ext)){ this.toast("Cet agrandissement existe d\u00e9j\u00e0.","bad"); return; }
     if(b.lvl < d.lvl){ this.toast("Il faut un bourgage de niveau "+d.lvl+" pour ceci.","bad"); return; }
-    // parcelle tracée : l'agrandissement prend une case libre de la cour
-    let slot = -1;
+    // parcelle tracée : une seule chose dans l'arrière-cour, qui occupe toute la cour
     if(b.plot){
-      const free = this.freeYardCells(b);
-      if(free.length===0){ this.toast("Plus de place dans la cour de ce bourgage.","bad"); return; }
-      slot = (cell!==undefined && free.includes(cell)) ? cell : free[0];
+      if(this.yardSize(b)===0){ this.toast("Cette parcelle n'a pas d'arrière-cour.","bad"); return; }
+      if(b.exts.length>0){ this.toast("L'arrière-cour accueille déjà : "+EXT_DEFS[b.exts[0]].name+". Retirez-le d'abord.","bad"); return; }
     }
     for(const k of Object.keys(d.cost)){
       if((this.stock[k]||0) < d.cost[k]){ this.toast("Il manque des ressources pour "+d.name+".","bad"); return; }
     }
     for(const k of Object.keys(d.cost)) this.stock[k] -= d.cost[k];
     b.exts.push(ext);
-    if(b.plot) b.plot.extAt[ext] = slot;
     this.toast("Agrandissement ajout\u00e9 : "+d.name);
     this.uiVersion++;
   }
@@ -1047,6 +1108,7 @@ class GameState {
         if(site.progress>=1){
           site.done=true; site.progress=1;
           this.toast(BUILD_DEFS[site.def].name+" est achevé(e) !","good");
+          if(site.def==="burgage") this.rehouseCamp();
           if(site.def==="manor") this.toast("Vous pouvez désormais lever l'impôt.","good");
           f.task=null; f.state="idle"; f.cool=5;
         }
@@ -1314,13 +1376,14 @@ class GameState {
     const beeSeason = m>=3 && m<=8;
     for(const b of this.buildings){
       if(!b.done || b.def!=="burgage") continue;
+      const yf = this.yardFactor(b); // parcelle tracée : production à la mesure de l'arrière-cour
       for(const e of b.exts){
-        if(e==="garden")  this.stock.veg=Math.min(this.capFor("veg"), this.stock.veg+0.5);
-        if(e==="chicken") this.stock.eggs=Math.min(this.capFor("eggs"), this.stock.eggs+0.5);
-        if(e==="orchard" && summer) this.stock.apples=Math.min(this.capFor("apples"), this.stock.apples+1);
-        if(e==="beehive" && beeSeason) this.stock.honey=Math.min(this.capFor("honey"), this.stock.honey+0.5);
-        if(e==="tailor")  this.stock.clothes=Math.min(this.capFor("clothes"), this.stock.clothes+1);
-        if(e==="brewer"){ if(this.stock.barley>=1){ this.stock.barley-=1; this.stock.ale=Math.min(this.capFor("ale"), this.stock.ale+1); } }
+        if(e==="garden")  this.stock.veg=Math.min(this.capFor("veg"), this.stock.veg+0.5*yf);
+        if(e==="chicken") this.stock.eggs=Math.min(this.capFor("eggs"), this.stock.eggs+0.5*yf);
+        if(e==="orchard" && summer) this.stock.apples=Math.min(this.capFor("apples"), this.stock.apples+1*yf);
+        if(e==="beehive" && beeSeason) this.stock.honey=Math.min(this.capFor("honey"), this.stock.honey+0.5*yf);
+        if(e==="tailor")  this.stock.clothes=Math.min(this.capFor("clothes"), this.stock.clothes+1*yf);
+        if(e==="brewer"){ const nb=Math.min(this.stock.barley, yf); if(nb>=1 || (nb>0 && yf<1)){ this.stock.barley-=nb; this.stock.ale=Math.min(this.capFor("ale"), this.stock.ale+nb); } }
       }
     }
     // repousse des baies et croissance lente des arbres non abattus
@@ -1410,6 +1473,8 @@ class GameState {
     if(this.buildings.some(b=>b.done&&b.def==="market")) a+=4; else a-=4;
     const homeless=this.families.filter(f=>f.home<0).length;
     a-=Math.min(24, homeless*12);
+    const campB=this.buildings.find(b=>b.def==="camp");
+    if(campB) a-=Math.min(12, this.families.filter(f=>f.home===campB.id).length*4); // vie au campement
     a-=(this.taxRate-0.1)*40;
     if(this.policies.tithe) a-=4;
     if(this.policies.freeMarket) a+=3;
@@ -1491,6 +1556,7 @@ class GameState {
         this.stock.timber-=2; this.stock.stone-=2; b.lvl=3; this.toast("Un bourgage évolue : niveau 3 ! Impôts accrus.","good");
       }
     }
+    this.rehouseCamp();
     // migration (personne ne s'installe dans un village au bord de la famine)
     if(this.approval>=40){
       const free=this.freeBurgages();
@@ -1719,10 +1785,7 @@ class GameState {
         const cells = p && Array.isArray(p.cells) ? p.cells.filter(i=>Number.isInteger(i) && i>=0 && i<W*H) : [];
         if(cells.length===0 || cells[0]!==b.y*W+b.x) delete b.plot;
         else {
-          const extAt = {};
-          if(p.extAt && typeof p.extAt==="object") for(const k of Object.keys(p.extAt))
-            if(EXT_DEFS[k] && b.exts.includes(k) && cells.indexOf(p.extAt[k])>0) extAt[k] = p.extAt[k];
-          b.plot = { cells, dir: Number.isInteger(p.dir) && p.dir>=0 && p.dir<4 ? p.dir : 2, extAt };
+          b.plot = { cells, dir: Number.isInteger(p.dir) && p.dir>=0 && p.dir<4 ? p.dir : 2 };
           if(Array.isArray(p.poly) && p.poly.length>=3 && p.poly.every(q=>Array.isArray(q) && q.length===2 && q.every(v=>typeof v==="number" && isFinite(v)) && q[0]>=0 && q[0]<=W && q[1]>=0 && q[1]<=H))
             b.plot.poly = p.poly.map(q=>[q[0], q[1]]);
         }
@@ -1732,6 +1795,11 @@ class GameState {
     g.families = Array.isArray(data.families) ? data.families : [];
     g.deer = Array.isArray(data.deer) ? data.deer : [];
     if(data.stock && typeof data.stock==="object") g.stock = Object.assign(g.stock, data.stock);
+    // une seule chose par arrière-cour : les agrandissements en trop des anciennes sauvegardes sont remboursés
+    for(const b of g.buildings) if(b.plot && b.exts.length>1){
+      for(const e of b.exts.slice(1)){ const d=EXT_DEFS[e]; if(d) for(const k of Object.keys(d.cost)) g.stock[k]=(g.stock[k]||0)+d.cost[k]; }
+      b.exts = b.exts.slice(0,1);
+    }
     if(data.time && num(data.time.tick) && num(data.time.day) && num(data.time.month) && num(data.time.year)){
       g.time = { tick:Math.max(0,data.time.tick), day:Math.max(0,data.time.day),
                  month:Math.max(0,Math.min(11,data.time.month)), year:Math.max(0,data.time.year) };

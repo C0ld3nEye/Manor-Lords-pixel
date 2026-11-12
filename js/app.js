@@ -56,7 +56,7 @@ var ui = {
 
 /* ----- catégories de construction (dock du bas) ----- */
 var CATS = [
-  { id:"home",  name:"Maisons",    icon:"house",  items:["burgage"], actions:["zone"],
+  { id:"home",  name:"Maisons",    icon:"house",  items:[], actions:["zone"],
     hint:"Tracez une zone le long d'une route : maisons, cours et clôtures se placent seules." },
   { id:"res",   name:"Récolte",    icon:"axe",    items:["woodcutter","forager","hunter","quarry"],
     hint:"Bois, baies, gibier et pierre : posez-les près de la ressource." },
@@ -221,7 +221,10 @@ canvas.addEventListener("pointerdown", function(e){
   /* outil de zone : toucher un point existant = le déplacer (ou fermer le contour sur le premier) */
   if(game && ui.zoneMode && ui.zonePts.length){
     var zw0 = toWorld(e.clientX, e.clientY), zi = nearZonePt(zw0.wx, zw0.wy);
-    if(zi>=0){ zoneDrag = { i:zi, sx:e.clientX, sy:e.clientY, moved:false }; drag.down = false; drag.moved = true; return; }
+    if(zi>=0){
+      zoneDrag = { i:zi, sx:e.clientX, sy:e.clientY, moved:false, extend: !ui.zoneClosed && zi===ui.zonePts.length-1 };
+      drag.down = false; drag.moved = true; return;
+    }
   }
   drag.down = true; drag.moved = false; camGoal = null;
   drag.sx = e.clientX; drag.sy = e.clientY;
@@ -255,7 +258,13 @@ canvas.addEventListener("pointermove", function(e){
   }
   if(zoneDrag.i>=0){
     if(Math.abs(e.clientX-zoneDrag.sx)+Math.abs(e.clientY-zoneDrag.sy)>6) zoneDrag.moved = true;
-    if(zoneDrag.moved){ var zw = toWorld(e.clientX, e.clientY); ui.zonePts[zoneDrag.i] = snapPt(zw.wx, zw.wy); }
+    if(zoneDrag.moved){
+      /* tirer depuis le dernier point : un nouveau trait suit le doigt */
+      if(zoneDrag.extend){ ui.zonePts.push(ui.zonePts[zoneDrag.i].slice()); zoneDrag.i = ui.zonePts.length-1; zoneDrag.extend = false; }
+      var zw = toWorld(e.clientX, e.clientY), zn = ui.zonePts.length, zi2 = zoneDrag.i;
+      var zprev = zi2>0 ? ui.zonePts[zi2-1] : (ui.zoneClosed ? ui.zonePts[zn-1] : null);
+      ui.zonePts[zi2] = game.snapZonePoint(zw.wx, zw.wy, zprev);
+    }
     return;
   }
   var w = toWorld(e.clientX, e.clientY);
@@ -312,15 +321,9 @@ canvas.addEventListener("pointerup", function(e){
   var w = toWorld(e.clientX, e.clientY);
   ui.objOpen = false; ui.layersOpen = false;
   if(w.tx<0||w.ty<0||w.tx>=W||w.ty>=H){ renderUI(); return; }
-  if(ui.extPlace){
-    var ep = ui.extPlace, eb = game.buildings.filter(function(b){ return b.id===ep.bid; })[0], eti = w.ty*W+w.tx;
-    if(eb && game.freeYardCells(eb).indexOf(eti)>=0){
-      game.buyExtension(ep.bid, ep.ext, eti); ui.extPlace = null; ui.selId = ep.bid; AudioFX.build(); buzz(8);
-    } else flash("Touchez une case verte de la cour.");
-  }
-  else if(ui.zoneMode){
+  if(ui.zoneMode){
     if(ui.zoneClosed) flash("Glissez un point pour ajuster le contour, ou ↶ pour le rouvrir.");
-    else { ui.zonePts.push(snapPt(w.wx, w.wy)); buzz(5); }
+    else { ui.zonePts.push(game.snapZonePoint(w.wx, w.wy, ui.zonePts[ui.zonePts.length-1])); buzz(5); }
   }
   else if(ui.roadMode){
     if(!game.toggleRoad(w.tx, w.ty)) flash("Impossible de tracer une route ici.");
@@ -448,15 +451,12 @@ document.addEventListener("click", function(e){
         if(zerr) flash(zerr); else { AudioFX.build(); buzz(8); ui.zonePts = []; ui.zoneClosed = false; ui.zoneN = null; }
       }
       break;
-    case "extauto":
-      if(ui.extPlace){ g.buyExtension(ui.extPlace.bid, ui.extPlace.ext); ui.selId = ui.extPlace.bid; ui.extPlace = null; }
-      break;
+    case "extrm": if(ui.selId!=null) g.removeExtension(ui.selId); break;
     case "build":
       if(!g.canAfford(arg)){ flash(missingText(arg, g)); break; }
       clearTools(); ui.buildSel = arg; ui.cat = null; ui.selId = null; ui.sheet = null;
       break;
     case "cancel":
-      if(ui.extPlace){ ui.selId = ui.extPlace.bid; }
       ui.buildSel = null; ui.roadMode = false; clearTools(); break;
     case "sheet":
       ui.sheet = (ui.sheet===arg ? null : arg); ui.cat = null; ui.selId = null; ui.buildSel = null; ui.roadMode = false; ui.layersOpen = false; clearTools();
@@ -472,10 +472,7 @@ document.addEventListener("click", function(e){
     case "unassign": if(ui.selId!=null) g.unassign(ui.selId); break;
     case "ext":
       if(ui.selId!=null){
-        var xb = g.buildings.filter(function(b){ return b.id===ui.selId; })[0];
-        /* parcelle tracée avec plusieurs cases libres : le joueur choisit la case sur la carte */
-        if(xb && xb.plot && g.freeYardCells(xb).length>1){ ui.extPlace = { bid:xb.id, ext:arg }; ui.selId = null; }
-        else g.buyExtension(ui.selId, arg);
+        g.buyExtension(ui.selId, arg);
       }
       break;
     case "crop": if(ui.selId!=null) g.setCrop(ui.selId, arg); break;
@@ -695,11 +692,7 @@ function renderHud(g){
   /* aide à la pose (bas de l'écran) */
   var h = "";
   if(ui.flash) h += "<div class='flash'>"+esc(ui.flash)+"</div>";
-  if(ui.extPlace){
-    var xd = EXT_DEFS[ui.extPlace.ext];
-    h += "<div class='frame place'><div class='t'><b>"+esc(xd.name)+" "+costHtml(xd.cost, g)+"</b><span>Touchez une case verte de la cour.</span></div>"
-       + "<button class='b' data-act='extauto'>Auto</button><button class='b sq' data-act='cancel' aria-label='Annuler'>"+ic("close")+"</button></div>";
-  } else if(ui.zoneMode){
+  if(ui.zoneMode){
     var zo = zoneOverlay(g), zp = ui.zonePts.length, zpl2 = zo && zo.plan, ztxt, ztitle = "Zone de bourgages", zok = ui.zoneClosed && zpl2 && !zpl2.err;
     if(!ui.zoneClosed) ztxt = zp===0 ? "Touchez la carte pour poser les points du contour, le long d'une route."
       : zp<3 ? zp+" point"+(zp>1?"s":"")+" posé"+(zp>1?"s":"")+". Continuez le contour."
@@ -810,9 +803,25 @@ function sheetSelection(g){
     h += "<div class='kv'><span class='k'>"+ic("family","s")+(fam ? esc(fam.name) : "Logement vacant")+"</span>"
        + (sel.monthsGood>0 ? "<span class='v good'>Bien loti : "+sel.monthsGood+" mois</span>" : "")+"</div>";
     if(sel.done){
-      h += "<div class='sec'>Arrière-cour"+(sel.plot ? " · "+(g.yardCells(sel).length-g.freeYardCells(sel).length)+"/"+g.yardCells(sel).length+" cases" : "")+"</div>";
       var exts = sel.exts || [];
-      for(var ei=0; ei<EXT_ORDER.length; ei++){
+      if(sel.plot){
+        /* parcelle tracée : une seule chose, qui remplit l'arrière-cour et produit selon sa taille */
+        var yn = g.yardSize(sel), yfs = g.yardFactor(sel).toFixed(1).replace(".", ",");
+        h += "<div class='sec'>Arrière-cour · "+yn+" case"+(yn>1?"s":"")+" · rendement ×"+yfs+"</div>";
+        if(exts.length){
+          var cur = EXT_DEFS[exts[0]];
+          h += "<div class='ext have'><span class='t'><b>"+esc(cur.name)+" ×"+yfs+"</b><span>"+esc(cur.desc)+"</span></span><button class='b' data-act='extrm'>Retirer</button></div>";
+        } else {
+          h += "<div class='dim' style='font-size:11px;margin:2px 0 4px'>Une seule chose par arrière-cour : elle s'étend sur toute la cour.</div>";
+          for(var ej=0; ej<EXT_ORDER.length; ej++){
+            var ed2 = EXT_DEFS[EXT_ORDER[ej]];
+            if(sel.lvl < ed2.lvl) h += "<div class='ext' style='opacity:.5;cursor:default'><span class='t'><b>"+esc(ed2.name)+"</b><span>Bourgage niveau "+ed2.lvl+" requis</span></span></div>";
+            else h += "<button class='ext' data-act='ext' data-arg='"+ed2.id+"'><span class='t'><b>"+esc(ed2.name)+" ×"+yfs+"</b><span>"+esc(ed2.desc)+"</span></span>"+costHtml(ed2.cost, g)+"</button>";
+          }
+        }
+      }
+      else h += "<div class='sec'>Arrière-cour</div>";
+      for(var ei=0; ei<(sel.plot ? 0 : EXT_ORDER.length); ei++){
         var ed = EXT_DEFS[EXT_ORDER[ei]];
         var have = exts.indexOf(ed.id)>=0, locked = sel.lvl < ed.lvl;
         if(have) h += "<div class='ext have'><span class='t'><b>"+esc(ed.name)+"</b><span>"+esc(ed.desc)+"</span></span><span class='good'>✔</span></div>";
@@ -1049,7 +1058,6 @@ var _lastT = performance.now(), _acc = 0, _uiAcc = 0, _saveAcc = 0;
 /* étape 3 : outils de zone et de pose dans la cour */
 function clearTools(){ ui.zoneMode = false; ui.zonePts = []; ui.zoneClosed = false; ui.zoneN = null; ui.extPlace = null; zoneDrag = { i:-1 }; }
 var zoneDrag = { i:-1 }, lastPtrType = "mouse";
-function snapPt(x, y){ return [Math.max(0, Math.min(W, Math.round(x*4)/4)), Math.max(0, Math.min(H, Math.round(y*4)/4))]; }
 function nearZonePt(x, y){
   var r = Math.max(0.35, 30/(16*cam.zoom)), best = -1;
   for(var i=0; i<ui.zonePts.length; i++){ var d = Math.hypot(ui.zonePts[i][0]-x, ui.zonePts[i][1]-y); if(d<=r){ r = d; best = i; } }
@@ -1057,10 +1065,6 @@ function nearZonePt(x, y){
 }
 var _zoneKey = "", _zoneOv = null;
 function zoneOverlay(g){
-  if(ui.extPlace){
-    var eb = g.buildings.filter(function(b){ return b.id===ui.extPlace.bid; })[0];
-    return eb ? { free:g.freeYardCells(eb) } : null;
-  }
   if(!ui.zoneMode || ui.zonePts.length===0) return null;
   var key = JSON.stringify(ui.zonePts)+"|"+ui.zoneClosed+"|"+ui.zoneN+"|"+g.uiVersion+"|"+g.buildings.length+"|"+Math.floor(g.stock.timber);
   if(key===_zoneKey) return _zoneOv;

@@ -471,7 +471,7 @@ function buildingSprite(g, b, winter, byId){
       var cu = b.churchUp || [];
       return "church_"+(cu.indexOf("bell")>=0 ? 1 : 0)+(cu.indexOf("altar")>=0 ? 1 : 0)+w;
     case "wall": return "wall_"+wallMask(g, b, byId)+w;
-    case "field": return null;
+    case "field": case "camp": case "oxpost": return null; // dessinés à part
     default: return b.def + w;
   }
 }
@@ -582,32 +582,60 @@ function drawPolyFence(g, poly, dir, a, rail, post){
   bx.globalAlpha = 1;
 }
 function drawPlotGround(g, b, season, winter){
-  var cells = b.plot.cells, ea = b.plot.extAt || {};
+  var cells = b.plot.cells, garden = b.done && b.exts && b.exts[0]==="garden" ? yardSpots(b) : [], k;
   if(b.plot.poly){
     fillPoly(b.plot.poly, winter ? "rgba(255,255,255,0.10)" : "rgba(70,96,34,0.18)");
-    if(b.done && ea.garden!==undefined) spr("veg_"+season, cellX(ea.garden)+8, cellY(ea.garden)+12);
+    for(k=0; k<garden.length; k++) spr("veg_"+season, cellX(garden[k])+8, cellY(garden[k])+12);
     drawPolyFence(g, b.plot.poly, b.plot.dir, b.done ? 1 : 0.4, WOOD_A, WOOD_B);
     return;
   }
   bx.fillStyle = winter ? "rgba(255,255,255,0.10)" : "rgba(70,96,34,0.18)";
   for(var k=1; k<cells.length; k++) bx.fillRect(cellX(cells[k])-OX, cellY(cells[k])-OY, TS, TS);
-  if(b.done && ea.garden!==undefined) spr("veg_"+season, cellX(ea.garden)+8, cellY(ea.garden)+12);
+  for(k=0; k<garden.length; k++) spr("veg_"+season, cellX(garden[k])+8, cellY(garden[k])+12);
   drawFences(g.plotFences(b), b.done ? 1 : 0.4, WOOD_A, WOOD_B);
 }
-/* agrandissements posés sur leur case de cour */
+/* étape 3 : l'unique agrandissement remplit l'arrière-cour, à la mesure de sa taille
+   (un élément pour ~2 cases, 5 au plus, répartis sur toute la cour) */
+function yardSpots(b){
+  var y = b.plot.cells.slice(1).sort(function(a, c){ return a-c; }), n = y.length, out = [];
+  var k = Math.min(5, Math.max(1, Math.round(n/2)));
+  for(var j=0; j<k && n>0; j++) out.push(y[Math.floor((j+0.5)*n/k)]);
+  return out;
+}
 function drawYard(B, season, winter, t, now){
-  var ea = B.plot.extAt || {}, i, x, y;
-  if((i = ea.orchard)!==undefined){ x = cellX(i)+8; y = cellY(i)+13; sh("sh_sap", x, y); obj(y, drawSprite, "fruit_"+season, x, y); }
-  if((i = ea.beehive)!==undefined){ x = cellX(i)+5; y = cellY(i)+12; obj(y, drawSprite, "skep", x, y); }
-  if((i = ea.brewer)!==undefined){ x = cellX(i)+5; y = cellY(i)+12; obj(y, drawSprite, "barrel", x, y); }
-  if((i = ea.tailor)!==undefined){ x = cellX(i)+3; y = cellY(i)+11; obj(y, drawSprite, "cloth", x, y); }
-  if((i = ea.chicken)!==undefined && !winter){
-    for(var c=0;c<2;c++){
-      var ph = t*0.7 + B.id + c*2;
-      var cx2 = cellX(i) + 4 + c*5 + Math.round(Math.sin(ph)*2), cy2 = cellY(i) + 9 + c*3;
-      var pk = (Math.floor(now/400) + c + B.id) % 3 === 0 ? 1 : 0;
-      obj(cy2, drawSprite, "chick_"+(c&1)+"_"+pk+((Math.sin(ph+0.2) - Math.sin(ph))<0 ? "_l" : ""), cx2, cy2);
+  var e = B.exts && B.exts[0]; if(!e || e==="garden") return;
+  var sp = yardSpots(B), x, y;
+  for(var j=0; j<sp.length; j++){
+    var i = sp[j];
+    if(e==="orchard"){ x = cellX(i)+8; y = cellY(i)+13; sh("sh_sap", x, y); obj(y, drawSprite, "fruit_"+season, x, y); }
+    else if(e==="beehive"){ x = cellX(i)+6; y = cellY(i)+12; obj(y, drawSprite, "skep", x, y); }
+    else if(e==="brewer"){ x = cellX(i)+5; y = cellY(i)+12; obj(y, drawSprite, "barrel", x, y); }
+    else if(e==="tailor"){ x = cellX(i)+3; y = cellY(i)+11; obj(y, drawSprite, "cloth", x, y); }
+    else if(e==="chicken" && !winter){
+      for(var c=0; c<(sp.length<3 ? 2 : 1); c++){
+        var ph = t*0.7 + B.id + j*1.7 + c*2;
+        var cx2 = cellX(i) + 4 + c*5 + Math.round(Math.sin(ph)*2), cy2 = cellY(i) + 9 + c*3;
+        var pk = (Math.floor(now/400) + c + j + B.id) % 3 === 0 ? 1 : 0;
+        obj(cy2, drawSprite, "chick_"+((c+j)&1)+"_"+pk+((Math.sin(ph+0.2) - Math.sin(ph))<0 ? "_l" : ""), cx2, cy2);
+      }
     }
+  }
+}
+
+/* départ : campement des survivants (tentes et feu) et poteau du bœuf */
+function drawStart(g, B, winter, now){
+  var bxp = B.x*TS, byp = (B.y+B.h)*TS;
+  if(B.def==="camp"){
+    var cxp = bxp + TS, cyp = byp - 2;
+    sh("sh_camp", cxp, cyp);
+    obj(cyp, function(){ spr("camp"+(winter ? "_w" : ""), cxp, cyp); spr("fire_"+(Math.floor(now/140) + B.id) % 3, cxp - 1, cyp); });
+    return;
+  }
+  obj(byp - 1, function(){ rect(bxp+3, byp-12, 2, 11, WOOD_B); rect(bxp+2, byp-12, 4, 1, WOOD_A); rect(bxp+5, byp-8, 5, 1, "#c9b48a"); });
+  if(g.stock.ox>0){
+    var ox = bxp + 12, oy = byp - 1;
+    sh("sh_ox", ox, oy);
+    obj(oy, drawSprite, "ox_"+(Math.floor(now/900) % 2)+"_l", ox, oy);
   }
 }
 
@@ -631,15 +659,7 @@ function drawOverlay(g, now){
       rect(Math.round(P[k][0]*TS)-(sz>>1), Math.round(P[k][1]*TS)-(sz>>1), sz, sz, big ? "#e8c35a" : col);
     }
   }
-  if(OV.free){
-    var pulse = 0.22 + 0.14*Math.sin(now/220);
-    for(k=0; k<OV.free.length; k++){
-      var fi = OV.free[k];
-      bx.fillStyle = "rgba(90,224,110,"+pulse.toFixed(3)+")";
-      bx.fillRect(cellX(fi)-OX, cellY(fi)-OY, TS, TS);
-      corners(cellX(fi), cellY(fi), TS, TS, "#5ae06e");
-    }
-  }
+
 }
 
 /* accessoires de cour devant / autour de la maison */
@@ -877,6 +897,7 @@ function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
   for(var bj=0; bj<g.buildings.length; bj++){
     var B = g.buildings[bj];
     if(B.def==="field") continue;
+    if(B.def==="camp" || B.def==="oxpost"){ drawStart(g, B, winter, now); continue; }
     var name = buildingSprite(g, B, winter, byId);
     if(!name || !SPR.frames[name]) continue;
     var fr = SPR.frames[name], bxp = B.x*TS, byp = (B.y+B.h)*TS;

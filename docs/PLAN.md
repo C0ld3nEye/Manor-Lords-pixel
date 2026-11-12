@@ -164,6 +164,9 @@ Impact maximal / effort minimal d'abord :
 ## 6. Étape 3 — Maisons automatiques et chantiers visibles ✅ (PR à valider)
 
 - **Tracé libre, point par point (façon Manor Lords)** : le joueur pose les points du contour le long d'une route (calés au quart de case), touche le premier point pour fermer, glisse un point pour ajuster. `planZone(points, n)` repère la façade, propose une maison toutes les 2 cases (réglable avec − / +), coupe la zone perpendiculairement à la route ; chaque parcelle garde son contour (`plot.poly`) et sa cour = ses cases hors maison, donc la forme décide de la taille des jardins et du nombre d'agrandissements.
+- **Aimant de route** : `snapZonePoint` colle un point au bord d'une route à moins d'une demi-case, et un trait presque parallèle à la route reste bien droit ; on peut tirer un trait depuis le dernier point.
+- **Arrière-cour** : une seule chose par cour (potager, verger, ruches, poules…), dessinée sur toute la cour (≈ 1 élément pour 2 cases, 5 au plus) ; production ×(0,5 + 0,5·√cases), plafonnée à ×2,5 ; « Retirer » rend la moitié du prix.
+- **Nouveau départ** : campement de survivants, poteau du bœuf (1 bœuf), bout de chemin, aucune maison ; les familles emménagent dès qu'une maison est prête, puis le campement est démonté. Le bourgage d'une case n'est plus au menu (gardé pour les vieilles sauvegardes).
 - **Chantiers** : `buildStage` (fondations, charpente, murs, toit), dessinés étape par étape ; les journaliers bâtissent.
 - **Rendu** : clôtures en lignes pixel qui suivent le contour exact (côté rue ouvert), cour teintée, agrandissements posés sur leur case (choix de la case verte ou « Auto »).
-- **Sauvegarde v3** : champ `plot` optionnel, anciennes sauvegardes compatibles. 76 tests. Vérifié en Chrome mobile émulé 390×844, pas encore sur un vrai téléphone.
+- **Sauvegarde v3** : champ `plot` optionnel, anciennes sauvegardes compatibles (cour à plusieurs agrandissements : le premier est gardé, les autres remboursés). 80 tests. Vérifié en Chrome mobile émulé 390×844, pas encore sur un vrai téléphone.

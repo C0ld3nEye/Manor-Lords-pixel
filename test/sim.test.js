@@ -17,6 +17,11 @@ function placeInCenter(g, def){
     if(g.place(def, x, y)===null) return g.buildings[g.buildings.length-1];
   throw new Error("pas de place pour "+def);
 }
+// bourgage d'une case (ancien système, gardé pour les vieilles sauvegardes) posé pour les tests
+function legacyHouse(g){
+  const b0 = g.buildings.find(x => x.def === "burgage"); if(b0) return b0;
+  for(let i=0;i<W*H;i++){ if(!g.place("burgage", i%W, (i/W)|0)) return g.buildings[g.buildings.length-1]; }
+}
 
 
 function freeSpot(g){
@@ -100,7 +105,7 @@ test("affectation d'une famille à un camp de bûcherons", () => {
 
 test("journal : toast ajoute une entrée datée et est limité à 120", () => {
   const g = fresh();
-  assert.strictEqual(g.log.length, 0);
+  g.log = [];
   g.toast("Bonjour", "good");
   assert.strictEqual(g.log.length, 1);
   assert.strictEqual(g.log[0].text, "Bonjour");
@@ -157,7 +162,7 @@ test("victoire : les 4 objectifs remplis déclenchent victory (mode prospérité
 test("extensions : 6 disponibles, coût débité, doublon refusé", () => {
   const g = fresh();
   assert.strictEqual(EXT_ORDER.length, 6);
-  const b = g.buildings.find(x => x.def === "burgage");
+  const b = legacyHouse(g);
   b.done = true;
   g.stock.timber = 10;
   g.buyExtension(b.id, "garden");
@@ -169,7 +174,7 @@ test("extensions : 6 disponibles, coût débité, doublon refusé", () => {
 
 test("extensions : tailleur et brasserie exigent le niveau 2", () => {
   const g = fresh();
-  const b = g.buildings.find(x => x.def === "burgage");
+  const b = legacyHouse(g);
   b.done = true; b.lvl = 1;
   g.stock.timber = 10; g.stock.stone = 10;
   g.buyExtension(b.id, "tailor");
@@ -183,7 +188,7 @@ test("extensions : tailleur et brasserie exigent le niveau 2", () => {
 
 test("production : potager et basse-cour produisent chaque mois", () => {
   const g = fresh();
-  const b = g.buildings.find(x => x.def === "burgage");
+  const b = legacyHouse(g);
   b.done = true; b.exts = ["garden", "chicken"];
   const veg0 = g.stock.veg, egg0 = g.stock.eggs;
   for(let i=0;i<160;i++) g.step(); // ~1 mois
@@ -193,7 +198,7 @@ test("production : potager et basse-cour produisent chaque mois", () => {
 
 test("verger ne produit qu'en août-octobre", () => {
   const g = fresh();
-  const b = g.buildings.find(x => x.def === "burgage");
+  const b = legacyHouse(g);
   b.done = true; b.exts = ["orchard"];
   g.time.month = 5; // juin : pas de pommes
   const a0 = g.stock.apples;
@@ -263,15 +268,16 @@ test("boeufs : achat à 20 deniers, accélération du labour", () => {
   g.treasury = 0;
   assert.strictEqual(g.buyOx(), false);
   g.treasury = 50;
+  const ox0 = g.stock.ox;
   assert.strictEqual(g.buyOx(), true);
-  assert.strictEqual(g.stock.ox, 1);
+  assert.strictEqual(g.stock.ox, ox0 + 1);
   assert.strictEqual(g.treasury, 30);
   assert.ok(g.oxSpeed() > 1);
 });
 
 test("brasserie consomme de l'orge pour produire de l'ale", () => {
   const g = fresh();
-  const b = g.buildings.find(x => x.def === "burgage");
+  const b = legacyHouse(g);
   b.done = true; b.exts = ["brewer"];
   g.stock.barley = 5; g.stock.ale = 0;
   for(let i=0;i<160;i++) g.step();
@@ -722,7 +728,8 @@ test("phase 6 : sauvegarde v2 persiste mode, difficulté, victoire, défaite", (
 });
 
 /* ---------- étape 3 : chantiers en étapes et parcelles tracées point par point ---------- */
-const { BUILD_STAGES, buildStage, PLOT_FRONT, polyArea, pointInPoly } = require("../js/sim.js");
+const { BUILD_STAGES, buildStage, PLOT_FRONT, polyArea, pointInPoly, BUILD_ORDER } = require("../js/sim.js");
+const DAYS_PER_MONTH = 30, TICKS_PER_DAY = 10;
 
 // terrain dégagé dans la région centrale, route horizontale en y=4 (x 16 → 28)
 function zoneSetup(timber){
@@ -840,25 +847,38 @@ test("étape 3 : les journaliers bâtissent les maisons de la zone", () => {
   assert.ok(seen.has(0) && seen.has(3), "le chantier est passé par plusieurs étapes");
 });
 
-test("étape 3 : les agrandissements se posent dans la cour, dans la limite de la place", () => {
+test("étape 3 : une seule chose par arrière-cour, à la mesure de sa taille", () => {
   const g = zoneSetup();
-  g.traceZone([[18,5],[20,5],[20,6],[18,6]], 1);   // maison + 1 case de cour
+  g.traceZone(RECT, 2);                      // 2 parcelles de 9 cases : cour de 8
   const b = plotsOf(g)[0]; b.done = true; b.progress = 1;
-  assert.strictEqual(g.yardCells(b).length, 1);
+  assert.strictEqual(g.yardSize(b), 8);
+  g.buyExtension(b.id, "orchard");
+  assert.deepStrictEqual(b.exts, ["orchard"]);
+  const timber = g.stock.timber;
+  g.buyExtension(b.id, "garden");
+  assert.deepStrictEqual(b.exts, ["orchard"], "une seule chose : refusé");
+  assert.strictEqual(g.stock.timber, timber, "rien n'est dépensé");
+  // rendement : plus grand rapporte plus, mais de moins en moins, plafonné
+  const f = (n)=>g.yardFactor({ plot:{ cells:new Array(n+1).fill(0) } });
+  assert.strictEqual(f(1), 1); assert.strictEqual(f(4), 1.5); assert.strictEqual(f(9), 2);
+  assert.strictEqual(f(100), 2.5); assert.strictEqual(f(0), 0);
+  assert.strictEqual(g.yardFactor(legacyHouse(fresh())), 1, "ancien bourgage : inchangé");
+  // retirer : moitié du prix rendue, la cour se libère
+  g.removeExtension(b.id);
+  assert.deepStrictEqual(b.exts, []);
+  assert.strictEqual(g.stock.timber, timber + 1);
   g.buyExtension(b.id, "garden");
   assert.deepStrictEqual(b.exts, ["garden"]);
-  assert.strictEqual(b.plot.extAt.garden, b.plot.cells[1]);
-  const timber = g.stock.timber;
-  g.buyExtension(b.id, "chicken");
-  assert.deepStrictEqual(b.exts, ["garden"], "cour pleine : refusé");
-  assert.strictEqual(g.stock.timber, timber, "rien n'est dépensé");
-  const g2 = zoneSetup();
-  g2.traceZone(RECT);
-  const b2 = plotsOf(g2)[0]; b2.done = true; b2.progress = 1;
-  const target = b2.plot.cells[3];
-  g2.buyExtension(b2.id, "orchard", target);
-  assert.strictEqual(b2.plot.extAt.orchard, target);
-  assert.ok(!g2.freeYardCells(b2).includes(target));
+});
+
+test("étape 3 : la production d'une arrière-cour suit sa taille", () => {
+  const mk = (n)=>{ const g = zoneSetup(); g.traceZone(RECT, n); const b = plotsOf(g)[0]; b.done=true; b.progress=1; g.buyExtension(b.id, "garden"); return g; };
+  const small = mk(6), big = mk(1);          // cour de 5 cases contre 17
+  const v0s = small.stock.veg, v0b = big.stock.veg;
+  for(const g of [small, big]){ g.time.day = DAYS_PER_MONTH-1; g.time.tick = TICKS_PER_DAY-1; g.step(); }
+  const gs = small.stock.veg - v0s, gb = big.stock.veg - v0b;
+  assert.ok(gs > 0.5 && gb > gs, "grande cour : plus de légumes ("+gs.toFixed(2)+" < "+gb.toFixed(2)+")");
+  assert.ok(gb < gs * 17/5, "mais pas proportionnel à la surface");
 });
 
 test("étape 3 : sauvegarde v3 des parcelles et de leur contour, démolition libère la cour", () => {
@@ -867,6 +887,12 @@ test("étape 3 : sauvegarde v3 des parcelles et de leur contour, démolition lib
   const b = plotsOf(g)[0]; b.done = true; b.progress = 1;
   g.buyExtension(b.id, "garden");
   const data = JSON.parse(JSON.stringify(g.serialize()));
+  // ancienne cour à plusieurs agrandissements : on garde le premier, les autres sont remboursés
+  const multi = JSON.parse(JSON.stringify(data));
+  multi.buildings.find(x=>x.id===b.id).exts = ["garden","orchard"];
+  const gm = GameState.load(multi);
+  assert.deepStrictEqual(gm.buildings.find(x=>x.id===b.id).exts, ["garden"]);
+  assert.strictEqual(gm.stock.timber, multi.stock.timber + EXT_DEFS.orchard.cost.timber);
   assert.strictEqual(data.v, 3);
   const g2 = GameState.load(data);
   const b2 = g2.buildings.find(x=>x.id===b.id);
@@ -883,5 +909,42 @@ test("étape 3 : sauvegarde v3 des parcelles et de leur contour, démolition lib
   g2.demolish(b2.id);
   for(const i of cells) assert.strictEqual(g2.occupied[i], -1);
 });
+
+test("étape 3 : aimant de route — le contour se cale sur le bord et reste droit", () => {
+  const g = zoneSetup();                     // route en y=4 : son bord sud est la ligne y=5
+  assert.deepStrictEqual(g.snapZonePoint(19.3, 5.35), [19.25, 5], "collé au bord de la route");
+  assert.deepStrictEqual(g.snapZonePoint(19.3, 5.8), [19.25, 5.75], "trop loin : pas d'aimant");
+  assert.deepStrictEqual(g.snapZonePoint(23.1, 5.55, [19, 5]), [23, 5], "trait parallèle à la route : reste droit");
+  assert.deepStrictEqual(g.snapZonePoint(23.1, 6.4, [19, 5]), [23, 6.5], "on s'en échappe en tirant plus loin");
+  assert.deepStrictEqual(g.snapZonePoint(23.1, 5.55, [19, 7]), [23, 5.5], "pas de résistance loin de la route");
+});
+
+test("étape 3 : départ façon Manor Lords — campement, poteau du bœuf, aucune maison", () => {
+  const g = fresh();
+  assert.ok(!BUILD_ORDER.includes("burgage"), "le bourgage d'une case n'est plus au menu");
+  assert.strictEqual(g.buildings.filter(b=>b.def==="burgage").length, 0);
+  const camp = g.buildings.find(b=>b.def==="camp");
+  assert.ok(camp && camp.done);
+  assert.ok(g.buildings.some(b=>b.def==="oxpost"));
+  assert.strictEqual(g.stock.ox, 1);
+  assert.strictEqual(g.families.length, 3);
+  assert.ok(g.families.every(f=>f.home===camp.id), "les survivants vivent au campement");
+  assert.ok(g.roadAt(camp.x, camp.y+1), "un bout de chemin devant le campement");
+});
+
+test("étape 3 : les familles quittent le campement pour leurs maisons, puis il est démonté", () => {
+  const g = fresh();
+  const camp = g.buildings.find(b=>b.def==="camp");
+  const h1 = legacyHouse(g);
+  g.rehouseCamp();
+  assert.strictEqual(g.families.filter(f=>f.home===h1.id).length, 1);
+  assert.ok(g.buildings.includes(camp), "encore 2 familles au campement");
+  legacyHouse2(g); legacyHouse2(g);
+  g.rehouseCamp();
+  assert.ok(!g.buildings.includes(camp), "campement démonté");
+  assert.ok(g.families.every(f=>f.home>=0 && f.home!==camp.id));
+  assert.strictEqual(g.occupied[camp.y*W+camp.x], -1);
+});
+function legacyHouse2(g){ for(let i=0;i<W*H;i++){ if(!g.place("burgage", i%W, (i/W)|0)) return; } }
 
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));
