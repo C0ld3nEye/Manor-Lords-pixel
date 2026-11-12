@@ -634,17 +634,17 @@ test("jalon 4 : tour et rempart dans BUILD_ORDER et sauvegardés", () => {
   assert.ok(g2.buildings.some(b=>b.def==="tower"));
 });
 
-test("phase 5 jalon 1 : 3 décrets activables, effets mensuels", () => {
+test("phase 5 jalon 1 : décrets activables et abrogeables (la dîme est devenue une redevance)", () => {
   const g = fresh();
-  assert.strictEqual(POLICY_ORDER.length, 3);
-  g.setPolicy("tithe", true);
-  assert.strictEqual(g.policies.tithe, true);
-  const i0 = g.influence, a0 = 100;
-  g.approval = 100;
+  assert.strictEqual(POLICY_ORDER.length, 2);
+  assert.ok(!POLICY_DEFS.tithe, "plus de décret de dîme");
+  g.setPolicy("freeMarket", true);
+  assert.strictEqual(g.policies.freeMarket, true);
+  const w0 = g.wealth;
   for(let i=0;i<200*TS;i++) g.step(); // 1 mois
-  assert.ok(g.influence > i0, "d\u00eeme rapporte de l'influence");
-  g.setPolicy("tithe", false);
-  assert.strictEqual(g.policies.tithe, false, "abrogeable");
+  assert.ok(g.wealth > w0, "les marchés libres font monter la richesse");
+  g.setPolicy("freeMarket", false);
+  assert.strictEqual(g.policies.freeMarket, false, "abrogeable");
 });
 
 test("phase 5 jalon 1 : service militaire ajoute un soldat", () => {
@@ -2328,6 +2328,261 @@ test("détail : un journalier qui flâne se met au travail peu après la pose d'
   const b = placeInCenter(g, "woodcutter");
   const t = quietSteps(g, 3*DAY, ()=>g.villagers.some(v=>v.task && (v.task.bid===b.id)));
   assert.ok(t < DAY/2, "quelqu'un part servir le chantier en moins d'une demi-journée ("+t+" ticks)");
+});
+
+/* ================= étape 7a : le fisc et les comptes ================= */
+const { TAX_DEFS, TAX_ORDER, TAILLE_MONTHS, DIME_MONTH, LOAN_STEP, LOAN_MISS_MAX, BOOK_CATS, BOOK_ORDER } = require("../js/sim.js");
+// le bilan d'un mois donné (m : le mois qui commence), sans événement en attente
+function monthAt(g, m){ g.time.month = m; g.time.day = 0; g.onMonth(); g.pendingEvent = null; }
+function lastBook(g){ return g.book.hist[g.book.hist.length-1]; }
+
+test("étape 7a : trois redevances à quatre niveaux, chacune rangée au livre de comptes", () => {
+  assert.deepStrictEqual(TAX_ORDER, ["dime","peage","corvee"]);
+  for(const id of TAX_ORDER){
+    const d = TAX_DEFS[id];
+    assert.strictEqual(d.levels.length, 4, id);
+    assert.strictEqual(d.ap.length, 4, id);
+    assert.ok(d.ap[3] < 0, id+" : le niveau le plus lourd coûte de l'approbation");
+  }
+  for(const k of BOOK_ORDER) assert.ok(BOOK_CATS[k] && BOOK_CATS[k].name, k);
+  assert.deepStrictEqual(TAILLE_MONTHS, [3, 8], "Pâques et Saint-Michel");
+});
+
+test("étape 7a : sans manoir, pas de péage ni de corvée ; sans église, pas de dîme", () => {
+  const g = fresh();
+  assert.ok(g.setTaxLevel("peage", 2), "refusé sans manoir");
+  assert.ok(g.setTaxLevel("corvee", 1), "refusé sans manoir");
+  assert.ok(g.setTaxLevel("dime", 1), "refusé sans église");
+  assert.strictEqual(g.taxLevel("peage"), 0);
+  doneBuilding(g, "manor");
+  assert.strictEqual(g.setTaxLevel("peage", 2), null);
+  assert.strictEqual(g.taxLevel("peage"), 2);
+  assert.ok(g.setTaxLevel("dime", 1), "toujours pas d'église");
+  doneBuilding(g, "church");
+  assert.strictEqual(g.setTaxLevel("dime", 9), null);
+  assert.strictEqual(g.taxes.dime, 3, "borné au niveau le plus lourd");
+});
+
+test("étape 7a : la taille court chaque mois mais ne se lève qu'à Pâques et à la Saint-Michel", () => {
+  const g = fresh(); houses(g, 3); doneBuilding(g, "manor");
+  g.taxRate = 0.5;
+  const tm = g.tailleMonthly();
+  assert.ok(tm > 0, "des maisons habitées : la taille court");
+  const t0 = g.treasury;
+  monthAt(g, 2);
+  assert.ok(Math.abs(g.fisc.taille - tm) < 1e-6, "un mois de taille en attente");
+  assert.ok(!lastBook(g).lines.taille, "rien n'est encore levé en mars");
+  g.approval = 80;
+  const owed = g.fisc.taille + g.tailleMonthly();
+  monthAt(g, 3);
+  assert.strictEqual(g.fisc.taille, 0, "levée à Pâques");
+  assert.ok(lastBook(g).lines.taille > 0, "rangée au livre");
+  assert.ok(Math.abs(lastBook(g).lines.taille - Math.round(owed*g.tailleRate())) < 1e-6);
+  assert.strictEqual(g.fisc.lastTaille.m, 3);
+  assert.ok(g.treasury > t0);
+});
+
+test("étape 7a : une seigneurie mécontente ne paie pas toute sa taille", () => {
+  const g = fresh();
+  g.approval = 80; assert.strictEqual(g.tailleRate(), 1);
+  g.approval = 30; assert.strictEqual(g.tailleRate(), 0.8);
+  g.approval = 10; assert.strictEqual(g.tailleRate(), 0.6);
+});
+
+test("étape 7a : la dîme prend sa part de la récolte en octobre et rapporte de l'influence chaque mois", () => {
+  const g = fresh(); doneBuilding(g, "church");
+  g.setTaxLevel("dime", 2);
+  g.fisc.harvest = 60; g.stock.sh_grain = 4; g.stock.grain = 20;
+  const i0 = g.influence;
+  monthAt(g, 5);
+  assert.ok(g.influence >= i0 + TAX_DEFS.dime.inf[2], "influence du mois");
+  assert.strictEqual(g.stock.sh_grain, 4, "rien n'est pris hors d'octobre");
+  const before = g.stock.sh_grain + g.stock.grain;
+  monthAt(g, DIME_MONTH);
+  const took = before - (g.stock.sh_grain + g.stock.grain);
+  assert.ok(Math.abs(took - 6) < 0.6, "un dixième de 60 mesures ("+took+")");
+  assert.strictEqual(g.stock.sh_grain, 0, "les gerbes d'abord");
+  assert.strictEqual(g.fisc.harvest, 0, "nouvelle année de récolte");
+  assert.ok(g.approvalWhy.some(w=>/^Dîme/.test(w[0]) && w[1]<0), "la dîme pèse sur l'approbation");
+});
+
+test("étape 7a : la moisson des céréales et des pois fait l'assiette de la dîme", () => {
+  const g = fresh();
+  g.stock.timber = 40;
+  const r = freeBlock(g, 4, 4);
+  const pts = [[r.x,r.y],[r.x+4,r.y],[r.x+4,r.y+4],[r.x,r.y+4]];
+  assert.strictEqual(g.traceField(pts), null);
+  const b = g.buildings[g.buildings.length-1];
+  b.done = true; b.f.crop = "wheat"; b.f.sown = true; b.f.sownCrop = "wheat"; b.f.growth = 1;
+  const q = g.harvestField(b);
+  assert.ok(q > 0);
+  assert.strictEqual(g.fisc.harvest, q);
+});
+
+test("étape 7a : les péages se lèvent chaque mois sur le marché, pas avec les marchés libres", () => {
+  const g = fresh(); houses(g, 3); doneBuilding(g, "manor"); doneBuilding(g, "market");
+  g.setTaxLevel("peage", 3);
+  monthAt(g, 5);
+  const t = lastBook(g).lines.peage || 0;
+  assert.ok(t > 0, "péage du marché ("+t+")");
+  assert.ok(g.approvalWhy.some(w=>/^Péages/.test(w[0]) && w[1]<0));
+  g.setPolicy("freeMarket", true);
+  monthAt(g, 6);
+  assert.ok(!lastBook(g).lines.peage, "marchés libres : le marché ne paie plus de péage");
+});
+
+test("étape 7a : jour de corvée, les ouvriers quittent leur poste pour le chantier, puis y retournent", () => {
+  const g = fresh(); doneBuilding(g, "manor");
+  const wc = doneBuilding(g, "woodcutter");
+  g.assign(wc.id); g.assign(wc.id);
+  const crew = g.workersOf(wc).map(v=>v.id);
+  assert.strictEqual(crew.length, 2);
+  g.stock.timber = 40; g.stock.stone = 10;
+  const site = placeInCenter(g, "storehouse");
+  g.setTaxLevel("corvee", 3);
+  let onSite = false, backHome = false, sawCorvee = false;
+  quietSteps(g, 16*DAY, ()=>{
+    const busy = crew.some(id=>{ const v = g.villager(id); return v.task && v.task.bid===site.id; });
+    if(g.corveeToday()){ sawCorvee = true; if(busy) onSite = true; }
+    else if(onSite && crew.some(id=>{ const v = g.villager(id); return v.task && v.task.type==="chop"; })) backHome = true;
+    return onSite && backHome;
+  });
+  assert.ok(sawCorvee, "des jours de corvée dans le mois");
+  assert.ok(onSite, "un ouvrier du camp de bûcherons sert le chantier");
+  assert.ok(backHome, "la corvée finie, il retourne abattre des arbres");
+  assert.ok(g.fisc.corveeDays > 0, "journées de corvée comptées");
+  for(const id of crew) assert.strictEqual(g.villager(id).work, wc.id, "le poste est gardé");
+});
+
+test("étape 7a : la corvée tombe exactement le nombre de jours voulu dans le mois", () => {
+  const g = fresh(); doneBuilding(g, "manor");
+  for(let lv=0; lv<4; lv++){
+    g.taxes.corvee = lv;
+    let n = 0;
+    for(let d=0; d<16; d++){ g.time.day = d; if(g.corveeToday()) n++; }
+    assert.strictEqual(n, TAX_DEFS.corvee.days[lv], "niveau "+lv);
+  }
+});
+
+test("étape 7a : sans corvée, les ouvriers des postes ne vont pas aux chantiers", () => {
+  const g = fresh(); doneBuilding(g, "manor");
+  const wc = doneBuilding(g, "woodcutter");
+  g.assign(wc.id); g.assign(wc.id);
+  const crew = g.workersOf(wc).map(v=>v.id);
+  g.stock.timber = 40;
+  const site = placeInCenter(g, "storehouse");
+  let seen = false;
+  quietSteps(g, 16*DAY, ()=>{ seen = seen || crew.some(id=>{ const v = g.villager(id); return v.task && v.task.bid===site.id; }); return seen; });
+  assert.ok(!seen);
+  assert.ok(!g.approvalWhy.some(w=>/^Corvée/.test(w[0])), "pas de corvée, pas de grogne");
+});
+
+test("étape 7a : emprunter, payer les intérêts, rembourser", () => {
+  const g = fresh();
+  assert.ok(g.borrow(50), "pas de changeur sans manoir");
+  doneBuilding(g, "manor");
+  const cap = g.loanCap();
+  assert.ok(cap >= 100);
+  assert.strictEqual(g.borrow(LOAN_STEP), null);
+  assert.strictEqual(g.fisc.debt, 50);
+  assert.strictEqual(g.treasury, 50);
+  assert.strictEqual(g.book.cur.loan, 50);
+  assert.ok(g.borrow(cap), "pas au-delà du plafond");
+  monthAt(g, 4);
+  assert.strictEqual(lastBook(g).lines.interest, -1, "2 % de 50");
+  assert.strictEqual(g.repay(20), null);
+  assert.strictEqual(g.fisc.debt, 30);
+  g.treasury = 100;
+  assert.strictEqual(g.repay(), null);
+  assert.strictEqual(g.fisc.debt, 0);
+  assert.ok(g.repay(), "plus rien à rembourser");
+});
+
+test("étape 7a : intérêts impayés, la dette grossit ; trois fois de suite, le changeur saisit des biens", () => {
+  const g = fresh(); doneBuilding(g, "manor");
+  g.borrow(100); g.treasury = 0;
+  g.stock.bread = 50; g.stock.cheese = 50;
+  g.influence = 30;
+  monthAt(g, 4);
+  assert.strictEqual(g.fisc.debt, 102);
+  assert.strictEqual(g.fisc.missed, 1);
+  assert.ok(g.borrow(50), "plus de prêt tant qu'on doit des intérêts");
+  g.treasury = 0; monthAt(g, 5);
+  assert.strictEqual(g.fisc.missed, 2);
+  assert.ok(g.approvalWhy.some(w=>w[0]==="Dettes impayées"), "la dette impayée pèse sur l'approbation");
+  for(let k=2; k<LOAN_MISS_MAX; k++){ g.treasury = 0; monthAt(g, 4+k); }
+  assert.strictEqual(g.fisc.missed, 0, "la saisie remet les compteurs à zéro");
+  assert.ok(g.fisc.debt < 70, "la moitié de la dette est couverte ("+g.fisc.debt+")");
+  assert.ok(g.stock.bread + g.stock.cheese < 100, "des biens saisis");
+  assert.ok(g.influence < 30, "votre nom en sort sali ("+g.influence+")");
+});
+
+test("étape 7a : chaque achat et chaque vente passent au livre ; le mois se ferme au bilan", () => {
+  const g = fresh();
+  g.treasury = 100;
+  g.buyOx();
+  assert.strictEqual(g.book.cur.livestock, -20);
+  g.hireMercenary();
+  assert.strictEqual(g.book.cur.mercs, -25);
+  g.time.month = 5; g.onMonth(); g.pendingEvent = null;
+  const h = lastBook(g);
+  assert.strictEqual(h.m, 4, "bilan de mai");
+  assert.strictEqual(h.lines.livestock, -20);
+  assert.deepStrictEqual(g.book.cur, {}, "nouveau mois, nouvelle page");
+  for(let k=0;k<14;k++) monthAt(g, (6+k)%12);
+  assert.strictEqual(g.book.hist.length, 12, "douze mois gardés");
+  assert.ok(Object.keys(g.bookYear()).every(k=>BOOK_CATS[k]));
+});
+
+test("étape 7a : l'impôt du roi payé passe au livre", () => {
+  const g = fresh(); g.time.year = 1178; g.treasury = 200;
+  g.time.month = 10; g.onMonth();
+  assert.ok(g.pendingEvent && g.pendingEvent.title==="L'impôt du roi");
+  const amount = g.pendingEvent.choices[0].amount;
+  assert.strictEqual(amount, g.kingTaxEstimate(1178));
+  g.resolveEvent(0);
+  assert.strictEqual(g.book.cur.king, -amount);
+});
+
+test("étape 7a : la prévision jusqu'au printemps compte la taille, l'impôt du roi et les intérêts", () => {
+  const g = fresh(); houses(g, 3); doneBuilding(g, "manor");
+  g.time.year = 1178; g.time.month = 7; g.taxRate = 0.4; g.approval = 80;
+  g.borrow(100);
+  const f = g.cashForecast();
+  assert.strictEqual(f.months, 7, "d'août à mars");
+  const line = (n)=>f.lines.find(l=>l[0]===n);
+  assert.ok(line("Taille") && line("Taille")[1] > 0, "la Saint-Michel tombe dans la période");
+  assert.strictEqual(line("Impôt du roi")[1], -g.kingTaxEstimate(1178));
+  assert.strictEqual(line("Intérêts")[1], -14);
+  assert.strictEqual(f.end, Math.floor(g.treasury) + f.total);
+});
+
+test("étape 7a : sauvegarde — redevances, fisc et livre gardés ; l'ancien décret de dîme devient une dîme au dixième", () => {
+  const g = fresh(); doneBuilding(g, "manor"); doneBuilding(g, "church");
+  g.setTaxLevel("peage", 1); g.setTaxLevel("corvee", 2); g.setTaxLevel("dime", 3);
+  g.borrow(50); g.fisc.taille = 7.5; g.fisc.harvest = 12;
+  monthAt(g, 4);
+  g.buyOx();
+  const data = JSON.parse(JSON.stringify(g.serialize()));
+  const g2 = GameState.load(data);
+  assert.deepStrictEqual(g2.taxes, g.taxes);
+  assert.strictEqual(g2.fisc.debt, g.fisc.debt);
+  assert.strictEqual(g2.fisc.taille, g.fisc.taille);
+  assert.strictEqual(g2.fisc.harvest, 12);
+  assert.deepStrictEqual(g2.book, g.book);
+  // une sauvegarde d'avant l'étape 7a
+  const old = JSON.parse(JSON.stringify(data));
+  delete old.taxes; delete old.fisc; delete old.book;
+  old.policies = { tithe:true, freeMarket:false, militiaService:true };
+  old.book = { cur:{ bogus:5, taille:"x" }, hist:[ null, { y:1176, m:3, lines:{ taille:4, nope:1 } } ] };
+  const g3 = GameState.load(old);
+  assert.strictEqual(g3.taxes.dime, 2);
+  assert.strictEqual(g3.taxes.peage, 0);
+  assert.ok(!("tithe" in g3.policies));
+  assert.strictEqual(g3.policies.militiaService, true);
+  assert.deepStrictEqual(g3.book.cur, {});
+  assert.deepStrictEqual(g3.book.hist, [{ y:1176, m:3, lines:{ taille:4 } }]);
+  assert.strictEqual(g3.fisc.debt, 0);
 });
 
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));

@@ -563,6 +563,10 @@ document.addEventListener("click", function(e){
     case "sprio": if(ui.selId!=null){ var sp = g.buildings.filter(function(x){ return x.id===ui.selId; })[0]; if(sp) g.setSitePrio(sp.id, !sp.prio); } break;
     case "churchup": if(ui.selId!=null) g.churchUp(ui.selId, arg); break;
     case "policy": g.setPolicy(arg, !g.policies[arg]); break;
+    /* --- étape 7a : redevances et changeur --- */
+    case "taxlvl": { var tl = String(arg).split(":"), te = g.setTaxLevel(tl[0], Number(tl[1])); if(te) flash(te); break; }
+    case "borrow": { var be2 = g.borrow(LOAN_STEP); if(be2) flash(be2); break; }
+    case "repay": { var re2 = g.repay(arg==="all" ? g.fisc.debt : LOAN_STEP); if(re2) flash(re2); break; }
     case "demolish":
       if(ui.selId==null) break;
       if(Date.now() < ui.demolishArm){ g.demolish(ui.selId); ui.selId = null; ui.demolishArm = 0; }
@@ -727,7 +731,7 @@ function renderTop(g){
   var h = "";
   h += "<button class='stat date' data-act='sheet' data-arg='realm'>"+ic(SEASON_IC[g.season()],"l")
      + "<span class='datebox'><span class='m'>"+MONTHS_SHORT[g.time.month]+"</span><span class='y'>"+g.time.year+"</span></span></button>";
-  h += "<button class='stat' data-act='sheet' data-arg='realm'>"+ic("coin")+"<span class='v'>"+Math.floor(g.treasury)+"</span></button>";
+  h += "<button class='stat' data-act='sheet' data-arg='book' aria-label='Livre de comptes'>"+ic("coin")+"<span class='v'>"+Math.floor(g.treasury)+"</span></button>";
   h += "<button class='stat "+apCls+"' data-act='sheet' data-arg='realm'>"+ic(heartIcon(g.approval))+"<span class='v'>"+g.approval+"%</span></button>";
   h += "<button class='stat' data-act='sheet' data-arg='people' aria-label='Habitants'>"+ic("family")+"<span class='v'>"+g.villagers.length+"</span>"
      + (homeless>0 ? "<span class='badge' title='Familles sans logis'>"+homeless+"</span>" : "")+"</button>";
@@ -861,6 +865,7 @@ function renderSheet(g){
     else if(ui.sheet==="people") h = sheetPeople(g);
     else if(ui.sheet==="stock") h = sheetStock(g);
     else if(ui.sheet==="realm") h = sheetRealm(g);
+    else if(ui.sheet==="book") h = sheetBook(g);
     else if(ui.sheet==="menu") h = sheetMenu(g);
   }
   var key = (ui.cat||"")+"|"+ui.selId+"|"+ui.selV+"|"+(ui.sheet||"");
@@ -979,9 +984,7 @@ function sheetSelection(g){
     }
   }
   if(sel.def==="manor" && sel.done){
-    h += "<div class='sec'>Impôt</div><div class='row'><span>Taux</span><b id='taxLbl'>"+Math.round(g.taxRate*100)+" %</b></div>";
-    h += "<input type='range' min='0' max='100' step='5' id='taxSlider' value='"+Math.round(g.taxRate*100)+"'/>";
-    h += "<div class='dim' style='font-size:11px'>Au-delà de 10 %, l'approbation baisse.</div>";
+    h += sheetFisc(g);
     h += "<div class='sec'>Décrets</div>";
     for(var pi=0; pi<POLICY_ORDER.length; pi++){
       var pd = POLICY_DEFS[POLICY_ORDER[pi]], on = !!g.policies[pd.id];
@@ -1458,6 +1461,98 @@ function sheetStock(g){
   return h;
 }
 
+/* ===== étape 7a : le fisc (panneau du manoir) et le livre de comptes ===== */
+function deniers(v){
+  var a = Math.abs(v), t = a>=10 || Math.abs(a-Math.round(a))<0.05 ? String(Math.round(a)) : (Math.round(a*10)/10).toString().replace(".", ",");
+  return (v>0 ? "+" : v<0 ? "−" : "")+t;
+}
+function inMonthsTxt(k){ return k<=1 ? "le mois prochain" : "dans "+k+" mois"; }
+function sheetFisc(g){
+  var h = "<div class='sec'>Taille</div><div class='row'><span>Taux</span><b id='taxLbl'>"+Math.round(g.taxRate*100)+" %</b></div>";
+  h += "<input type='range' min='0' max='100' step='5' id='taxSlider' value='"+Math.round(g.taxRate*100)+"'/>";
+  var nt = g.nextOf(TAILLE_MONTHS), tm = g.tailleMonthly();
+  h += "<div class='dim' style='font-size:11px'>Au-delà de 10 %, l'approbation baisse. "+(tm<0.05 ? "Aucune maison habitée ne paie encore ; prochaine levée à " : "Environ "+deniers(tm).replace("+","")+" denier"+(tm>=2?"s":"")+" par mois, levés à ")+(nt.month===3 ? "Pâques" : "la Saint-Michel")+" ("+inMonthsTxt(nt.inMonths)+") : "+Math.round(g.fisc.taille)+" en attente."
+     + (g.tailleRate()<1 ? " <span class='bad'>Approbation basse : "+Math.round((1-g.tailleRate())*100)+" % ne seront pas payés.</span>" : "")+"</div>";
+  TAX_ORDER.forEach(function(id){
+    var d = TAX_DEFS[id], lv = g.taxes[id]|0, ok = g.taxPossible(id);
+    h += "<div class='sec'>"+esc(d.name)+"</div><div class='desc' style='margin-bottom:4px'>"+esc(d.desc)+"</div>";
+    if(!ok){ h += "<div class='bad' style='font-size:12px'>"+(d.needs==="church" ? "Il faut une église achevée." : "Il faut un manoir achevé.")+"</div>"; return; }
+    h += "<div class='lvls'>";
+    for(var k=0;k<d.levels.length;k++){
+      var fx = d.ap[k] ? signed(d.ap[k])+" appro." : "";
+      if(id==="dime" && d.inf[k]) fx = "+"+d.inf[k]+" infl. "+fx;
+      h += "<button class='b"+(lv===k?" on":"")+"' data-act='taxlvl' data-arg='"+id+":"+k+"'><b>"+esc(d.levels[k])+"</b><span>"+(fx||"—")+"</span></button>";
+    }
+    h += "</div>";
+    var st = "";
+    if(id==="dime"){
+      st = "Assiette de cette année : "+Math.round(g.fisc.harvest)+" mesures récoltées";
+      if(lv>0) st += ", soit environ "+Math.round(g.fisc.harvest*d.share[lv])+" pour l'Église en octobre";
+      if(g.fisc.lastDime) st += ". Dîme "+g.fisc.lastDime.y+" : "+Math.round(g.fisc.lastDime.q)+" mesures";
+    } else if(id==="peage"){
+      st = !g.marketActive() && !g.buildings.some(function(b){ return b.done && b.def==="trade"; }) ? "Sans marché ni comptoir, aucun marchand ne passe."
+         : "Le mois dernier : "+deniers(g.fisc.peageLast||0)+" deniers"+(g.policies.freeMarket ? " (marchés libres : rien au marché)" : "");
+    } else if(id==="corvee"){
+      st = "Le mois dernier : "+(g.fisc.corveeLast||0)+" journée"+((g.fisc.corveeLast||0)>1?"s":"")+" de corvée"+(g.buildings.some(function(b){ return !b.done; }) ? "" : ". Aucun chantier en cours : personne n'est appelé");
+    }
+    if(st) h += "<div class='dim' style='font-size:11px;margin-top:2px'>"+esc(st)+".</div>";
+  });
+  h += "<button class='kv lnk' data-act='sheet' data-arg='book' style='margin-top:8px'><span class='k'>"+ic("scroll")+"Livre de comptes</span><span class='v'>›</span></button>";
+  return h;
+}
+function bookRows(lines){
+  var h = "", tot = 0;
+  BOOK_ORDER.forEach(function(k){
+    var v = lines[k]; if(!v || Math.abs(v)<0.05) return;
+    tot += v;
+    h += "<div><span>"+esc(BOOK_CATS[k].name)+"</span><b class='"+(v>0?"good":"bad")+"'>"+deniers(v)+"</b></div>";
+  });
+  if(!h) return "<div class='dim' style='font-size:12px'>Aucun mouvement.</div>";
+  return "<div class='why'>"+h+"<div><span><b>Solde</b></span><b class='"+(tot>=0?"good":"bad")+"'>"+deniers(tot)+"</b></div></div>";
+}
+function sheetBook(g){
+  var h = head(ic("scroll","l"), "Livre de comptes", "Trésor : "+Math.floor(g.treasury)+" deniers · "+MONTHS[g.time.month]+" "+g.time.year);
+  h += "<div class='kv'><span class='k'>"+ic("coin")+"Trésor</span><span class='v'>"+Math.floor(g.treasury)+" deniers</span></div>";
+  if(g.fisc.debt>0) h += "<div class='kv'><span class='k bad'>"+ic("bag")+"Dette au changeur</span><span class='v bad'>"+Math.ceil(g.fisc.debt)+" · "+g.interestDue()+" d'intérêts par mois</span></div>";
+  /* prévision */
+  var f = g.cashForecast();
+  h += "<div class='sec'>Prévision jusqu'en mars ("+f.months+" mois)</div>";
+  if(f.lines.length){
+    h += "<div class='why'>";
+    f.lines.forEach(function(l){ h += "<div><span>"+esc(l[0])+"</span><b class='"+(l[1]>0?"good":"bad")+"'>"+deniers(l[1])+"</b></div>"; });
+    h += "</div>";
+  } else h += "<div class='dim' style='font-size:12px'>Aucune recette ni dépense prévue.</div>";
+  h += "<div class='kv'><span class='k'>Trésor attendu à la fin de l'hiver</span><span class='v "+(f.end<0?"bad":f.end<20?"gold":"good")+"'>"+f.end+"</span></div>";
+  if(f.end<0) h += "<div class='bad' style='font-size:12px'>Il manquera des deniers : levez la taille, vendez des surplus ou empruntez au changeur.</div>";
+  /* calendrier */
+  var nt = g.nextOf(TAILLE_MONTHS), nk = g.nextOf([KING_MONTH]), nd = g.nextOf([DIME_MONTH]);
+  h += "<div class='sec'>Calendrier fiscal</div>";
+  if(g.hasManor()) h += "<div class='kv'><span class='k'>Taille ("+(nt.month===3 ? "Pâques" : "Saint-Michel")+")</span><span class='v'>"+MONTHS[nt.month]+" · "+Math.round(g.fisc.taille)+" en attente</span></div>";
+  else h += "<div class='kv'><span class='k dim'>Taille</span><span class='v dim'>manoir requis</span></div>";
+  if(g.taxLevel("dime")) h += "<div class='kv'><span class='k'>Dîme (en nature)</span><span class='v'>"+MONTHS[nd.month]+"</span></div>";
+  var ky = g.time.year + Math.floor((g.time.month + nk.inMonths)/12);
+  if(ky>=1177) h += "<div class='kv'><span class='k'>Impôt du roi</span><span class='v'>"+MONTHS[nk.month]+" "+ky+" · ~"+g.kingTaxEstimate(ky)+"</span></div>";
+  /* mois en cours, mois dernier, douze mois */
+  h += "<div class='sec'>Ce mois-ci (en cours)</div>"+bookRows(g.book.cur);
+  var last = g.book.hist[g.book.hist.length-1];
+  if(last) h += "<div class='sec'>"+MONTHS[last.m]+" "+last.y+"</div>"+bookRows(last.lines);
+  if(g.book.hist.length>1) h += "<div class='sec'>Sur les "+g.book.hist.length+" derniers mois</div>"+bookRows(g.bookYear());
+  /* le changeur */
+  h += "<div class='sec'>Le changeur du bourg</div>";
+  if(!g.hasManor()) h += "<div class='dim' style='font-size:12px'>Il ne traite qu'avec le seigneur d'un manoir.</div>";
+  else {
+    h += "<div class='desc'>Prête jusqu'à "+g.loanCap()+" deniers (selon vos terres), à "+Math.round(LOAN_RATE*100)+" % par mois. Faute de deniers, les intérêts s'ajoutent à la dette ; au bout de "+LOAN_MISS_MAX+" échéances manquées, il saisit des biens.</div>";
+    var can = g.fisc.debt + LOAN_STEP <= g.loanCap() && !g.fisc.missed;
+    h += "<div class='row'><button class='b"+(can?"":" off")+"' data-act='borrow'>"+ic("coin","s")+"Emprunter "+LOAN_STEP+"</button>";
+    if(g.fisc.debt>0){
+      h += "<button class='b' data-act='repay'>Rembourser "+Math.min(LOAN_STEP, Math.ceil(g.fisc.debt))+"</button>";
+      if(g.fisc.debt>LOAN_STEP) h += "<button class='b' data-act='repay' data-arg='all'>Tout ("+Math.ceil(g.fisc.debt)+")</button>";
+    }
+    h += "</div>";
+  }
+  return h;
+}
+
 /* vue d'ensemble de la seigneurie */
 function sheetRealm(g){
   var homeless = g.families.filter(function(f){ return f.home<0; }).length;
@@ -1478,7 +1573,7 @@ function sheetRealm(g){
   if(homeless) h += "<div class='kv'><span class='k bad' style='padding-left:24px'>Sans logis</span><span class='v bad'>"+homeless+"</span></div>";
   h += "<div class='kv'><span class='k'>"+ic("crown")+"Influence</span><span class='v'>"+Math.floor(g.influence)+"</span></div>";
   h += "<div class='kv'><span class='k'>"+ic("bag")+"Richesse régionale</span><span class='v'>"+Math.floor(g.wealth)+"</span></div>";
-  h += "<div class='kv'><span class='k'>"+ic("coin")+"Impôt</span><span class='v'>"+(g.hasManor() ? Math.round(g.taxRate*100)+" %" : "manoir requis")+"</span></div>";
+  h += "<button class='kv lnk' data-act='sheet' data-arg='book'><span class='k'>"+ic("scroll")+"Livre de comptes</span><span class='v'>"+(g.hasManor() ? "taille "+Math.round(g.taxRate*100)+" %" : "manoir requis")+(g.fisc.debt>0 ? " · <span class='bad'>dette "+Math.ceil(g.fisc.debt)+"</span>" : "")+" ›</span></button>";
   h += "<div class='kv'><span class='k'>"+ic("sword")+"Soldats</span><span class='v'>"+g.units.length+" / "+g.militiaCount()+"</span></div>";
   if(g.time.year>=1177) h += "<div class='kv'><span class='k bad'>"+ic("shield")+esc(g.baron.name)+"</span><span class='v bad'>puissance "+g.baron.power+"</span></div>";
   h += "<div class='row' style='margin-top:10px'><button class='b' data-act='modal' data-arg='regions'>"+ic("flag")+"Régions</button>"
@@ -1639,6 +1734,7 @@ function modalHelp(){
   h += "<h3>Élevage</h3><p>Tracez un <b>pâturage</b> (tiroir Terres) comme une zone, n'importe où : la clôture coûte du bois, un abri se pose au bord. Achetez des moutons (laine en mai), des vaches (lait après le vêlage, les jeunes taureaux deviennent des bœufs) ou des porcs (glandée en forêt l'automne). Il faut un mâle pour les naissances et un <b>gardien</b> pour traire, tondre et soigner. L'herbe nourrit les bêtes du printemps à l'automne ; l'hiver, il faut du <b>foin</b> (pré de fauche, herbe en trop fauchée en juin, paille du battage) ou de l'avoine. Réglez l'<b>abattage de novembre</b> pour ne garder que ce que vous pourrez nourrir. Une maladie se propage dans un troupeau : abattre les bêtes malades l'arrête.</p>";
   h += "<h3>La carte et les régions</h3><p>Le pays est vaste : une rivière qu'on traverse aux <b>gués</b>, des lacs, de grandes forêts, et une vingtaine de <b>régions</b> aux frontières en pointillé doré. Vous commencez au Val du Cœur ; les terres assombries ne sont pas à vous : on n'y passe pas et on n'y bâtit pas. Ouvrez <b>Régions</b> (vue d'ensemble de la seigneurie) pour réclamer une région qui touche les vôtres, chacune avec son bonus. La minicarte, en haut à droite, vous emmène n'importe où d'un toucher.</p>";
   h += "<h3>Croissance</h3><p>Une approbation d'au moins 40 % et une maison libre attirent une nouvelle famille ; les jeunes couples du village qui vivent chez leurs parents passent avant. Les bourgages bien approvisionnés montent de niveau et débloquent des arrière-cours (potager, rucher, atelier…). Le <b>manoir</b> permet de lever l'impôt.</p>";
+  h += "<h3>Le fisc</h3><p>Dans le panneau du <b>manoir</b> : la <b>taille</b> (curseur) court chaque mois selon les maisons habitées et leur niveau, mais ne se lève qu'à <b>Pâques</b> (avril) et à la <b>Saint-Michel</b> (septembre) ; une seigneurie mécontente en cache une partie. La <b>dîme</b> (il faut une église) donne à l'Église une part des céréales et des pois récoltés, en octobre, contre de l'influence chaque mois. Les <b>péages</b> se lèvent chaque mois sur les marchands du marché et du comptoir. La <b>corvée</b> appelle, certains jours, les ouvriers des postes sur vos chantiers. Chaque redevance a son coût en approbation. Touchez le <b>trésor</b>, en haut, pour le <b>livre de comptes</b> : recettes et dépenses poste par poste, prévision jusqu'au printemps, calendrier fiscal, et le <b>changeur</b> qui prête à 2 % par mois (trois échéances manquées : il saisit des biens).</p>";
   h += "<h3>Commandes</h3><p>Glisser pour déplacer · pincer ou molette pour zoomer · toucher un bâtiment pour l'ouvrir · <b>appui long</b> pour annuler · toucher la minimap pour s'y rendre. Le bandeau des réserves et la date ouvrent le détail. Au clavier : Espace = pause, 1/2/3/4 = vitesse (×1, ×4, ×16, ×60), ZQSD = caméra, Échap = annuler.</p>";
   h += "<h3>Sauvegarde</h3><p>Automatique sur cet appareil (3 emplacements). Le menu permet de copier un code pour continuer sur un autre appareil.</p>";
   return h + "<button class='b gold wide' data-act='modalclose'>Compris</button>";

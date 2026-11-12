@@ -91,7 +91,7 @@ const BUILD_DEFS                              = {
   trade:     { id:"trade",     name:"Comptoir",       icon:"\u26fa", w:2,h:2, cost:{timber:3,stone:2}, fam:1, skill:"trade", instant:false, desc:"Vente automatique des surplus chaque mois (prix fluctuants). +richesse régionale." },
   tower:     { id:"tower",     name:"Tour de guet",   icon:"\ud83d\udde1\ufe0f", w:1,h:1, cost:{timber:2,stone:3}, fam:0, instant:false, desc:"+4 approbation, repousse les raids (réduit le pillage de moitié)." },
   wall:      { id:"wall",      name:"Rempart",        icon:"⬛", w:1,h:1, cost:{stone:2}, fam:0, instant:false, wall:true, desc:"Mur défensif : les brigands ne passent pas dessus (case infranchissable)." },
-  manor:     { id:"manor",     name:"Manoir",          icon:"🏰", w:2,h:2, cost:{timber:4,stone:3}, fam:0, instant:false, desc:"Permet de lever l'impôt (curseur dans le panneau du manoir)." },
+  manor:     { id:"manor",     name:"Manoir",          icon:"🏰", w:2,h:2, cost:{timber:4,stone:3}, fam:0, instant:false, desc:"Siège de l'administration : taille, péages, corvée, décrets et changeur se règlent dans son panneau." },
   // étape 5 : enclos tracé librement (coût selon la longueur de clôture), un abri et un gardien
   pasture:   { id:"pasture",   name:"Pâturage",        icon:"🐑", w:1,h:1, cost:{timber:1}, fam:1, skill:"herd", instant:false, buildRate:3, zone:true, desc:"Enclos tracé librement : l'herbe nourrit un troupeau (moutons, vaches ou porcs) du printemps à l'automne ; l'hiver, il faut du foin. Un gardien soigne les bêtes, trait, tond." },
 };
@@ -297,12 +297,53 @@ const START_REGION_NAME = "Val du Cœur";
 const REGION_COLS = 5, REGION_ROWS = 4;   // une vingtaine de régions
 const REGION_COST = { treasury:30, wealth:15 };   // première réclamation ; chaque région de plus coûte davantage
 
+// étape 7a : la dîme n'est plus un décret mais une redevance (TAX_DEFS) ; les sauvegardes qui l'avaient la gardent
 const POLICY_DEFS = {
-  tithe:         { id:"tithe",         name:"" + "Dîme ecclésiastique", desc:"+8 influence/mois, -4 approbation/mois." },
-  freeMarket:    { id:"freeMarket",    name:"Marchés libres",        desc:"+6 richesse/mois, +3 approbation/mois, -5 deniers d'impôt." },
+  freeMarket:    { id:"freeMarket",    name:"Marchés libres",        desc:"+6 richesse/mois, +3 approbation/mois ; la taille rapporte 10 % de moins et le marché ne paie pas de péage." },
   militiaService:{ id:"militiaService",name:"Service militaire",    desc:"+1 soldat de milice en plus, -3 approbation/mois." },
 };
-const POLICY_ORDER = ["tithe","freeMarket","militiaService"];
+const POLICY_ORDER = ["freeMarket","militiaService"];
+
+/* ---------- étape 7a : le fisc et les comptes ----------
+   La taille (curseur du manoir) court chaque mois mais ne se lève qu'à Pâques et à la Saint-Michel ;
+   la dîme se prélève en nature sur la récolte, en octobre ; les péages et les intérêts tombent chaque mois.
+   Chaque denier qui entre ou sort est rangé dans le livre de comptes (BOOK_CATS). */
+const TAX_DEFS = {
+  dime:   { id:"dime",   name:"Dîme",    needs:"church", levels:["Aucune","Un vingtième","Un dixième","Un huitième"],
+            share:[0, 0.05, 0.10, 0.125], inf:[0, 3, 5, 7], ap:[0, -1, -3, -5],
+            desc:"Part des céréales et des pois récoltés, versée à l'Église en octobre. En échange, l'Église soutient le seigneur : de l'influence chaque mois." },
+  peage:  { id:"peage",  name:"Péages",  needs:"manor",  levels:["Aucun","Léger","Modéré","Lourd"],
+            rate:[0, 0.05, 0.10, 0.20], ap:[0, 0, -1, -3],
+            desc:"Droit payé par les marchands qui viennent au marché et au comptoir, chaque mois. Lourds, ils font baisser les prix et la richesse régionale." },
+  corvee: { id:"corvee", name:"Corvée",  needs:"manor",  levels:["Aucune","2 jours par mois","4 jours par mois","6 jours par mois"],
+            days:[0, 2, 4, 6], ap:[0, -2, -4, -7],
+            desc:"Jours de travail dus au seigneur : ces jours-là, les ouvriers quittent leur poste pour charrier et bâtir sur les chantiers. Sans chantier, personne n'est appelé." },
+};
+const TAX_ORDER = ["dime","peage","corvee"];
+const TAILLE_MONTHS = [3, 8];       // Pâques (avril) et Saint-Michel (septembre)
+const DIME_MONTH = 9;               // octobre, une fois la moisson rentrée
+const KING_MONTH = 10;              // novembre : l'impôt du roi
+const LOAN_RATE = 0.02;             // intérêt par mois (environ un quart par an)
+const LOAN_STEP = 50;               // on emprunte et on rembourse par 50 deniers
+const LOAN_MISS_MAX = 3;            // trois échéances manquées : le changeur saisit des biens
+const BOOK_CATS = {
+  taille:   { name:"Taille", inc:true },
+  peage:    { name:"Péages", inc:true },
+  trade:    { name:"Ventes du comptoir", inc:true },
+  sales:    { name:"Ventes de bétail", inc:true },
+  loot:     { name:"Butin", inc:true },
+  loan:     { name:"Emprunts", inc:true },
+  king:     { name:"Impôt du roi" },
+  tribute:  { name:"Tributs et rançons" },
+  livestock:{ name:"Achats de bétail" },
+  food:     { name:"Achats de vivres" },
+  mercs:    { name:"Mercenaires" },
+  regions:  { name:"Réclamations de régions" },
+  interest: { name:"Intérêts" },
+  repay:    { name:"Remboursements" },
+  other:    { name:"Divers" },
+};
+const BOOK_ORDER = ["taille","peage","trade","sales","loot","loan","king","tribute","livestock","food","mercs","regions","interest","repay","other"];
 
 const CHURCH_UPGRADES = {
   altar:  { id:"altar",  name:"Autel",   cost:{stone:3},           bonus:{approval:3, influence:2}, desc:"+3 approbation, +2 influence/mois." },
@@ -433,7 +474,11 @@ class GameState {
     this.startRegion = 0;
     this.baron = { name:"Baron von Graufeld", regions:[], power:0, nextClaim:6, nextRaid:10 };
     this.influence = 0;
-    this.policies = { tithe:false, freeMarket:false, militiaService:false };
+    this.policies = { freeMarket:false, militiaService:false };
+    // étape 7a : niveaux des redevances, ce qui court d'une levée à l'autre, dette, livre de comptes
+    this.taxes = { dime:0, peage:0, corvee:0 };
+    this.fisc = { taille:0, harvest:0, debt:0, missed:0, corveeDays:0, corveeCalled:0, lastTaille:null, lastDime:null, peageLast:0 };
+    this.book = { cur:{}, hist:[] };
     this.prices = { bread:2, clothes:3, ale:2, apples:1, honey:4, meat:1, berries:1, wool:2, cheese:3 };
     this.occupied = new Int32Array(W*H).fill(-1);
     this.buildings = []; this.nextB = 1;
@@ -970,7 +1015,7 @@ class GameState {
       const h = b.herd, ld = h && LIVESTOCK[h.sp];
       if(ld && h.an.length){
         const earn = h.an.reduce((s, a)=>s + (a.a>=ld.adultAt ? ld.sell : ld.sell/2), 0);
-        this.treasury += Math.round(earn);
+        this.money("sales", Math.round(earn));
         this.toast("Pâturage démoli : "+h.an.length+" "+(h.an.length>1 ? ld.ones : ld.one)+" vendu"+(h.an.length>1?"s":"")+" (+"+Math.round(earn)+" 💰).");
       } else this.toast(site ? "Chantier du pâturage abandonné (bois non employé rendu)" : "Pâturage démoli (moitié de la clôture remboursée)");
       this.markPastures();
@@ -1292,12 +1337,213 @@ class GameState {
 
   setTax(v       ){ this.taxRate = Math.max(0, Math.min(1, v)); this.uiVersion++; }
 
+  /* ================= étape 7a : le fisc et les comptes ================= */
+  // tout denier qui entre ou sort passe par ici, rangé dans le livre de comptes du mois en cours
+  money(cat, n){
+    if(!n) return;
+    if(!BOOK_CATS[cat]) cat = "other";
+    this.treasury += n;
+    const c = this.book.cur; c[cat] = (c[cat]||0) + n;
+    this.uiVersion++;
+  }
+  // une redevance n'est levée que si son lieu existe (le manoir ; l'église pour la dîme)
+  taxPossible(id){ const d = TAX_DEFS[id]; return !!d && (d.needs==="church" ? this.hasChurch() : this.hasManor()); }
+  taxLevel(id){ return this.taxPossible(id) ? Math.max(0, Math.min(3, this.taxes[id]|0)) : 0; }
+  setTaxLevel(id, lv){
+    const d = TAX_DEFS[id]; if(!d) return "Redevance inconnue";
+    lv = Math.max(0, Math.min(d.levels.length-1, Math.round(Number(lv)||0)));
+    if(lv>0 && !this.taxPossible(id)) return d.needs==="church" ? "Il faut une église pour lever la dîme" : "Il faut un manoir pour lever cette redevance";
+    if((this.taxes[id]|0)===lv) return null;
+    this.taxes[id] = lv;
+    this.toast(d.name+" : "+d.levels[lv].toLowerCase()+".");
+    this.uiVersion++;
+    return null;
+  }
+  // ce que la taille ajoute chaque mois à la prochaine levée (selon les maisons habitées et leur niveau)
+  tailleMonthly(){
+    if(!this.hasManor()) return 0;
+    let levels = 0;
+    for(const b of this.buildings) if(b.done && b.def==="burgage" && this.families.some(f=>f.home===b.id)) levels += [0,1,3,6][b.lvl] || 0;
+    return levels*this.taxRate*(this.policies.freeMarket ? 0.9 : 1);
+  }
+  // part de la taille vraiment payée : des familles mécontentes cachent leurs deniers
+  tailleRate(){ return this.approval>=40 ? 1 : this.approval>=25 ? 0.8 : 0.6; }
+  // mois (0-11) de la prochaine levée parmi months, et dans combien de mois
+  nextOf(months){
+    const m = this.time.month;
+    for(let k=1;k<=12;k++){ const mm = (m+k)%12; if(months.includes(mm)) return { month:mm, inMonths:k }; }
+    return { month:months[0], inMonths:12 };
+  }
+  // la corvée tombe certains jours du mois, répartis régulièrement
+  corveeToday(){
+    const k = TAX_DEFS.corvee.days[this.taxLevel("corvee")];
+    if(!k) return false;
+    const d = this.time.day;
+    return Math.floor((d+1)*k/DAYS_PER_MONTH) > Math.floor(d*k/DAYS_PER_MONTH);
+  }
+  // l'ouvrier d'un poste répond à la corvée s'il y a un chantier à servir ; renvoie vrai s'il y part
+  corveeCall(f){
+    if(f.appr || !this.corveeToday()) return false;
+    const sites = this.buildings.filter(s=>!s.done);
+    const job = sites.length ? this.siteJob(f, sites) : null;
+    if(!job) return false;
+    const key = this.monthIdx()*DAYS_PER_MONTH + this.time.day;
+    if(f.corvee!==key){ f.corvee = key; this.fisc.corveeDays++; }
+    this.fisc.corveeCalled = 1;
+    this.doSiteJob(f, job);
+    return true;
+  }
+  // au matin d'un jour de corvée, les ouvriers des postes posent leur ouvrage (rien de ce qu'ils portent n'est perdu)
+  corveeMuster(){
+    if(!this.corveeToday() || !this.buildings.some(s=>!s.done)) return 0;
+    let n = 0;
+    for(const v of this.villagers){
+      if(!(v.work>0) || v.appr || v.carry || !this.canWork(v)) continue;
+      const t = v.task;
+      if(t && (t.type==="haul" || t.type==="build" || t.type==="fetch")) continue;
+      const b = this.buildings.find(x=>x.id===v.work);
+      if(!b || !b.done) continue;
+      if(t && t.type==="hunt"){ const d = this.deer.find(dd=>dd.id===t.deer); if(d) d.frozen = false; }
+      v.task = null; v.path = null; v.state = "idle"; v.timer = 0; v.cool = 0;
+      n++;
+    }
+    return n;
+  }
+  // ce que les marchands font passer au marché et au comptoir ce mois-ci, sur quoi se lèvent les péages
+  marketTraffic(){ return this.marketActive() && !this.policies.freeMarket ? 3 + 1.5*this.families.length : 0; }
+  // emprunts : le changeur du bourg prête selon l'étendue de vos terres
+  loanCap(){ return this.hasManor() ? 100 + 50*this.ownedRegions().length : 0; }
+  borrow(n){
+    n = Math.round(Number(n)||LOAN_STEP);
+    if(!this.hasManor()) return "Il faut un manoir pour traiter avec le changeur";
+    if(this.fisc.missed>0) return "Le changeur ne prête plus tant que les intérêts ne sont pas payés";
+    if(n<=0 || this.fisc.debt + n > this.loanCap()) return "Le changeur ne prête pas plus de "+this.loanCap()+" deniers en tout";
+    this.fisc.debt += n;
+    this.money("loan", n);
+    this.toast("Le changeur vous prête "+n+" deniers, à "+Math.round(LOAN_RATE*100)+" % d'intérêt par mois.");
+    return null;
+  }
+  repay(n){
+    const d = this.fisc.debt;
+    if(d<=0) return "Aucune dette";
+    n = Math.min(d, Math.round(Number(n)||d), Math.floor(this.treasury));
+    if(n<=0) return "Le trésor est vide";
+    this.fisc.debt = d - n;
+    this.money("repay", -n);
+    if(this.fisc.debt<=0){ this.fisc.debt = 0; this.fisc.missed = 0; this.toast("Dette soldée : le changeur vous salue bien bas.","good"); }
+    else this.toast("Vous remboursez "+n+" deniers au changeur ; il reste "+Math.ceil(this.fisc.debt)+".");
+    return null;
+  }
+  interestDue(){ return this.fisc.debt>0 ? Math.max(1, Math.ceil(this.fisc.debt*LOAN_RATE)) : 0; }
+  kingTaxEstimate(year){ return Math.round(8+this.families.length*1.2+(year-1177)*2); }
+  // le bilan fiscal du mois (appelé par onMonth, après le comptoir)
+  fiscMonth(m, tradeSold){
+    const F = this.fisc;
+    // taille : court chaque mois, se lève à Pâques et à la Saint-Michel
+    F.taille += this.tailleMonthly();
+    if(TAILLE_MONTHS.includes(m) && this.hasManor()){
+      const due = Math.round(F.taille), paid = Math.round(F.taille*this.tailleRate());
+      if(paid>0) this.money("taille", paid);
+      F.lastTaille = { m, y:this.time.year, due, paid };
+      if(due>0) this.toast((m===3 ? "Pâques" : "Saint-Michel")+" : la taille rapporte "+paid+" deniers"+(paid<due ? " ("+(due-paid)+" impayés : les familles mécontentes cachent leurs deniers)" : "")+".", paid<due ? "bad" : "good");
+      F.taille = 0;
+    }
+    // péages : sur le marché et sur ce que les marchands achètent au comptoir
+    const pr = TAX_DEFS.peage.rate[this.taxLevel("peage")];
+    const toll = Math.round(pr*(this.marketTraffic() + tradeSold)*10)/10;
+    F.peageLast = toll;
+    if(toll>0) this.money("peage", toll);
+    // dîme : en octobre, une part de ce qui a été récolté part à l'Église ; influence chaque mois
+    const dl = this.taxLevel("dime");
+    if(dl>0) this.influence += TAX_DEFS.dime.inf[dl];
+    if(m===DIME_MONTH){
+      let want = dl>0 ? F.harvest*TAX_DEFS.dime.share[dl] : 0, took = 0;
+      for(const k of ["sh_grain","grain","sh_barley","barley","sh_oats","oats","pulses"]){
+        if(want<=0) break;
+        const q = Math.min(want, this.stock[k]||0);
+        this.stock[k] -= q; want -= q; took += q;
+      }
+      if(dl>0){
+        F.lastDime = { y:this.time.year, q:Math.round(took*10)/10 };
+        if(took>=0.5) this.toast("Dîme : l'Église prélève "+Math.round(took)+" mesures de la récolte.");
+      }
+      F.harvest = 0;
+    }
+    // intérêts de la dette ; faute de deniers, ils s'ajoutent à la dette
+    const due = this.interestDue();
+    if(due>0){
+      if(this.treasury>=due){ this.money("interest", -due); F.missed = 0; }
+      else {
+        F.debt += due; F.missed++;
+        this.toast("Intérêts impayés : "+due+" deniers s'ajoutent à la dette ("+F.missed+"/"+LOAN_MISS_MAX+" avant saisie).","bad");
+        if(F.missed>=LOAN_MISS_MAX) this.seizeGoods();
+      }
+    }
+    F.corveeLast = F.corveeDays; F.corveeDays = 0; F.corveeCalled = 0;
+  }
+  // le changeur, impayé trop longtemps, saisit des biens jusqu'à la moitié de la dette
+  seizeGoods(){
+    const F = this.fisc;
+    let want = F.debt/2, got = 0;
+    const keys = Object.keys(this.prices).sort((a, b)=>this.prices[b]-this.prices[a]);
+    for(const k of keys.concat(["timber","stone"])){
+      if(want<=0) break;
+      const p = this.prices[k] || 1, q = Math.min(Math.floor(this.stock[k]||0), Math.ceil(want/p));
+      if(q<=0) continue;
+      this.stock[k] -= q; want -= q*p; got += q*p;
+    }
+    F.debt = Math.max(0, F.debt - got); F.missed = 0;
+    this.influence = Math.max(0, this.influence - 10);
+    this.approval = Math.max(0, this.approval - 5);
+    this.toast("Le changeur saisit des biens pour "+Math.round(got)+" deniers de dette. Votre nom en sort sali (influence −10).","bad");
+  }
+  // ferme le livre du mois écoulé (m : le mois qui commence)
+  closeBook(m){
+    const lines = {};
+    for(const k of Object.keys(this.book.cur)){ const v = Math.round(this.book.cur[k]*10)/10; if(v) lines[k] = v; }
+    const pm = (m+11)%12;
+    this.book.hist.push({ y: m===0 ? this.time.year-1 : this.time.year, m:pm, lines });
+    if(this.book.hist.length>12) this.book.hist.splice(0, this.book.hist.length-12);
+    this.book.cur = {};
+  }
+  // recettes et dépenses par poste sur les douze derniers mois
+  bookYear(){
+    const t = {};
+    for(const h of this.book.hist) for(const k of Object.keys(h.lines)) t[k] = (t[k]||0) + h.lines[k];
+    return t;
+  }
+  // prévision jusqu'à la fin de l'hiver (le prochain mois de mars) : ce qui est sûr ou probable
+  cashForecast(){
+    const m = this.time.month, n = ((2 - m + 12) % 12) || 12;
+    const lines = [];
+    const add = (name, v)=>{ if(Math.abs(v)>=0.5) lines.push([name, Math.round(v)]); };
+    const tm = this.tailleMonthly(), rate = this.tailleRate();
+    let acc = this.fisc.taille, taille = 0;
+    const recent = this.book.hist.slice(-3);
+    const avg = (k)=>recent.length ? recent.reduce((s, h)=>s + (h.lines[k]||0), 0)/recent.length : 0;
+    let king = 0, interest = 0;
+    for(let k=1;k<=n;k++){
+      const mm = (m+k)%12, yy = this.time.year + Math.floor((m+k)/12);
+      acc += tm;
+      if(TAILLE_MONTHS.includes(mm) && this.hasManor()){ taille += acc*rate; acc = 0; }
+      if(mm===KING_MONTH && yy>=1177) king += this.kingTaxEstimate(yy);
+      interest += this.interestDue();
+    }
+    add("Taille", taille);
+    add("Péages", avg("peage")*n);
+    add("Ventes du comptoir (au rythme actuel)", avg("trade")*n);
+    add("Impôt du roi", -king);
+    add("Intérêts", -interest);
+    const total = lines.reduce((s, l)=>s + l[1], 0);
+    return { months:n, lines, total, end:Math.floor(this.treasury) + total };
+  }
+
   /* ================= étape 5 : bœufs de trait ================= */
   makeOx(age){ return { id:this.nextA++, a:age, h:100 }; }
   syncOx(){ this.stock.ox = this.oxen.length; }
   buyOx(){
     if(this.treasury < 20){ this.toast("Il faut 20 deniers pour acheter un bœuf.","bad"); return false; }
-    this.treasury -= 20; this.oxen.push(this.makeOx(36)); this.syncOx();
+    this.money("livestock", -20); this.oxen.push(this.makeOx(36)); this.syncOx();
     this.toast("Un bœuf de trois ans rejoint l'attelage ! Les labours iront plus vite.","good");
     this.uiVersion++;
     return true;
@@ -1518,6 +1764,7 @@ class GameState {
     const verb = cd.season==="meadow" ? "Fauche du pré" : cd.id==="flax" ? "Arrachage du lin" : cd.cereal ? "Moisson "+cd.of : "Récolte des pois et fèves";
     this.toast(verb+" : "+q+(cd.sheaf ? " gerbes à battre 🎋" : " "+(RES_ICONS[cd.yield]||"")), "good");
     f.hist.push({ y:this.time.year, crop:cd.id, q });
+    if(cd.cereal || cd.yield==="pulses") this.fisc.harvest += q;   // étape 7a : assiette de la dîme
     if(f.hist.length>4) f.hist.shift();
     f.prev = cd.id; f.prevAt = this.monthIdx(); f.stubAt = this.monthIdx();
     f.fert = Math.max(0.2, Math.min(1, f.fert - cd.fertCost));
@@ -1852,7 +2099,7 @@ class GameState {
     const h = b.herd;
     if(h.sp && h.sp!==sp && h.an.length) return "Ce pâturage accueille déjà des "+LIVESTOCK[h.sp].ones;
     if(this.treasury<d.buy) return "Il faut "+d.buy+" deniers";
-    this.treasury -= d.buy; h.sp = sp;
+    this.money("livestock", -d.buy); h.sp = sp;
     h.an.push(this.makeAnimal(sp, female, d.adultAt + 4 + Math.floor(this.rnd()*24)));
     this.toast(d.icon+" "+(female ? d.f+" achetée" : d.m+" acheté")+" pour "+d.buy+" 💰.", "good");
     this.uiVersion++;
@@ -1863,7 +2110,7 @@ class GameState {
     const h = b.herd, d = LIVESTOCK[h.sp], a = this.pickCull(h);
     const p = a.a>=d.adultAt ? d.sell : Math.max(1, Math.round(d.sell/2));
     h.an.splice(h.an.indexOf(a), 1);
-    this.treasury += p;
+    this.money("sales", p);
     this.toast(d.icon+" Une bête vendue au marché : +"+p+" 💰.");
     this.uiVersion++;
     return null;
@@ -2070,22 +2317,22 @@ class GameState {
   resolveEvent(choiceIndex       ){
     const ev = this.pendingEvent; if(!ev) return;
     const c = ev.choices[choiceIndex];
-    if(c.act==="pay"){ this.treasury -= (c.amount||0); this.toast("Le roi a reçu son dû. La paix est préservée.","good"); }
+    if(c.act==="pay"){ this.money("king", -(c.amount||0)); this.toast("Le roi a reçu son dû. La paix est préservée.","good"); }
     else if(c.act==="refuseTax"){ this.approval -= 12; const lost=this.stock.berries+this.stock.meat+this.stock.bread+this.stock.eggs+this.stock.veg;
       for(const k of FOOD_TYPES) this.stock[k]=Math.floor(this.stock[k]*0.75); this.toast("Le bailli confisque une partie des récoltes !","bad"); }
-    else if(c.act==="payRaid"){ this.treasury -= (c.amount||0); this.toast("Le tribut est versé au Baron. Il se retire… pour l'instant.","good"); }
+    else if(c.act==="payRaid"){ this.money("tribute", -(c.amount||0)); this.toast("Le tribut est versé au Baron. Il se retire… pour l'instant.","good"); }
     else if(c.act==="refuseRaid"){ this.approval -= 15;
       const fort = this.buildings.some(b=>b.done&&b.def==="tower") ? 0.5 : 1.0;
       for(const k of FOOD_TYPES) this.stock[k]=Math.floor((this.stock[k]||0)*(1-0.3*fort));
       this.stock.timber=Math.floor(this.stock.timber*(1-0.15*fort));
       this.toast("Les cavaliers pillent la seigneurie !"+(fort<1?" (la tour en a limité les dégâts)":""),"bad"); }
-    else if(c.act==="payBandits"){ this.treasury -= (c.amount||0); this.toast("Les brigands s'éloignent, bourse plus légère.","good"); }
+    else if(c.act==="payBandits"){ this.money("tribute", -(c.amount||0)); this.toast("Les brigands s'éloignent, bourse plus légère.","good"); }
     else if(c.act==="fairWood" || c.act==="fairCoin") this.fairDeal(ev.fair, c.act==="fairWood");
     else if(c.act==="fairNo") this.toast("Le marchand de bestiaux reprend la route.");
     else if(c.act==="buyFood"){
       const q = Math.min(c.qty||0, Math.max(0, this.capFor("pulses") - (this.stock.pulses||0)));
       const cost = Math.ceil(q*(c.price||0));
-      if(q>0 && this.treasury>=cost){ this.treasury -= cost; this.stock.pulses = (this.stock.pulses||0) + q; this.toast("Le marchand de grain livre "+q+" mesures de pois et fèves secs 🫛 (−"+cost+" 💰).","good"); }
+      if(q>0 && this.treasury>=cost){ this.money("food", -cost); this.stock.pulses = (this.stock.pulses||0) + q; this.toast("Le marchand de grain livre "+q+" mesures de pois et fèves secs 🫛 (−"+cost+" 💰).","good"); }
     }
     else if(c.act==="noFood") this.toast("Le marchand de grain reprend la route.");
     else if(c.act==="hideBandits"){ for(const k of FOOD_TYPES) this.stock[k]=Math.floor(this.stock[k]*0.8);
@@ -2119,7 +2366,7 @@ class GameState {
     const b = fair && this.pastureOf(fair.bid), d = fair && LIVESTOCK[fair.sp];
     if(!b || !d || (b.herd.an.length && b.herd.sp!==fair.sp)){ this.toast("Le pâturage n'est plus libre : le marchand repart."); return; }
     if(wood){ if(this.freeStock("timber")<fair.wood) return; this.stock.timber -= fair.wood; }
-    else { if(this.treasury<fair.coin) return; this.treasury -= fair.coin; }
+    else { if(this.treasury<fair.coin) return; this.money("livestock", -fair.coin); }
     b.herd.sp = fair.sp;
     for(const f of fair.lot) b.herd.an.push(this.makeAnimal(fair.sp, !!f, d.adultAt + 4 + Math.floor(this.rnd()*18)));
     this.toast(d.icon+" Marché conclu : "+fair.lot.length+" "+d.ones+" rejoignent le pâturage.", "good");
@@ -2143,7 +2390,7 @@ class GameState {
       this.toast("Réclamation impossible : il faut "+c.treasury+" deniers et "+c.wealth+" de richesse régionale.","bad");
       return false;
     }
-    this.treasury -= c.treasury; this.wealth -= c.wealth;
+    this.money("regions", -c.treasury); this.wealth -= c.wealth;
     r.owned = true;
     this.influence += 10;
     this.toast("🗺️ "+r.name+" est désormais vôtre !","good");
@@ -2414,6 +2661,8 @@ class GameState {
       this.idleNearHome(f);
       return;
     }
+    // étape 7a : jour de corvée, l'ouvrier laisse son poste pour les chantiers
+    if(this.corveeCall(f)) return;
     const m=this.time.month;
     switch(b.def){
       case "woodcutter":{
@@ -2856,6 +3105,8 @@ class GameState {
       case "build":{
         const site = t.bid!==undefined ? this.buildings.find(x=>x.id===t.bid) : null;
         if(!site || site.done){ f.task=null; f.state="idle"; f.cool=5; break; }
+        // étape 7a : la journée de corvée finie, l'ouvrier d'un poste y retourne
+        if(f.work>0 && f.work!==site.id && !f.appr && !this.corveeToday()){ f.task=null; f.state="idle"; f.cool=2; break; }
         // on ne bâtit qu'avec ce qui a été livré
         const cap = this.matFrac(site);
         if(site.progress >= cap - 1e-9){ f.task=null; f.state="idle"; f.cool=2; break; }
@@ -2864,7 +3115,7 @@ class GameState {
           site.done=true; site.progress=1;
           this.toast(BUILD_DEFS[site.def].name+" est achevé(e) !","good");
           if(site.def==="burgage") this.rehouseCamp();
-          if(site.def==="manor") this.toast("Vous pouvez désormais lever l'impôt.","good");
+          if(site.def==="manor") this.toast("Le manoir est debout : la taille sera levée à Pâques et à la Saint-Michel. Réglez les redevances dans son panneau.","good");
           f.task=null; f.state="idle"; f.cool=5;
         }
         break;
@@ -3303,7 +3554,7 @@ class GameState {
         c.hp -= 0.30; u.hp -= 0.03;
         if(c.hp<=0){
           this.camps.splice(this.camps.indexOf(c),1);
-          this.treasury += 15;
+          this.money("loot", 15);
           this.wealth += 10;
           this.toast("🏆 Camp de brigands détruit ! +15 deniers de butin.","good");
           u.state="guard"; u.target=null; u.hp=u.maxHp;
@@ -3319,7 +3570,7 @@ class GameState {
   hireMercenary(){
     const cost = 25;
     if(this.treasury < cost){ this.toast("Il faut "+cost+" deniers pour louer un mercenaire.","bad"); return false; }
-    this.treasury -= cost;
+    this.money("mercs", -cost);
     const b = this.buildings.find(b=>b.done && b.def==="manor") || this.buildings[0];
     this.units.push({ id:this.nextU++, x:b.x+0.5, y:b.y+b.h+0.5, hp:14, maxHp:14, state:"guard", target:null, cool:0, merc:true, ttl:Math.round(96*TS) }); // contrat de mercenaire (unitStep est appelé tous les 6 ticks)
     this.toast("\u2694\ufe0f Un mercenaire rejoint vos rangs (25 deniers).","good");
@@ -3391,6 +3642,7 @@ class GameState {
         if(t.month>11){ t.month=0; t.year++; this.onYear(); }
         this.onMonth();
       }
+      this.corveeMuster();
     }
   }
 
@@ -3490,8 +3742,7 @@ class GameState {
     // étape 6 : pourrissement, denrée par denrée (la grange en abrite une partie, le froid ralentit tout)
     this.spoilMonth();
     for(const b of this.buildings) if(RECIPES[b.def]){ b.lastMade = Math.round((b.made||0)*10)/10; b.made = 0; }
-    // effets des décrets actifs
-    if(this.policies.tithe){ this.influence += 8; }
+    // effets des décrets actifs (la dîme est levée dans fiscMonth)
     if(this.policies.freeMarket){ this.wealth += 6; }
     if(this.policies.militiaService){ /* milice déjà comptée dans militiaCount */ }
     // influence passive : église + manoir
@@ -3517,8 +3768,15 @@ class GameState {
     add("Familles sans logis", -Math.min(24, homeless*12));
     const campB=this.buildings.find(b=>b.def==="camp");
     if(campB) add("Vie au campement", -Math.min(6, this.families.filter(f=>f.home===campB.id).length*2)); // (léger)
-    add("Impôt de "+Math.round(this.taxRate*100)+" %", -(this.taxRate-0.1)*40);
-    if(this.policies.tithe) add("Dîme", -4);
+    if(this.hasManor()) add("Taille de "+Math.round(this.taxRate*100)+" %", -(this.taxRate-0.1)*40);
+    // étape 7a : les autres redevances
+    for(const id of TAX_ORDER){
+      const lv = this.taxLevel(id), d = TAX_DEFS[id];
+      if(!lv) continue;
+      if(id==="corvee" && !this.fisc.corveeCalled) continue;   // personne n'a été appelé ce mois-ci
+      add(d.name+" : "+d.levels[lv].toLowerCase(), d.ap[lv]);
+    }
+    if(this.fisc.missed>0) add("Dettes impayées", -3);
     if(this.policies.freeMarket) add("Marchés libres", 3);
     if(this.policies.militiaService) add("Service militaire", -3);
     if(starved>0) add("Des familles ont faim", -8);
@@ -3537,13 +3795,10 @@ class GameState {
     if(this.lowApprovalStreak>=6){ this.defeat=true; this.endReason="approbation à 0 (6 mois)"; this.toast("💀 La seigneurie sombre dans le chaos…","bad"); }
     if(this.approval>=50) this.objectives.happyStreak=(this.objectives.happyStreak||0)+1; else this.objectives.happyStreak=0;
     if(this.approval>=50 && (this.objectives.happyStreak||0)>=3) this.objectives.happy=true;
-    // impôts
-    if(this.hasManor()){
-      let levels=0;
-      for(const b of this.buildings) if(b.done&&b.def==="burgage"&&this.families.some(f=>f.home===b.id)) levels+=[0,1,3,6][b.lvl];
-      this.treasury+=levels*this.taxRate*(this.policies.freeMarket?0.9:1);
-    }
     // ----- commerce régional : comptoir vend les surplus, prix fluctuants -----
+    // (étape 7a : les marchands répercutent les péages sur leurs prix d'achat)
+    const toll = TAX_DEFS.peage.rate[this.taxLevel("peage")];
+    let tradeSold = 0;
     const tradeActive = this.buildings.some(b=>b.done && b.def==="trade" && this.workersOf(b).length>0);
     if(tradeActive){
       let earned = 0;
@@ -3561,14 +3816,17 @@ class GameState {
       // un négociant habile vend mieux (de −10 % pour un novice à +10 % pour un maître)
       let ts = 0;
       for(const tb of this.buildings) if(tb.done && tb.def==="trade") for(const v of this.workersOf(tb)) ts = Math.max(ts, v.skills.trade||0);
-      earned = Math.round(earned * (0.9 + 0.2*ts/100));
-      this.treasury += earned;
-      this.wealth += earned * 0.6; // la richesse régionale reflète l'activité commerciale
+      tradeSold = earned;
+      earned = Math.round(earned * (0.9 + 0.2*ts/100) * (1 - toll*0.5));
+      this.money("trade", earned);
+      this.wealth += earned * 0.6 * (1 - toll); // la richesse régionale reflète l'activité commerciale
       if(earned>0) this.toast("Comptoir : +"+earned+" deniers de ventes.","good");
     } else {
       // sans comptoir, la richesse régionale vient des impôts locaux
       this.wealth = Math.max(0, this.wealth*0.98);
     }
+    // ----- étape 7a : taille, péages, dîme, intérêts -----
+    this.fiscMonth(m, tradeSold);
     // cueilleurs : récolte passive de baies en saison, même sans ouvrier assigné
     if(this.berrySeason()){
       let anyBerry=false;
@@ -3678,8 +3936,8 @@ class GameState {
     // étape 6 : soudure, disette et marchand de grain
     this.dearthMonth(m, starved, meal);
     // événements
-    if(m===10 && this.time.year>=1177){
-      const amount=Math.round(8+this.families.length*1.2+(this.time.year-1177)*2);
+    if(m===KING_MONTH && this.time.year>=1177){
+      const amount=this.kingTaxEstimate(this.time.year);
       this.pendingEvent={ title:"L'impôt du roi",
         text:"Un héraut du roi exige "+amount+" deniers pour la couronne. Le refroidissement de sa gratitude serait… regrettable.",
         choices:[
@@ -3715,6 +3973,7 @@ class GameState {
     }
     // ----- IA du Baron rival -----
     this.baronStep();
+    this.closeBook(m);
     this.uiVersion++;
   }
 
@@ -4050,6 +4309,9 @@ class GameState {
       dearth:this.dearth,
       dearthWarnY:this.dearthWarnY,
       merchantAt:this.merchantAt,
+      taxes:this.taxes,
+      fisc:this.fisc,
+      book:this.book,
     };
   }
   static load(data    )          {
@@ -4115,6 +4377,19 @@ class GameState {
     g.baron.regions = g.baron.regions.filter(k=>g.regions[k] && !g.regions[k].owned);
     g.influence = typeof data.influence==="number" ? data.influence : 0;
     if(data.policies && typeof data.policies==="object") g.policies = Object.assign(g.policies, data.policies);
+    // étape 7a : redevances, fisc et livre de comptes ; l'ancien décret de dîme devient une dîme au dixième
+    if(data.taxes && typeof data.taxes==="object") for(const id of TAX_ORDER) g.taxes[id] = num(data.taxes[id]) ? Math.max(0, Math.min(3, Math.round(data.taxes[id]))) : 0;
+    else if(g.policies.tithe) g.taxes.dime = 2;
+    for(const k of Object.keys(g.policies)) if(!POLICY_DEFS[k]) delete g.policies[k];
+    if(data.fisc && typeof data.fisc==="object"){
+      for(const k of ["taille","harvest","debt","missed","corveeDays","corveeCalled","peageLast","corveeLast"]) if(num(data.fisc[k])) g.fisc[k] = Math.max(0, data.fisc[k]);
+      for(const k of ["lastTaille","lastDime"]) if(data.fisc[k] && typeof data.fisc[k]==="object") g.fisc[k] = data.fisc[k];
+    }
+    if(data.book && typeof data.book==="object"){
+      const clean = (o)=>{ const r = {}; if(o && typeof o==="object") for(const k of Object.keys(o)) if(BOOK_CATS[k] && num(o[k])) r[k] = o[k]; return r; };
+      g.book.cur = clean(data.book.cur);
+      g.book.hist = Array.isArray(data.book.hist) ? data.book.hist.filter(h=>h && num(h.y) && num(h.m)).slice(-12).map(h=>({ y:h.y, m:Math.max(0, Math.min(11, h.m)), lines:clean(h.lines) })) : [];
+    }
     g.camps = Array.isArray(data.camps) ? data.camps : [];
     g.units = Array.isArray(data.units) ? data.units : [];
     g.nextC = Math.max(0, ...g.camps.map(c=>typeof c.id==="number"?c.id:0)) + 1;
@@ -4204,5 +4479,6 @@ class GameState {
 
 if(typeof module!=="undefined" && module.exports){
   module.exports = { T_FORD, REGION_NAMES, START_REGION_NAME, REGION_COLS, REGION_ROWS, rleEncode, rleDecode, HOUSE_CAP, FOOD_DEFS, FOOD_GROUPS, FOOD_GROUP_ORDER, STORE_SPOIL, GRUEL, GRANARY_CAP, GRANARY_MUL, VARIETY_APPROVAL, RECIPES, SMOKE_KEEP, HOME_BAKE, MAT_RES, PORTER_LOAD, OX_LOAD, OX_SPEED, DRAG_SPEED, DEPOT_DEFS, TS, WORK_DIV, TICKS_PER_DAY, DAYS_PER_MONTH, FIELD_MIN, FIELD_MAX, PLOT_MIN, CROP_CAL, GROW_RATE, SHEAF_RES, LIVESTOCK, LIVESTOCK_ORDER, GRASS, PASTURE_MIN, PASTURE_MAX, monthsTxt, isWinterMonth, MONTHS_ABBR, SKILL_DEFS, SKILL_ORDER, SKILL_LEVELS, skillLevel, FOOD_NEED, AGE_TEEN, AGE_ADULT, AGE_ELDER, AGE_RETIRE, STAGE_NAMES, JOB_TITLES, NAMES_M, NAMES_F, SURNAMES, BUILD_STAGES, buildStage, DIRS4, PLOT_FRONT, polyArea, pointInPoly, GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
-    T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf, REGION_COST, POLICY_DEFS, POLICY_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, MODE_BY_ID, DIFFICULTIES, DIFF_BY_ID };
+    T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf, REGION_COST, POLICY_DEFS, POLICY_ORDER,
+    TAX_DEFS, TAX_ORDER, TAILLE_MONTHS, DIME_MONTH, KING_MONTH, LOAN_RATE, LOAN_STEP, LOAN_MISS_MAX, BOOK_CATS, BOOK_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, MODE_BY_ID, DIFFICULTIES, DIFF_BY_ID };
 }

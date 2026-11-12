@@ -88,8 +88,9 @@ Le détail technique et l'historique (audit, anciennes phases 0 à 7) restent da
 | Logistique | ✅ Étape 5 bis : le bois et la pierre sont réservés à la pose et sortent du stock à la livraison ; un journalier mène le bœuf, qui traîne trois troncs (la pierre se porte une à une), depuis le campement, l'entrepôt, le camp de bûcherons ou la carrière ; le chantier ne progresse qu'avec ce qui est livré ; chantier prioritaire. |
 | Nourriture | ✅ Étape 6 : moulin (farine), boulangerie, laiterie (fromage), fumoir ; les artisans vont chercher leurs ingrédients à pied ; chaque denrée se gâte à son rythme (froid, chaleur, grange qui abrite 200 denrées) ; repas comptés en cinq sortes d'aliments, foyer par foyer, le plus périssable mangé d'abord ; disette, bouillie de grain, soudure annoncée, marchand de grain. |
 | Agriculture et élevage | ✅ Étape 5 : 8 cultures et leur calendrier, fumure, labour, semailles, moisson en gerbes, battage, rotation, météo, prévision de récolte ; pâturages tracés, moutons, vaches, porcs, foin d'hiver, maladies, bœufs de trait. |
-| Simulation | 20 bâtiments, 8 cultures, 3 espèces de bétail, 11 denrées en 5 sortes, routes, comptoir, une vingtaine de régions, un baron rival, brigands, milice, 5 modes, 3 difficultés. 159 tests. |
-| Administration, vassaux, dynastie | ❌ À construire. |
+| Simulation | 20 bâtiments, 8 cultures, 3 espèces de bétail, 11 denrées en 5 sortes, routes, comptoir, une vingtaine de régions, un baron rival, brigands, milice, 5 modes, 3 difficultés. 177 tests. |
+| Administration | 🚧 Étape 7a : taille levée à Pâques et à la Saint-Michel, dîme en nature, péages, corvée (les ouvriers rejoignent les chantiers), changeur et dettes, livre de comptes avec prévision jusqu'au printemps. |
+| Vassaux, dynastie | ❌ À construire. |
 | Équilibrage et fun | ❓ À vérifier en jouant sur téléphone. |
 | Distribution | Page web uniquement. |
 
@@ -122,8 +123,14 @@ Moulin (grain → farine), boulangerie (farine → pain), laiterie (lait → fro
 **Étape 6 bis — Une vraie carte** ✅
 La carte passe de 46 × 34 à 256 × 192 cases, sans forme géométrique imposée : un pays continental (rivière avec gués, lacs, massifs forestiers, prairies) découpé en une vingtaine de régions aux frontières naturelles. On commence au centre, dans une région bien plus grande qu'avant, et on s'étend de proche en proche. Plus tard (étape 11), ce pays ne sera qu'une partie du royaume, avec ses vassaux et ses voisins. Les anciennes sauvegardes (petite carte) ne se chargent plus.
 
-**Étape 7 — Administration**
-Taxes multiples, corvées, lois et décrets, justice, personnel (intendant, bailli…), livre de comptes.
+**Étape 7 — Administration** (inspiration Crusader Kings, à l'échelle du village)
+Découpée en cinq livraisons jouables :
+
+- **7a — Le fisc et les comptes** ✅ : la taille court chaque mois mais se lève à Pâques et à la Saint-Michel (une seigneurie mécontente en cache une partie) ; la dîme prend en octobre une part des céréales et des pois récoltés, contre de l'influence chaque mois (il faut une église ; l'ancien décret de dîme devient une dîme au dixième) ; les péages se lèvent sur les marchands du marché et du comptoir ; la corvée appelle, certains jours, les ouvriers des postes sur les chantiers ; le changeur prête à 2 % par mois et saisit des biens après trois échéances manquées ; livre de comptes poste par poste, douze mois d'historique, prévision jusqu'au printemps et calendrier fiscal.
+- **7b — L'opinion et le conseil** : opinion de chaque famille avec ses causes et sa mémoire, réputation du seigneur (juste, généreux, sévère, cruel…), conseil **facultatif** (intendant, bailli, chapelain, maître d'armes) avec missions, traits, salaires et corruption. Une seigneurie tourne très bien sans conseillers : ils apportent un plus, jamais une obligation.
+- **7c — Le coutumier et les ordres** : lois par chapitres (coût en influence, délai, verrous de titre) ; trois ordres d'habitants à la façon de *Foundation* : les **serfs** (tâches de base et corvées), les **artisans et bourgeois** (maisons plus développées, métiers qualifiés : boulanger, tisserand…), les **nobles** (maisons encore plus développées, cour, clergé, lettrés).
+- **7d — Justice et audiences** : plaids saisonniers, enquête, peines, précédents ; pétitions et faveurs dues.
+- **7e — Les intrigues** : factions, fuites, jacqueries, secrets, informateurs, chronique du domaine.
 
 **Étape 8 — Premier passage d'équilibrage et de fun**
 Pas de nouvelle mécanique. Parties tests sur téléphone, simulateur qui joue des centaines de parties, tutoriel par objectifs, info-bulles qui expliquent les causes, trois difficultés vraiment différentes.
