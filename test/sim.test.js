@@ -820,7 +820,7 @@ test("étape 3 : la zone s'arrête au bois disponible", () => {
   assert.strictEqual(plan.limited, true);
   assert.strictEqual(g.traceZone(RECT), null);
   assert.strictEqual(plotsOf(g).length, 2);
-  assert.strictEqual(g.stock.timber, 0);
+  assert.strictEqual(g.freeStock("timber"), 0, "tout le bois est réservé aux deux maisons");
   assert.strictEqual(zoneSetup(0).traceZone(RECT), "Ressources insuffisantes");
 });
 
@@ -829,7 +829,8 @@ test("étape 3 : tracer crée des maisons en chantier qui occupent leur parcelle
   assert.strictEqual(g.traceZone(ORGANIC, 4), null);
   const ps = plotsOf(g);
   assert.strictEqual(ps.length, 4);
-  assert.strictEqual(g.stock.timber, 46);
+  assert.strictEqual(g.freeStock("timber"), 46);
+  assert.strictEqual(g.stock.timber, 50, "il ne sortira du stock qu'à la livraison");
   for(const b of ps){
     assert.strictEqual(b.done, false);
     assert.strictEqual(b.plot.cells[0], b.y*W+b.x);
@@ -895,7 +896,7 @@ test("étape 3 : sauvegarde v3 des parcelles et de leur contour, démolition lib
   const gm = GameState.load(multi);
   assert.deepStrictEqual(gm.buildings.find(x=>x.id===b.id).exts, ["garden"]);
   assert.strictEqual(gm.stock.timber, multi.stock.timber + EXT_DEFS.orchard.cost.timber);
-  assert.strictEqual(data.v, 5);
+  assert.strictEqual(data.v, 6);
   const g2 = GameState.load(data);
   const b2 = g2.buildings.find(x=>x.id===b.id);
   assert.deepStrictEqual(b2.plot, b.plot);
@@ -1247,7 +1248,7 @@ test("étape 4 : sauvegarde v4 — villageois, liens et compétences conservés,
   g.assign(b.id);
   for(let i=0;i<300*TS;i++) g.step();
   const data = JSON.parse(JSON.stringify(g.serialize()));
-  assert.strictEqual(data.v, 5);
+  assert.strictEqual(data.v, 6);
   const g2 = GameState.load(data);
   assert.strictEqual(g2.villagers.length, g.villagers.length);
   for(const v of g.villagers){
@@ -1489,7 +1490,7 @@ test("étape 5 : pâturage tracé librement — abri au bord, clôture payée, c
   assert.strictEqual(plan.n, 20);
   assert.strictEqual(plan.cost, 1 + Math.ceil(18/8));
   assert.strictEqual(g.tracePasture(pts), null);
-  assert.strictEqual(g.stock.timber, 40 - plan.cost);
+  assert.strictEqual(g.freeStock("timber"), 40 - plan.cost);
   const b = g.buildings[g.buildings.length-1];
   assert.strictEqual(b.def, "pasture");
   assert.strictEqual(b.plot.cells[0], b.y*W+b.x, "l'abri est la première case");
@@ -1781,6 +1782,187 @@ test("plus de maison sans cour : chaque parcelle a au moins 3 cases", () => {
   }
   const tiny = g.planZone([[rx0, ry+1],[rx0+2, ry+1],[rx0+2, ry+2],[rx0, ry+2]]);
   assert.ok(tiny.err, "deux cases : pas de maison");
+});
+
+/* ---------- étape 5 bis : logistique et chantiers livrés ---------- */
+const { MAT_RES, OX_LOAD } = require("../js/sim.js");
+function quietSteps(g, n, until){ for(let i=0;i<n;i++){ g.step(); g.pendingEvent = null; if(until && until()) return i; } return n; }
+const DAY = TICKS_PER_DAY;
+
+test("étape 5 bis : le stock ne baisse qu'à la livraison, mais ce qui est promis est réservé", () => {
+  const g = fresh();
+  g.stock.timber = 6; g.stock.stone = 3;
+  const b = placeInCenter(g, "manor");
+  assert.deepStrictEqual(b.mat.need, { timber:4, stone:3 });
+  assert.strictEqual(g.stock.timber, 6, "rien ne sort du stock à la pose");
+  assert.strictEqual(g.reserved("timber"), 4);
+  assert.strictEqual(g.freeStock("timber"), 2);
+  assert.ok(!g.canAfford("woodcutter") === false && g.canAfford("woodcutter"), "2 bois libres : un camp de bûcherons passe encore");
+  assert.ok(!g.canAfford("church"), "la pierre est toute promise au manoir");
+  const t0 = g.stock.timber;
+  let low = t0;
+  quietSteps(g, 60*DAY, ()=>{ low = Math.min(low, g.stock.timber); return (b.mat.got.timber||0)>=4; });
+  assert.strictEqual(b.mat.got.timber, 4);
+  assert.strictEqual(g.stock.timber, t0 - 4 + 0, "les 4 bois sont sortis du stock, à la livraison");
+  assert.strictEqual(g.reserved("timber"), 0);
+});
+
+test("étape 5 bis : sans bœuf en état, un homme traîne un tronc à la main ; la construction suit la livraison", () => {
+  const g = fresh();
+  g.stock.timber = 40;
+  g.oxen = []; g.syncOx();
+  const b = placeInCenter(g, "storehouse");
+  assert.deepStrictEqual(b.mat.got, { timber:0 });
+  assert.strictEqual(g.matFrac(b), 0);
+  let maxOver = 0, dragged = false, shoulder = false;
+  quietSteps(g, 40*DAY, ()=>{
+    maxOver = Math.max(maxOver, (b.progress||0) - g.matFrac(b));
+    for(const v of g.villagers){
+      if(v.task && v.task.type==="haul" && v.task.drag && v.task.phase==="bring") dragged = true;
+      if(v.carry && v.carry.timber) shoulder = true;
+    }
+    return b.done;
+  });
+  assert.ok(dragged, "un tronc a été traîné à la main");
+  assert.ok(!shoulder, "personne ne porte un tronc sur l'épaule");
+  assert.ok(maxOver <= 1e-9, "la construction n'a jamais dépassé la livraison");
+  assert.ok(b.done, "l'entrepôt est achevé");
+  assert.strictEqual(g.stock.timber, 38);
+});
+
+test("étape 5 bis : le bœuf ne part jamais seul — un journalier le mène, avec trois troncs", () => {
+  const g = fresh();
+  g.stock.timber = 40; g.stock.stone = 10;
+  const p0 = g.plowMul();
+  const b = placeInCenter(g, "manor");
+  g.oxStep();
+  const ox = g.oxen[0], last = { x:ox.x, y:ox.y };
+  let led = null, alone = 0, shoulder = false, far = 0, wasLed = false;
+  quietSteps(g, 60*DAY, ()=>{
+    const led0 = wasLed; wasLed = ox.lead>0;
+    if(!(ox.lead>0)){ if(!led0 && Math.hypot(ox.x-last.x, ox.y-last.y) > 1e-9) alone++; }   // (rattaché au poteau en arrivant : pas compté)
+    else {
+      const v = g.villager(ox.lead);
+      far = Math.max(far, v.task && v.task.phase!=="ox" ? Math.hypot(v.x-ox.x, v.y-ox.y) : 0);
+      if(v.task && v.task.phase==="bring" && !led) led = { n:v.task.n, res:v.task.res, plow:g.plowMul() };
+    }
+    last.x = ox.x; last.y = ox.y;
+    for(const v of g.villagers) if(v.carry && v.carry.timber) shoulder = true;
+    return g.matFrac(b)>=1 && !(ox.lead>0);
+  });
+  assert.ok(led, "un journalier a mené le bœuf jusqu'au chantier");
+  assert.ok(led.n>=2 && led.n<=OX_LOAD, "plusieurs charges d'un coup");
+  assert.ok(led.plow < p0, "un bœuf au charroi ne compte plus pour le labour");
+  assert.strictEqual(alone, 0, "le bœuf n'a jamais bougé sans quelqu'un pour le mener");
+  assert.ok(far < 1.6, "il reste sur les talons de celui qui le mène");
+  assert.ok(!shoulder, "aucun tronc porté à l'épaule");
+  assert.strictEqual(g.matFrac(b), 1, "tout est livré");
+  assert.ok(!g.oxAway(ox), "le bœuf a été ramené au poteau");
+});
+
+test("étape 5 bis : on charge au dépôt le plus commode, et jamais là où la ressource n'est pas", () => {
+  const g = fresh();
+  g.stock.timber = 40;
+  const camp = g.buildings.find(b=>b.def==="camp");
+  assert.ok(g.depotsFor("timber").includes(camp) && g.depotsFor("stone").includes(camp), "le campement sert de premier dépôt");
+  const wc = placeInCenter(g, "woodcutter"); wc.done = true; wc.progress = 1;
+  const q = { id:999, def:"quarry", x:wc.x, y:wc.y, w:1, h:1, done:true };
+  g.buildings.push(q);
+  assert.ok(g.depotsFor("timber").includes(wc) && !g.depotsFor("stone").includes(wc), "le camp de bûcherons ne garde que du bois");
+  assert.ok(g.depotsFor("stone").includes(q) && !g.depotsFor("timber").includes(q), "la carrière ne garde que de la pierre");
+  g.buildings.pop();
+  // sans aucun dépôt, rien ne reste bloqué (et le bois sort quand même du stock)
+  const s = placeInCenter(g, "granary");
+  g.buildings = g.buildings.filter(b=>!(b.def in { camp:1, oxpost:1, woodcutter:1 }));
+  const v = g.villagers.find(x=>g.canWork(x));
+  const t0 = g.stock.timber;
+  const job = g.siteJob(v, [s]);
+  assert.strictEqual(job.type, "build");
+  assert.strictEqual(s.mat.got.timber, 2);
+  assert.strictEqual(g.stock.timber, t0 - 2);
+});
+
+test("étape 5 bis : réserve vide — le chantier attend, sans rien inventer", () => {
+  const g = fresh();
+  g.stock.timber = 2;
+  const b = placeInCenter(g, "storehouse");
+  g.stock.timber = 0;                         // pillé entre-temps
+  const v = g.villagers.find(x=>g.canWork(x));
+  assert.strictEqual(g.siteJob(v, [b]), null, "personne ne part chercher du bois qui n'existe pas");
+  assert.ok(/réserve vide/.test(g.workStatus(b)));
+});
+
+test("étape 5 bis : un chantier prioritaire est servi avant les autres", () => {
+  const g = fresh();
+  g.stock.timber = 40;
+  const a = placeInCenter(g, "granary"), b = placeInCenter(g, "storehouse");
+  const v = g.villagers.find(x=>g.canWork(x));
+  v.x = a.x+0.5; v.y = a.y+0.5;
+  assert.strictEqual(g.siteJob(v, [a, b]).bid, a.id, "sans priorité : le plus proche");
+  g.setSitePrio(b.id, true);
+  assert.strictEqual(g.siteJob(v, [a, b]).bid, b.id, "avec priorité : celui qu'on a choisi");
+});
+
+test("étape 5 bis : abandonner un chantier rend ce qui n'a pas été employé", () => {
+  const g = fresh();
+  g.stock.timber = 20; g.stock.stone = 10;
+  const b = placeInCenter(g, "church");
+  assert.strictEqual(g.stock.timber, 20); assert.strictEqual(g.stock.stone, 10);
+  g.demolish(b.id);
+  assert.strictEqual(g.stock.timber, 20, "rien de livré : rien à rendre, rien de perdu");
+  assert.strictEqual(g.reserved("timber"), 0, "la réservation est levée");
+  const c = placeInCenter(g, "church");
+  c.mat.got = { timber:2, stone:2 }; g.stock.timber -= 2; g.stock.stone -= 2;   // tout livré
+  c.progress = 0.5;                                                             // la moitié employée
+  g.demolish(c.id);
+  assert.strictEqual(g.stock.timber, 19, "le tas non employé revient, la moitié de ce qui a été bâti est perdue");
+  assert.strictEqual(g.stock.stone, 9);
+});
+
+test("étape 5 bis : sauvegarde v6 — matériaux, priorité et bœuf mené gardés, anciens chantiers déjà livrés", () => {
+  const g = fresh();
+  g.stock.timber = 40; g.stock.stone = 10;
+  const b = placeInCenter(g, "manor");
+  g.setSitePrio(b.id, true);
+  quietSteps(g, 60*DAY, ()=>g.oxen.some(o=>o.lead>0 && g.villager(o.lead).task.phase==="bring"));
+  const data = JSON.parse(JSON.stringify(g.serialize()));
+  assert.strictEqual(data.v, 6);
+  const g2 = GameState.load(data), b2 = g2.buildings.find(x=>x.id===b.id);
+  assert.deepStrictEqual(b2.mat, b.mat);
+  assert.strictEqual(b2.prio, true);
+  assert.strictEqual(g2.oxen[0].lead, g.oxen[0].lead, "le bœuf est toujours mené par le même journalier");
+  quietSteps(g2, 60*DAY, ()=>g2.matFrac(b2)>=1);
+  assert.strictEqual(g2.matFrac(b2), 1, "le charroi reprend après le chargement");
+  // une sauvegarde v5 : le coût avait été payé à la pose, le chantier a donc déjà ses matériaux
+  const old = JSON.parse(JSON.stringify(g.serialize()));
+  old.v = 5; for(const x of old.buildings){ delete x.mat; delete x.prio; }
+  for(const o of old.oxen){ delete o.x; delete o.y; delete o.lead; }
+  const g3 = GameState.load(old), b3 = g3.buildings.find(x=>x.id===b.id);
+  assert.deepStrictEqual(b3.mat, { need:{ timber:4, stone:3 }, got:{ timber:4, stone:3 } });
+  assert.strictEqual(g3.reserved("timber"), 0);
+  quietSteps(g3, 200);
+  const bad = JSON.parse(JSON.stringify(g.serialize()));
+  bad.buildings.find(x=>x.id===b.id).mat = { need:{ timber:"x", stone:3 }, got:{ stone:99 } };
+  bad.oxen[0].x = "loin";
+  const g4 = GameState.load(bad);
+  assert.deepStrictEqual(g4.buildings.find(x=>x.id===b.id).mat, { need:{ stone:3 }, got:{ stone:3 } });
+  quietSteps(g4, 50);
+  assert.ok(isFinite(g4.oxen[0].x), "un bœuf sans position retrouve son poteau");
+});
+
+test("étape 5 bis : une zone de maisons et un pâturage réclament aussi leur bois", () => {
+  const g = zoneSetup();
+  const t0 = g.stock.timber;
+  g.traceZone(RECT, 2);
+  assert.strictEqual(g.stock.timber, t0, "rien ne sort du stock au tracé");
+  for(const p of plotsOf(g)) assert.deepStrictEqual(p.mat, { need:{ timber:1 }, got:{ timber:0 } });
+  const g2 = fresh(); g2.stock.timber = 60;
+  const r = freeBlock(g2, 5, 4);
+  g2.tracePasture([[r.x,r.y],[r.x+5,r.y],[r.x+5,r.y+4],[r.x,r.y+4]]);
+  const pa = g2.buildings[g2.buildings.length-1];
+  assert.strictEqual(pa.mat.need.timber, g2.pastureCost(pa.plot.cells));
+  assert.strictEqual(g2.stock.timber, 60);
+  assert.ok(/attend bois/.test(g2.workStatus(pa)), "le panneau dit ce que le chantier attend");
 });
 
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));

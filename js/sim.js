@@ -93,6 +93,15 @@ function buildStage(b){
   const p = typeof b.progress==="number" && isFinite(b.progress) ? b.progress : 0;
   return Math.max(0, Math.min(BUILD_STAGES.length-1, Math.floor(p*BUILD_STAGES.length)));
 }
+
+/* ---------- étape 5 bis : logistique, les matériaux sont portés jusqu'aux chantiers ---------- */
+const MAT_RES = ["timber","stone"];
+const PORTER_LOAD = 1;    // un porteur : une pierre (un tronc est trop lourd pour un homme)
+const OX_LOAD = 3;        // le bœuf, mené par un journalier, traîne trois troncs (ou un traîneau de pierres)
+const OX_SPEED = 0.14;    // le bœuf et celui qui le mène avancent plus lentement qu'un homme seul (0,25)
+const DRAG_SPEED = 0.08;  // un homme qui traîne un tronc à la main, faute de bœuf
+// lieux où l'on prend les matériaux : null = bois et pierre, sinon la seule ressource qu'on y trouve
+const DEPOT_DEFS = { storehouse:null, camp:null, oxpost:null, woodcutter:"timber", quarry:"stone" };
 const DIRS4 = [[0,-1],[1,0],[0,1],[-1,0]]; // N, E, S, O
 const PLOT_FRONT = 2;      // largeur visée d'une parcelle le long de la route (en cases)
 const SNAP = 4;            // points du contour calés au quart de case
@@ -681,7 +690,7 @@ class GameState {
   // journaliers : adultes sans poste, qui bâtissent les chantiers
   unemployed(){ return this.villagers.filter(v=>v.work<0 && !v.appr && this.canWork(v)).length; }
 
-  canAfford(def       ){ const c=BUILD_DEFS[def].cost; return this.stock.timber>=(c.timber||0) && this.stock.stone>=(c.stone||0); }
+  canAfford(def       ){ return this.hasFree(BUILD_DEFS[def].cost); }
   costText(def       ){ const c=BUILD_DEFS[def].cost; const p         =[]; if(c.timber)p.push(c.timber+" 🪵"); if(c.stone)p.push(c.stone+" 🪨"); return p.length?p.join(" "):"Gratuit"; }
 
   /* ---------- placement ---------- */
@@ -710,8 +719,8 @@ class GameState {
     const err = this.canPlace(def, x, y);
     if(err) return err;
     const d = BUILD_DEFS[def];
-    this.stock.timber -= (d.cost.timber||0);
-    this.stock.stone -= (d.cost.stone||0);
+    // un bâtiment instantané se paie tout de suite ; un chantier, charge après charge, à la livraison
+    if(d.instant){ this.stock.timber -= (d.cost.timber||0); this.stock.stone -= (d.cost.stone||0); }
     const b = this.makeBuilding(def, x, y);
     if(def==="field"){
       const n=this.fieldSize(); b.w=n; b.h=n;
@@ -722,6 +731,7 @@ class GameState {
       b.plot = { cells, dir:-1, poly:[[x,y],[x+n,y],[x+n,y+n],[x,y+n]] };
     }
     if(d.instant || d.id==="field"){ b.done = true; b.progress = 1; }
+    else this.initMat(b, d.cost);
     this.uiVersion++;
     return null;
   }
@@ -731,8 +741,13 @@ class GameState {
     if(idx<0) return;
     const b = this.buildings[idx];
     const d = BUILD_DEFS[b.def];
-    this.stock.timber += Math.floor((d.cost.timber||0)/2);
-    this.stock.stone += Math.floor((d.cost.stone||0)/2);
+    // un chantier rend tout ce qui n'a pas encore été employé ; un bâtiment achevé, la moitié de son coût
+    const site = !b.done && b.mat;
+    if(site) for(const r of MAT_RES) this.stock[r] = (this.stock[r]||0) + this.refundOf(b, r);
+    else if(b.def!=="pasture"){
+      this.stock.timber += Math.floor((d.cost.timber||0)/2);
+      this.stock.stone += Math.floor((d.cost.stone||0)/2);
+    }
     for(let yy=0;yy<b.h;yy++) for(let xx=0;xx<b.w;xx++) this.occupied[(b.y+yy)*W+(b.x+xx)] = -1;
     if(b.plot) for(const i of b.plot.cells) if(this.occupied[i]===b.id) this.occupied[i] = -1;
     for(const v of this.villagers) if(v.work===b.id){ v.work=-1; v.appr=false; this.resetWorker(v); }
@@ -740,18 +755,18 @@ class GameState {
     this.buildings.splice(idx,1);
     // un pâturage démoli : la clôture est remboursée à moitié, les bêtes sont vendues
     if(b.def==="pasture"){
-      if(b.plot) this.stock.timber += Math.floor(this.pastureCost(b.plot.cells)/2);
+      if(b.plot && !site) this.stock.timber += Math.floor(this.pastureCost(b.plot.cells)/2);
       const h = b.herd, ld = h && LIVESTOCK[h.sp];
       if(ld && h.an.length){
         const earn = h.an.reduce((s, a)=>s + (a.a>=ld.adultAt ? ld.sell : ld.sell/2), 0);
         this.treasury += Math.round(earn);
         this.toast("Pâturage démoli : "+h.an.length+" "+(h.an.length>1 ? ld.ones : ld.one)+" vendu"+(h.an.length>1?"s":"")+" (+"+Math.round(earn)+" 💰).");
-      } else this.toast("Pâturage démoli (moitié de la clôture remboursée)");
+      } else this.toast(site ? "Chantier du pâturage abandonné (bois non employé rendu)" : "Pâturage démoli (moitié de la clôture remboursée)");
       this.markPastures();
       this.uiVersion++;
       return;
     }
-    this.toast(d.name+" démoli (moitié du coût remboursée)");
+    this.toast(site ? "Chantier abandonné : "+d.name.toLowerCase()+" (matériaux non employés rendus)" : d.name+" démoli (moitié du coût remboursée)");
   }
 
   /* ---------- étape 3 : zones de bourgage tracées point par point ---------- */
@@ -814,8 +829,8 @@ class GameState {
     const suggested = runs.reduce((s,r)=>s + Math.max(1, Math.min(r.end-r.start, Math.round((r.end-r.start)/PLOT_FRONT))), 0);
     let want = Number.isInteger(n) ? Math.max(nMin, Math.min(nMax, n)) : suggested;
     const c = BUILD_DEFS.burgage.cost;
-    const afford = Math.min(c.timber ? Math.floor((this.stock.timber||0)/c.timber) : Infinity,
-                            c.stone ? Math.floor((this.stock.stone||0)/c.stone) : Infinity);
+    const afford = Math.min(c.timber ? Math.floor(Math.max(0, this.freeStock("timber"))/c.timber) : Infinity,
+                            c.stone ? Math.floor(Math.max(0, this.freeStock("stone"))/c.stone) : Infinity);
     const info = { poly, nMin, nMax, suggested };
     let limited = false;
     if(want>afford){ want = Math.max(0, afford); limited = true; }
@@ -880,11 +895,10 @@ class GameState {
     if(plan.err) return plan.err;
     const c = BUILD_DEFS.burgage.cost;
     for(const p of plan.plots){
-      this.stock.timber -= (c.timber||0);
-      this.stock.stone -= (c.stone||0);
       const h = p.cells[0];
       const b = this.makeBuilding("burgage", h%W, (h/W)|0);
       b.plot = { cells:p.cells.slice(), dir:p.dir, poly:p.poly };
+      this.initMat(b, c);
       for(const i of p.cells) this.occupied[i] = b.id;
     }
     const nb = plan.plots.length;
@@ -1074,7 +1088,7 @@ class GameState {
   workingOxen(){ return this.oxen.filter(o=>o.h>=50 && o.a>=24).length; }
   oxSpeed(){ return 1 + Math.min(3, this.stock.ox) * 0.6; }
   // un attelage accélère le labour : ×1,5 avec un bœuf, ×2 avec deux
-  plowMul(){ return 1 + 0.5*Math.min(2, this.workingOxen()); }
+  plowMul(){ return 1 + 0.5*Math.min(2, this.oxen.filter(o=>o.h>=50 && o.a>=24 && !(o.lead>0)).length); }
 
   /* ================= étape 5 : les champs ================= */
   // culture proposée pour un nouveau champ : la prochaine qu'on pourra semer
@@ -1469,18 +1483,18 @@ class GameState {
     const cells = [anchor].concat(inside.filter(i=>i!==anchor));
     const cost = this.pastureCost(cells);
     const info = { poly, cells, plots:[{ cells, dir:-1, poly:cleanPoly(poly) }], cost, anchor, n:inside.length };
-    if((this.stock.timber||0) < cost) return fail("Bois insuffisant : la clôture demande "+cost+" 🪵", Object.assign({ limited:true }, info));
+    if(this.freeStock("timber") < cost) return fail("Bois insuffisant : la clôture demande "+cost+" 🪵", Object.assign({ limited:true }, info));
     return Object.assign({ err:null }, info);
   }
   // Trace le pâturage : clôture et abri en chantier, bâtis par les journaliers.
   tracePasture(pts){
     const plan = this.planPasture(pts);
     if(plan.err) return plan.err;
-    this.stock.timber -= plan.cost;
     const a = plan.anchor;
     const b = this.makeBuilding("pasture", a%W, (a/W)|0);
     b.plot = { cells:plan.cells.slice(), dir:-1, poly:cleanPoly(plan.poly) };
     b.herd = this.newHerd();
+    this.initMat(b, { timber:plan.cost });
     for(const i of plan.cells) this.occupied[i] = b.id;
     this.markPastures();
     this.toast("Pâturage tracé ("+(plan.cells.length-1)+" cases d'herbe) : les journaliers posent la clôture et l'abri.", "good");
@@ -1605,7 +1619,7 @@ class GameState {
   setKeepOxen(on){ this.keepCalves = !!on; this.uiVersion++; }
   pastureStatus(b){
     const h = b.herd, d = h && LIVESTOCK[h.sp];
-    if(!b.done) return "Clôture en chantier : "+BUILD_STAGES[buildStage(b)].name.toLowerCase()+" ("+Math.round(b.progress*100)+" %)";
+    if(!b.done) return this.siteStatus(b, "Clôture en chantier");
     if(!d || !h.an.length) return "Vide : achetez des bêtes";
     const n = h.an.length, sick = h.an.filter(a=>a.s>0).length;
     let s = n+" "+(n>1 ? d.ones : d.one);
@@ -1766,7 +1780,7 @@ class GameState {
       if(b.exts.length>0){ this.toast("L'arrière-cour accueille déjà : "+EXT_DEFS[b.exts[0]].name+". Retirez-le d'abord.","bad"); return; }
     }
     for(const k of Object.keys(d.cost)){
-      if((this.stock[k]||0) < d.cost[k]){ this.toast("Il manque des ressources pour "+d.name+".","bad"); return; }
+      if(this.freeStock(k) < d.cost[k]){ this.toast("Il manque des ressources pour "+d.name+".","bad"); return; }
     }
     for(const k of Object.keys(d.cost)) this.stock[k] -= d.cost[k];
     b.exts.push(ext);
@@ -1812,14 +1826,14 @@ class GameState {
     this.pendingEvent = { title:"Un marchand de bestiaux",
       text:"Un marchand mène ses bêtes à la foire. Il vous propose "+what+" pour votre pâturage, contre "+wood+" bois d'œuvre ou "+coin+" deniers.",
       fair:{ bid:b.id, sp, lot, wood, coin },
-      choices:[ { label:"Troquer contre "+wood+" 🪵", act:"fairWood", disabled:this.stock.timber<wood },
+      choices:[ { label:"Troquer contre "+wood+" 🪵", act:"fairWood", disabled:this.freeStock("timber")<wood },
                 { label:"Payer "+coin+" 💰", act:"fairCoin", disabled:this.treasury<coin },
                 { label:"Passer son chemin", act:"fairNo" } ] };
   }
   fairDeal(fair, wood){
     const b = fair && this.pastureOf(fair.bid), d = fair && LIVESTOCK[fair.sp];
     if(!b || !d || (b.herd.an.length && b.herd.sp!==fair.sp)){ this.toast("Le pâturage n'est plus libre : le marchand repart."); return; }
-    if(wood){ if(this.stock.timber<fair.wood) return; this.stock.timber -= fair.wood; }
+    if(wood){ if(this.freeStock("timber")<fair.wood) return; this.stock.timber -= fair.wood; }
     else { if(this.treasury<fair.coin) return; this.treasury -= fair.coin; }
     b.herd.sp = fair.sp;
     for(const f of fair.lot) b.herd.an.push(this.makeAnimal(fair.sp, !!f, d.adultAt + 4 + Math.floor(this.rnd()*18)));
@@ -1849,7 +1863,7 @@ class GameState {
     if(!b || b.def!=="church" || !b.done) return false;
     const d = CHURCH_UPGRADES[up]; if(!d) return false;
     if((b.churchUp||[]).includes(up)){ this.toast("Déjà installé.","bad"); return false; }
-    for(const k of Object.keys(d.cost)) if((this.stock[k]||0) < d.cost[k]){ this.toast("Ressources insuffisantes pour "+d.name+".","bad"); return false; }
+    for(const k of Object.keys(d.cost)) if(this.freeStock(k) < d.cost[k]){ this.toast("Ressources insuffisantes pour "+d.name+".","bad"); return false; }
     for(const k of Object.keys(d.cost)) this.stock[k] -= d.cost[k];
     if(!b.churchUp) b.churchUp = [];
     b.churchUp.push(up);
@@ -2080,16 +2094,17 @@ class GameState {
     const b = f.work>0 ? this.buildings.find(x=>x.id===f.work && x.done) : undefined;
     const site = f.work>0 ? this.buildings.find(x=>x.id===f.work && !x.done) : undefined;
 
-    // chantier : les ouvriers affectés à un bâtiment non terminé participent au chantier
-    if(site){ this.taskBuild(f, site); return; }
+    // chantier : les ouvriers affectés à un bâtiment non terminé y portent les matériaux et le bâtissent
+    if(site){
+      const job = this.siteJob(f, [site]);
+      if(job) this.doSiteJob(f, job); else f.cool = 10;   // ils attendent la livraison en cours
+      return;
+    }
     if(!b){
-      // journaliers : construisent le chantier le plus proche, sinon flânent (pas les apprentis)
+      // journaliers : portent les matériaux d'un chantier ou le bâtissent, sinon flânent (pas les apprentis)
       const sites = f.appr ? [] : this.buildings.filter(s=>!s.done);
-      if(sites.length>0){
-        let nearest=sites[0], nd=Infinity;
-        for(const s of sites){ const d=Math.hypot(s.x-f.x,s.y-f.y); if(d<nd){nd=d;nearest=s;} }
-        this.taskBuild(f, nearest); return;
-      }
+      const job = sites.length ? this.siteJob(f, sites) : null;
+      if(job){ this.doSiteJob(f, job); return; }
       this.idleNearHome(f);
       return;
     }
@@ -2162,6 +2177,224 @@ class GameState {
     this.sendToBuilding(f, site, {type:"build", bid:site.id});
   }
 
+  /* ================= étape 5 bis : logistique et chantiers livrés ================= */
+  // ce que le chantier réclame. Rien ne sort du stock à la pose : chaque charge en sort quand elle est
+  // déposée au pied du chantier. D'ici là, elle est seulement réservée (freeStock).
+  initMat(b, cost){
+    const need = {}, got = {};
+    for(const r of MAT_RES) if((cost && cost[r])>0){ need[r] = cost[r]; got[r] = 0; }
+    b.mat = { need, got };
+  }
+  // promis aux chantiers mais pas encore livré (donc encore dans le stock)
+  reserved(r){
+    let n = 0;
+    for(const b of this.buildings) if(!b.done && b.mat && b.mat.need[r]) n += Math.max(0, b.mat.need[r] - (b.mat.got[r]||0));
+    return n;
+  }
+  // ce qu'on peut encore dépenser librement
+  freeStock(r){ return (this.stock[r]||0) - (MAT_RES.includes(r) ? this.reserved(r) : 0); }
+  hasFree(cost){ for(const k of Object.keys(cost||{})) if(this.freeStock(k) < cost[k]) return false; return true; }
+  // part des matériaux arrivés au pied du chantier (1 si rien à livrer) : le chantier ne peut pas aller plus loin
+  matFrac(b){
+    if(!b.mat) return 1;
+    let n = 0, k = 0;
+    for(const r in b.mat.need){ n += b.mat.need[r]; k += Math.min(b.mat.need[r], b.mat.got[r]||0); }
+    return n>0 ? k/n : 1;
+  }
+  // charges en route vers un chantier (b) ou vers tous (b absent) ; loaded : seulement celles déjà chargées
+  inTransit(b, r, loaded){
+    let n = 0;
+    for(const v of this.villagers){
+      const t = v.task;
+      if(!t || t.type!=="haul" || t.res!==r || t.phase==="back" || (b && t.bid!==b.id)) continue;
+      if(loaded && t.phase!=="bring") continue;
+      n += t.n;
+    }
+    return n;
+  }
+  // ce qu'il reste à envoyer chercher
+  matLeft(b, r){
+    if(!b.mat || !b.mat.need[r]) return 0;
+    return Math.max(0, b.mat.need[r] - (b.mat.got[r]||0) - this.inTransit(b, r));
+  }
+  // ce qu'on peut encore aller prendre au dépôt sans promettre deux fois la même charge
+  pickable(r){ return Math.max(0, Math.floor((this.stock[r]||0) - this.inTransit(null, r) + 1e-9)); }
+  // matériaux du chantier pas encore employés (le tas au pied du chantier)
+  matOnSite(b, r){
+    if(!b.mat || !b.mat.need[r]) return 0;
+    return Math.max(0, (b.mat.got[r]||0) - (b.progress||0)*b.mat.need[r]);
+  }
+  // abandonner un chantier : le tas pas encore employé revient au stock, la moitié de ce qui a été bâti
+  refundOf(b, r){
+    if(!b.mat || !b.mat.need[r]) return 0;
+    const got = b.mat.got[r]||0, used = Math.min(got, (b.progress||0)*b.mat.need[r]);
+    return Math.floor(got - used/2 + 1e-9);
+  }
+  depotsFor(r){
+    return this.buildings.filter(b=>b.done && b.def in DEPOT_DEFS && (DEPOT_DEFS[b.def]===null || DEPOT_DEFS[b.def]===r));
+  }
+  // le dépôt qui fait le trajet le plus court : d'où l'on est jusqu'au dépôt, puis jusqu'au chantier
+  nearestDepot(r, x, y, site){
+    let best = null, bd = Infinity;
+    const sx = site.x+site.w/2, sy = site.y+site.h/2;
+    for(const d of this.depotsFor(r)){
+      const cx = d.x+d.w/2, cy = d.y+d.h/2;
+      const k = Math.hypot(cx-x, cy-y) + Math.hypot(sx-cx, sy-cy);
+      if(k<bd){ bd = k; best = d; }
+    }
+    return best;
+  }
+  // chantiers dans l'ordre où on les sert : prioritaires d'abord, puis les plus proches
+  sitesByOrder(sites, x, y){
+    return sites.slice().sort((a, b)=>((b.prio?1:0) - (a.prio?1:0)) || (Math.hypot(a.x-x, a.y-y) - Math.hypot(b.x-x, b.y-y)));
+  }
+  setSitePrio(bid, on){
+    const b = this.buildings.find(x=>x.id===bid);
+    if(!b || b.done) return;
+    b.prio = !!on; this.uiVersion++;
+  }
+
+  // l'attelage : un bœuf ne sait pas où aller tout seul. Un journalier va le chercher, le mène au dépôt,
+  // puis au chantier, et le ramène au poteau. Il traîne trois troncs (ou un traîneau de pierres).
+  oxHome(){
+    return this.buildings.find(b=>b.def==="oxpost") || this.buildings.find(b=>b.done && b.def==="farm") || this.buildings.find(b=>b.def==="camp") || null;
+  }
+  oxCanHaul(o){ return o.a>=24 && o.h>=50; }
+  // le labour passe avant : pas de charroi pendant qu'un fermier laboure
+  plowing(){ return this.villagers.some(v=>v.task && v.task.type==="plow" && v.state!=="idle"); }
+  oxenHauling(){ return this.oxen.filter(o=>o.lead>0).length; }
+  // un bœuf mené, ou laissé ailleurs qu'à son poteau (on le dessine là où il est)
+  oxAway(o){
+    if(o.lead>0) return true;
+    const home = this.oxHome();
+    if(!home || typeof o.x!=="number") return false;
+    return Math.hypot(o.x-(home.x+home.w/2), o.y-(home.y+home.h)) > 2;
+  }
+  oxenHome(){ return this.oxen.filter(o=>!this.oxAway(o)).length; }
+  // le bœuf libre le plus proche (où qu'il soit : au poteau, ou laissé en chemin)
+  freeOx(x, y){
+    let best = null, bd = Infinity;
+    for(const o of this.oxen){
+      if(o.lead>0 || !this.oxCanHaul(o)) continue;
+      this.oxPlace(o);
+      const d = Math.hypot(o.x-x, o.y-y);
+      if(d<bd){ bd = d; best = o; }
+    }
+    return best;
+  }
+  // un bœuf sans position (nouveau, ou partie chargée) se tient près de son poteau
+  oxPlace(o){
+    if(typeof o.x==="number" && isFinite(o.x) && typeof o.y==="number" && isFinite(o.y)) return;
+    const home = this.oxHome();
+    const sp = home ? (this.spotFor(home, home.x, home.y+home.h) || { x:home.x, y:home.y }) : { x:W/2, y:H/2 };
+    o.x = sp.x+0.5; o.y = sp.y+0.5;
+  }
+  // le bœuf suit celui qui le mène, à un pas derrière ; s'il n'est plus mené, il reste où il est
+  oxStep(){
+    for(const o of this.oxen){
+      this.oxPlace(o);
+      if(!(o.lead>0)) continue;
+      const v = this.villagers.find(x=>x.id===o.lead), t = v && v.task;
+      if(!t || t.type!=="haul" || t.ox!==o.id){ o.lead = 0; continue; }
+      if(t.phase==="ox") continue;   // il attend qu'on vienne le chercher
+      const dx = v.x-o.x, dy = v.y-o.y, d = Math.hypot(dx, dy);
+      if(d>0.7){ const s = Math.min(0.3, d-0.7); o.x += dx/d*s; o.y += dy/d*s; }
+    }
+  }
+  // travail d'un ouvrier sur les chantiers : aller chercher ce qui manque, sinon bâtir avec ce qui est arrivé
+  siteJob(f, sites){
+    const plow = this.plowing();
+    const ableOx = this.oxen.some(o=>this.oxCanHaul(o));
+    for(const s of this.sitesByOrder(sites, f.x, f.y)){
+      if(s.mat) for(const r of MAT_RES){
+        const left = this.matLeft(s, r);
+        if(left<=0) continue;
+        const avail = this.pickable(r);
+        if(avail<=0) continue;   // plus rien au stock : le chantier attend
+        const dep = this.nearestDepot(r, f.x, f.y, s);
+        if(!dep){ s.mat.got[r] = Math.min(s.mat.need[r], (s.mat.got[r]||0) + Math.min(left, avail)); this.stock[r] -= Math.min(left, avail); continue; }   // aucun dépôt : un marchand livre (rien ne reste bloqué)
+        const ox = plow ? null : this.freeOx(f.x, f.y);
+        // les troncs sont trop lourds pour un homme : il faut le bœuf ; la pierre se porte une à une, ou en traîneau
+        if(ox && (r==="timber" || left>=2)){
+          const n = Math.min(OX_LOAD, left, avail);
+          return { type:"haul", bid:s.id, res:r, n, dep:dep.id, ox:ox.id, phase:"ox" };
+        }
+        if(r==="stone") return { type:"haul", bid:s.id, res:r, n:PORTER_LOAD, dep:dep.id, phase:"fetch" };
+        // aucun bœuf en état : on traîne un tronc à la main, lentement
+        if(!ableOx) return { type:"haul", bid:s.id, res:r, n:1, dep:dep.id, drag:true, phase:"fetch" };
+        // le bœuf est déjà pris : on attend son retour
+      }
+      if((s.progress||0) < this.matFrac(s) - 1e-9) return { type:"build", bid:s.id };
+    }
+    return null;
+  }
+  doSiteJob(f, job){
+    if(job.type==="build"){ const s = this.buildings.find(x=>x.id===job.bid); if(s) this.taskBuild(f, s); return; }
+    let ok = false;
+    if(job.phase==="ox"){
+      const o = this.oxen.find(x=>x.id===job.ox);
+      if(o){ o.lead = f.id; ok = this.sendTo(f, Math.floor(o.x), Math.floor(o.y), job); if(!ok) o.lead = 0; }
+    } else {
+      const dep = this.buildings.find(x=>x.id===job.dep);
+      ok = !!dep && this.sendToBuilding(f, dep, job);
+    }
+    if(!ok){ f.task = null; if(!f.cool) f.cool = 20; }
+  }
+  // un pas de plus dans le charroi : bœuf trouvé, chargement au dépôt, livraison, bœuf ramené au poteau
+  haulArrive(f){
+    const t = f.task, ox = t && t.ox ? this.oxen.find(o=>o.id===t.ox) : null;
+    const end = ()=>{ f.carry=null; f.task=null; f.state="idle"; f.cool=1; };
+    if(t.ox && (!ox || ox.lead!==f.id)){ end(); return; }   // le bœuf a été perdu en route
+    const site = this.buildings.find(x=>x.id===t.bid);
+    const toHome = ()=>{
+      if(!ox){ end(); return; }
+      t.phase = "back"; f.carry = null;
+      const home = this.oxHome();
+      if(!home || !this.sendToBuilding(f, home, t)){ ox.lead = 0; end(); }
+    };
+    if(t.phase==="back"){ if(ox){ ox.lead = 0; delete ox.x; delete ox.y; this.oxPlace(ox); } end(); return; }   // rattaché au poteau
+    if(!site || site.done || !site.mat){ toHome(); return; }
+    if(t.phase==="ox"){
+      t.phase = "fetch";
+      const dep = this.buildings.find(x=>x.id===t.dep);
+      if(!dep || !this.sendToBuilding(f, dep, t)) toHome();
+      return;
+    }
+    if(t.phase==="fetch"){
+      // au dépôt : on charge ce qui est vraiment disponible
+      const others = this.inTransit(null, t.res, true);
+      t.n = Math.max(0, Math.min(t.n, Math.floor((this.stock[t.res]||0) - others + 1e-9)));
+      if(t.n<=0){ toHome(); return; }
+      t.phase = "bring";
+      if(!ox && !t.drag) f.carry = { [t.res]: t.n };
+      if(!this.sendToBuilding(f, site, t)) toHome();
+      return;
+    }
+    // au chantier : la charge est déposée, elle sort du stock
+    const q = Math.max(0, Math.min(t.n, (site.mat.need[t.res]||0) - (site.mat.got[t.res]||0), this.stock[t.res]||0));
+    this.stock[t.res] = (this.stock[t.res]||0) - q;
+    site.mat.got[t.res] = (site.mat.got[t.res]||0) + q;
+    this.uiVersion++;
+    toHome();
+  }
+  // vitesse d'un villageois : on avance au pas du bœuf, ou plus lentement encore en traînant un tronc
+  haulSpeed(f){
+    const t = f.task;
+    if(!t || t.type!=="haul" || t.phase==="ox") return 0;
+    if(t.ox) return OX_SPEED;
+    if(t.drag && t.phase==="bring") return DRAG_SPEED;
+    return 0;
+  }
+  // statut d'un chantier : ce qui manque, ce qui est en route
+  siteStatus(b, label){
+    const base = (label || "En construction")+" : "+BUILD_STAGES[buildStage(b)].name.toLowerCase()+" ("+Math.round((b.progress||0)*100)+" %)";
+    if(!b.mat) return base;
+    const miss = [];
+    for(const r of MAT_RES) if(b.mat.need[r] && (b.mat.got[r]||0) < b.mat.need[r]) miss.push((r==="timber" ? "bois" : "pierre")+(this.pickable(r)<=0 && this.matLeft(b, r)>0 ? " (réserve vide)" : ""));
+    if(miss.length && (b.progress||0) >= this.matFrac(b) - 1e-9) return base+" — attend "+miss.join(" et ");
+    return base;
+  }
+
   stepVillager(f       ){
     const st = this.stageOf(f), sp = (st==="child" || st==="baby" || st==="elder") ? 0.8 : 1;
     switch(f.state){
@@ -2172,10 +2405,11 @@ class GameState {
         if(this.moveAlong(f, f.path, 0.18*sp)){ f.state="idle"; f.cool=25; f.path=null; }
         break;
       case "walk":
-        if(this.moveAlong(f, f.path, 0.25*sp)){
+        if(this.moveAlong(f, f.path, (this.haulSpeed(f) || 0.25)*sp)){
           f.path=null;
           const t=f.task;
           if(!t){ f.state="idle"; break; }
+          if(t.type==="haul"){ this.haulArrive(f); break; }
           if(t.type==="build"||t.type==="mill"||t.type==="stall"||FIELD_TASKS[t.type]||t.type==="thresh"||t.type==="herd"){ f.state="work"; f.timer=0; }
           else { f.state="work"; f.timer=this.workTime(f, t.type); }
         }
@@ -2216,7 +2450,10 @@ class GameState {
       case "build":{
         const site = t.bid!==undefined ? this.buildings.find(x=>x.id===t.bid) : null;
         if(!site || site.done){ f.task=null; f.state="idle"; f.cool=5; break; }
-        site.progress += 0.0045 * (BUILD_DEFS[site.def].buildRate || 1) * this.skillMul(f, "build");
+        // on ne bâtit qu'avec ce qui a été livré
+        const cap = this.matFrac(site);
+        if(site.progress >= cap - 1e-9){ f.task=null; f.state="idle"; f.cool=2; break; }
+        site.progress = Math.min(cap, site.progress + 0.0045 * (BUILD_DEFS[site.def].buildRate || 1) * this.skillMul(f, "build"));
         if(site.progress>=1){
           site.done=true; site.progress=1;
           this.toast(BUILD_DEFS[site.def].name+" est achevé(e) !","good");
@@ -2228,6 +2465,10 @@ class GameState {
       }
       case "plow": case "spread": case "sow": case "harvest": case "mow":{
         this.fieldWork(f, t);
+        break;
+      }
+      case "haul":{
+        this.haulArrive(f);
         break;
       }
       case "thresh":{
@@ -2666,6 +2907,7 @@ class GameState {
       if(k) b.f.growth = Math.min(1, b.f.growth + GROW_RATE*k*wMul/TS);
     }
     for(const v of this.villagers) this.stepVillager(v);
+    this.oxStep();
     // cerfs
     if(t.tick%6===0){
       for(const d of this.deer){
@@ -2932,8 +3174,8 @@ class GameState {
       if(!res) continue;
       const ok=(res.fed!==undefined ? res.fed>=0.999 : res.lastAte>=1) && fuelRatio>=1 && market && varietyVillage>=2 && clothRatio>=1;
       if(ok) b.monthsGood++; else b.monthsGood=0;
-      if(b.lvl===1 && b.monthsGood>=3 && this.stock.timber>=2){ this.stock.timber-=2; b.lvl=2; this.toast("Un bourgage évolue : niveau 2 !","good"); }
-      else if(b.lvl===2 && b.monthsGood>=3 && this.approval>=65 && this.hasChurch() && this.stock.timber>=2 && this.stock.stone>=2){
+      if(b.lvl===1 && b.monthsGood>=3 && this.freeStock("timber")>=2){ this.stock.timber-=2; b.lvl=2; this.toast("Un bourgage évolue : niveau 2 !","good"); }
+      else if(b.lvl===2 && b.monthsGood>=3 && this.approval>=65 && this.hasChurch() && this.freeStock("timber")>=2 && this.freeStock("stone")>=2){
         this.stock.timber-=2; this.stock.stone-=2; b.lvl=3; this.toast("Un bourgage évolue : niveau 3 ! Impôts accrus.","good");
       }
     }
@@ -3096,7 +3338,7 @@ class GameState {
     const d=BUILD_DEFS[b.def];
     if(b.def==="pasture") return this.pastureStatus(b);
     if(b.def==="field") return this.fieldStatus(b);
-    if(!b.done) return "En construction : "+BUILD_STAGES[buildStage(b)].name.toLowerCase()+" ("+Math.round(b.progress*100)+" %)";
+    if(!b.done) return this.siteStatus(b);
     const nw = d.fam>0 ? this.workersOf(b).length : 0;
     if(d.fam>0 && nw===0) return (Number(b.want)||0)>0 ? "En attente d'un adulte libre" : "Aucun ouvrier";
     switch(b.def){
@@ -3184,7 +3426,7 @@ class GameState {
   }
   serialize(){
     return {
-      v:5, // v5 : champs détaillés (b.f), pâturages (b.herd), bœufs (oxen) ; v4 : villageois ; v3 : parcelles de bourgage (b.plot)
+      v:6, // v6 : matériaux des chantiers (b.mat) ; v5 : champs détaillés (b.f), pâturages (b.herd), bœufs (oxen) ; v4 : villageois ; v3 : parcelles de bourgage (b.plot)
       seed:this.seed,
       modeId:this.modeId,
       weather:this.weather,
@@ -3218,7 +3460,7 @@ class GameState {
       victory:this.victory,
       pendingEvent:this.pendingEvent,
       winterWarned:this.winterWarned,
-      oxen:this.oxen,
+      oxen:this.oxen.map(o=>({ id:o.id, a:o.a, h:o.h, x:o.x, y:o.y, lead:o.lead||0 })),
       nextA:this.nextA,
       wx:this.wx,
       keepCalves:this.keepCalves,
@@ -3308,7 +3550,12 @@ class GameState {
     g.loadVillagers(data);
     g.nextD = Math.max(0, ...g.deer.map(d=>num(d.id)?d.id:0)) + 1;
     // étape 5 : bœufs (une sauvegarde v4 n'avait qu'un nombre), identifiants des bêtes, aléa du mois
-    if(Array.isArray(data.oxen)) g.oxen = data.oxen.filter(o=>o && num(o.a)).map(o=>({ id:num(o.id) ? o.id : 0, a:Math.max(0, Math.round(o.a)), h:num(o.h) ? Math.max(0, Math.min(100, o.h)) : 100 }));
+    if(Array.isArray(data.oxen)) g.oxen = data.oxen.filter(o=>o && num(o.a)).map(o=>{
+      const ox = { id:num(o.id) ? o.id : 0, a:Math.max(0, Math.round(o.a)), h:num(o.h) ? Math.max(0, Math.min(100, o.h)) : 100 };
+      if(num(o.x) && num(o.y)){ ox.x = Math.max(0, Math.min(W, o.x)); ox.y = Math.max(0, Math.min(H, o.y)); }   // étape 5 bis : où il a été laissé, qui le mène
+      if(num(o.lead) && o.lead>0) ox.lead = o.lead;
+      return ox;
+    });
     else { g.oxen = []; for(let k=0; k<Math.max(0, Math.min(20, Math.floor(num(g.stock.ox) ? g.stock.ox : 0))); k++) g.oxen.push({ id:0, a:60, h:100 }); }
     let na = Math.max(0, num(data.nextA) ? data.nextA : 0);
     for(const o of g.oxen) na = Math.max(na, o.id+1);
@@ -3333,11 +3580,29 @@ class GameState {
       if(b.plot) for(const i of b.plot.cells) if(g.occupied[i]<0) g.occupied[i] = b.id;
     }
     g.markPastures();
+    // étape 5 bis : matériaux des chantiers ; ceux d'une sauvegarde plus ancienne sont déjà sur place
+    for(const b of g.buildings){
+      if(b.done){ delete b.mat; delete b.prio; continue; }
+      const m = b.mat;
+      if(m && typeof m==="object" && m.need && typeof m.need==="object"){
+        const need = {}, got = {};
+        for(const r of MAT_RES) if(num(m.need[r]) && m.need[r]>0){
+          need[r] = m.need[r];
+          got[r] = Math.max(0, Math.min(need[r], m.got && num(m.got[r]) ? m.got[r] : 0));
+        }
+        b.mat = { need, got };
+      } else {
+        const d = BUILD_DEFS[b.def];
+        g.initMat(b, b.def==="pasture" && b.plot ? { timber:g.pastureCost(b.plot.cells) } : (d ? d.cost : {}));
+        for(const r in b.mat.need) b.mat.got[r] = b.mat.need[r];
+      }
+      b.prio = !!b.prio;
+    }
     return g;
   }
 }
 
 if(typeof module!=="undefined" && module.exports){
-  module.exports = { TS, WORK_DIV, TICKS_PER_DAY, DAYS_PER_MONTH, FIELD_MIN, FIELD_MAX, PLOT_MIN, CROP_CAL, GROW_RATE, SHEAF_RES, LIVESTOCK, LIVESTOCK_ORDER, GRASS, PASTURE_MIN, PASTURE_MAX, monthsTxt, isWinterMonth, MONTHS_ABBR, SKILL_DEFS, SKILL_ORDER, SKILL_LEVELS, skillLevel, FOOD_NEED, AGE_TEEN, AGE_ADULT, AGE_ELDER, AGE_RETIRE, STAGE_NAMES, JOB_TITLES, NAMES_M, NAMES_F, SURNAMES, BUILD_STAGES, buildStage, DIRS4, PLOT_FRONT, polyArea, pointInPoly, GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
+  module.exports = { MAT_RES, PORTER_LOAD, OX_LOAD, OX_SPEED, DRAG_SPEED, DEPOT_DEFS, TS, WORK_DIV, TICKS_PER_DAY, DAYS_PER_MONTH, FIELD_MIN, FIELD_MAX, PLOT_MIN, CROP_CAL, GROW_RATE, SHEAF_RES, LIVESTOCK, LIVESTOCK_ORDER, GRASS, PASTURE_MIN, PASTURE_MAX, monthsTxt, isWinterMonth, MONTHS_ABBR, SKILL_DEFS, SKILL_ORDER, SKILL_LEVELS, skillLevel, FOOD_NEED, AGE_TEEN, AGE_ADULT, AGE_ELDER, AGE_RETIRE, STAGE_NAMES, JOB_TITLES, NAMES_M, NAMES_F, SURNAMES, BUILD_STAGES, buildStage, DIRS4, PLOT_FRONT, polyArea, pointInPoly, GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
     T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf, REGION_DEFS, REGION_COST, POLICY_DEFS, POLICY_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, MODE_BY_ID, DIFFICULTIES, DIFF_BY_ID };
 }

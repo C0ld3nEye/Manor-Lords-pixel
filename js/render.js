@@ -562,7 +562,7 @@ var TALL = { tower:1, windmill:1, manor:1 };
 
 function drawBuilding(g, b, info){
   var name = info.name, bxp = b.x*TS, byp = (b.y+b.h)*TS;
-  if(!b.done){ drawSite(b, name); return; }
+  if(!b.done){ drawSite(g, b, name); return; }
   spr(name, bxp, byp);
   if(b.def==="windmill"){
     var f = SPR.frames[name];
@@ -576,7 +576,7 @@ function drawBuilding(g, b, info){
 
 /* étape 3 : chantier en quatre étapes (fondations, charpente, murs, toit) */
 var STONE_A = "#d4cec0", STONE_B = "#9a9384", STONE_D = "#4a443b", WOOD_A = "#b07a44", WOOD_B = "#5e3b1f";
-function drawSite(b, name){
+function drawSite(g, b, name){
   var fr = SPR.frames[name], bxp = b.x*TS, byp = (b.y+b.h)*TS, fw = b.w*TS;
   var st = buildStage(b), loc = Math.max(0, Math.min(1, (b.progress||0)*BUILD_STAGES.length - st));
   bx.globalAlpha = 0.18; spr(name, bxp, byp); bx.globalAlpha = 1; // silhouette du bâtiment final
@@ -606,7 +606,12 @@ function drawSite(b, name){
   if(st===2) SPR.drawBottom(bx, name, bxp - OX, byp - OY, 0.12 + 0.48*loc);
   if(st===3) SPR.drawBottom(bx, name, bxp - OX, byp - OY, 0.6 + 0.4*loc);
   if(st>=2) spr("scaffold_"+(b.w>1 ? 2 : 1), bxp, byp);
-  if(st<3) spr("materials", bxp - 3, byp + 2);
+  // étape 5 bis : le tas de ce qui a été livré et pas encore employé
+  if(b.mat){
+    var lt = Math.ceil(g.matOnSite(b, "timber") - 0.05), ls = Math.ceil(g.matOnSite(b, "stone") - 0.05);
+    if(lt>0) spr("pile_timber_"+Math.min(4, lt), bxp - 3, byp + 4);
+    if(ls>0) spr("pile_stone_"+Math.min(3, ls), bxp + (lt>0 ? 10 : -2), byp + 4);
+  } else if(st<3) spr("materials", bxp - 3, byp + 2);
   var bw = fw - 4, top = byp - fr.ay - 3;
   rect(bxp+2, top, bw, 2, "#1a140e");
   rect(bxp+2, top, Math.max(1, Math.round(bw*(b.progress||0))), 2, "#7bd88f");
@@ -727,7 +732,7 @@ function drawStart(g, B, winter, now){
     return;
   }
   obj(byp - 1, function(){ rect(bxp+3, byp-12, 2, 11, WOOD_B); rect(bxp+2, byp-12, 4, 1, WOOD_A); rect(bxp+5, byp-8, 5, 1, "#c9b48a"); });
-  if(g.stock.ox>0){
+  if(g.oxenHome() > 0){
     var ox = bxp + 12, oy = byp - 1;
     sh("sh_ox", ox, oy);
     obj(oy, drawSprite, "ox_"+(Math.floor(now/900) % 2)+"_l", ox, oy);
@@ -805,6 +810,7 @@ function drawFamily(g, f, info){
     body = up ? "workU" : "workD";
     if(tool==="basket" || tool==="bow" || tool==="crook") body = "idle";
   }
+  if(walking && f.task && f.task.type==="haul" && f.task.drag && f.task.phase==="bring") spr("drag_timber", x + (dir<0 ? 10 : -10), y + 1);
   if(f.carry && walking){
     var ck = f.carry.timber ? "timber" : f.carry.berries ? "berries" : f.carry.meat ? "meat" : f.carry.stone ? "stone" : "sack";
     spr("carry_"+ck+sfx, x, y);
@@ -818,6 +824,14 @@ function drawDeer(g, d, info){
   var moving = (now - m.mt) < 300;
   var fr = moving ? 1 + (Math.floor(now/160) + d.id) % 2 : ((hash(d.id, Math.floor(now/2600), 7) < 0.5) ? 3 : 0);
   spr("deer_"+(d.id%3===0 ? 1 : 0)+"_"+fr+sfx, d.x*TS, d.y*TS);
+}
+
+function drawHaulOx(g, o, info){
+  var m = info.m, now = info.now, left = m.dir<0, x = o.x*TS, y = o.y*TS;
+  var moving = (now - m.mt) < 300;
+  var lv = o.lead>0 ? g.villager(o.lead) : null, lt = lv && lv.task;
+  if(lt && lt.type==="haul" && lt.phase==="bring") spr("drag_"+(lt.res==="stone" ? "stone" : "timber"), x + (left ? 16 : -16), y + 1);
+  spr("ox_"+(moving ? (Math.floor(now/260) + o.id) % 2 : 0)+(left ? "_l" : ""), x, y);
 }
 
 function drawUnit(g, u, info){
@@ -1039,8 +1053,9 @@ function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
         }
       }
     }
-    if(B.done && B.def==="farm" && g.stock.ox>0 && !winter){
-      for(var o2=0; o2<Math.min(3, g.stock.ox); o2++){
+    var oxIdle = g.oxenHome();
+    if(B.done && B.def==="farm" && oxIdle>0 && !winter){
+      for(var o2=0; o2<Math.min(3, oxIdle); o2++){
         var oxx = bxp + 6 + o2*16 + Math.round(Math.sin(t*0.15 + o2*2.1)*4), oyy = byp + 10 + (o2&1)*4;
         var odir = Math.cos(t*0.15 + o2*2.1) < 0 ? "_l" : "";
         sh("sh_ox", oxx, oyy);
@@ -1091,6 +1106,15 @@ function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
     var job = (wb && JOBSET[wb.def]) ? wb.def : "laborer";
     sh("sh_person", Fm.x*TS, Fm.y*TS);
     obj(Fm.y*TS, drawFamily, g, Fm, { m:fm, now:now, job:job });
+  }
+  /* étape 5 bis : bœufs menés par un journalier (troncs ou pierres derrière eux), ou laissés en chemin */
+  for(var oj=0; oj<g.oxen.length; oj++){
+    var Ox = g.oxen[oj];
+    if(!g.oxAway(Ox) || !isFinite(Ox.x) || !isFinite(Ox.y)) continue;
+    var om = track("o"+Ox.id, Ox.x, Ox.y, now);
+    if(Ox.x*TS < vx0 - 20 || Ox.x*TS > vx1 + 20 || Ox.y*TS < vy0 || Ox.y*TS > vy1 + 10) continue;
+    sh("sh_ox", Ox.x*TS, Ox.y*TS);
+    obj(Ox.y*TS, drawHaulOx, g, Ox, { m:om, now:now });
   }
   for(var ui2=0; ui2<g.units.length; ui2++){
     var Un = g.units[ui2];
