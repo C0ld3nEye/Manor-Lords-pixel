@@ -2,11 +2,15 @@
 
 /* ============================================================
    SEIGNEURIE — simulation médiévale (cœur pur, sans React)
-   1 tick = 0,1 jour. 10 ticks = 1 jour. 16 jours = 1 mois.
+   10 ticks = 1 seconde à vitesse ×1. 190 ticks = 1 jour. 16 jours = 1 mois
+   (≈ 5 minutes par mois, ≈ 1 heure par année à vitesse ×1).
    ============================================================ */
 
-const TICKS_PER_DAY = 10;
+const TICKS_PER_DAY = 190;
 const DAYS_PER_MONTH = 16;
+const TS = TICKS_PER_DAY/10;   // échelle de temps : un mois dure TS fois plus longtemps qu'avant l'étape « rythme »
+const WORK_DIV = 30;           // les villageois ne font avancer leur ouvrage (et leurs pauses) qu'un tick sur WORK_DIV :
+                               // ils marchent à la même allure, mais travaillent à la mesure d'un mois plus long
 
 const W = 46;
 const H = 34;
@@ -2067,8 +2071,10 @@ class GameState {
     }
     f.cool = 20 + Math.floor(this.rnd()*20);
   }
+  // le travail et les pauses n'avancent qu'un tick sur WORK_DIV (décalé d'un villageois à l'autre)
+  workGate(f){ return ((this.stepN|0) + f.id) % WORK_DIV === 0; }
   assignTask(f       ){
-    if(f.cool>0){ f.cool--; return; }
+    if(f.cool>0){ if(this.workGate(f)) f.cool--; return; }
     // seuls les adultes valides (et les apprentis) travaillent
     if(!(this.canWork(f) || (f.appr && this.canApprentice(f)))){ this.idleNearHome(f); return; }
     const b = f.work>0 ? this.buildings.find(x=>x.id===f.work && x.done) : undefined;
@@ -2175,7 +2181,7 @@ class GameState {
         }
         break;
       case "work":
-        this.doWork(f);
+        if(this.workGate(f)) this.doWork(f);
         break;
       case "return":
         if(this.moveAlong(f, f.path, 0.25*sp)){
@@ -2278,7 +2284,7 @@ class GameState {
       f.carry={ berries:3 };
     } else if(t.type==="hunt" && t.deer!==undefined){
       const di=this.deer.findIndex(d=>d.id===t.deer);
-      if(di>=0){ this.deer.splice(di,1); this.deerTimer=300; }
+      if(di>=0){ this.deer.splice(di,1); this.deerTimer=Math.round(300*TS); }
       f.carry={ meat:3 };
     } else if(t.type==="mine"){
       const b=f.work>0?this.buildings.find(x=>x.id===f.work):null;
@@ -2563,7 +2569,7 @@ class GameState {
   /* ---------- camps de brigands & milice ---------- */
   campStep(){
     // spawn : un camp tous les ~2 ans à partir de 1178, max 2
-    if(this.mode().combat && this.time.year>=1177 && this.camps.length<2 && this.rnd()<0.004*(this.mode().bandits||1)*this.diff().bandits){
+    if(this.mode().combat && this.time.year>=1177 && this.camps.length<2 && this.rnd()<0.004/TS*(this.mode().bandits||1)*this.diff().bandits){
       for(let tries=0; tries<30; tries++){
         const x=2+Math.floor(this.rnd()*(W-4)), y=2+Math.floor(this.rnd()*(H-4));
         if(this.passable(x,y)){
@@ -2633,7 +2639,7 @@ class GameState {
     if(this.treasury < cost){ this.toast("Il faut "+cost+" deniers pour louer un mercenaire.","bad"); return false; }
     this.treasury -= cost;
     const b = this.buildings.find(b=>b.done && b.def==="manor") || this.buildings[0];
-    this.units.push({ id:this.nextU++, x:b.x+0.5, y:b.y+b.h+0.5, hp:14, maxHp:14, state:"guard", target:null, cool:0, merc:true, ttl:96 }); // 6 mois (unitStep appelé tous les 10 ticks : 6*16*10/10)
+    this.units.push({ id:this.nextU++, x:b.x+0.5, y:b.y+b.h+0.5, hp:14, maxHp:14, state:"guard", target:null, cool:0, merc:true, ttl:Math.round(96*TS) }); // contrat de mercenaire (unitStep est appelé tous les 6 ticks)
     this.toast("\u2694\ufe0f Un mercenaire rejoint vos rangs (25 deniers).","good");
     this.uiVersion++;
     return true;
@@ -2651,13 +2657,13 @@ class GameState {
   /* ---------- progression du temps ---------- */
   step(){
     const t=this.time;
-    t.tick++;
+    t.tick++; this.stepN = (this.stepN|0) + 1;
     // croissance des cultures : selon le calendrier de chaque culture, la pluie et la sécheresse
     const wMul = (this.weather==="rain" ? 1.1 : this.weather==="snow" ? 0 : 1) * (this.wx==="drought" ? 0.4 : 1);
     for(const b of this.buildings){
       if(!b.done || b.def!=="field" || !b.f || !b.f.sown || b.f.growth>=1) continue;
       const k = this.cropCal(this.liveCrop(b.f)).grow[t.month];
-      if(k) b.f.growth = Math.min(1, b.f.growth + GROW_RATE*k*wMul);
+      if(k) b.f.growth = Math.min(1, b.f.growth + GROW_RATE*k*wMul/TS);
     }
     for(const v of this.villagers) this.stepVillager(v);
     // cerfs
@@ -3332,6 +3338,6 @@ class GameState {
 }
 
 if(typeof module!=="undefined" && module.exports){
-  module.exports = { FIELD_MIN, FIELD_MAX, PLOT_MIN, CROP_CAL, GROW_RATE, SHEAF_RES, LIVESTOCK, LIVESTOCK_ORDER, GRASS, PASTURE_MIN, PASTURE_MAX, monthsTxt, isWinterMonth, MONTHS_ABBR, SKILL_DEFS, SKILL_ORDER, SKILL_LEVELS, skillLevel, FOOD_NEED, AGE_TEEN, AGE_ADULT, AGE_ELDER, AGE_RETIRE, STAGE_NAMES, JOB_TITLES, NAMES_M, NAMES_F, SURNAMES, BUILD_STAGES, buildStage, DIRS4, PLOT_FRONT, polyArea, pointInPoly, GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
+  module.exports = { TS, WORK_DIV, TICKS_PER_DAY, DAYS_PER_MONTH, FIELD_MIN, FIELD_MAX, PLOT_MIN, CROP_CAL, GROW_RATE, SHEAF_RES, LIVESTOCK, LIVESTOCK_ORDER, GRASS, PASTURE_MIN, PASTURE_MAX, monthsTxt, isWinterMonth, MONTHS_ABBR, SKILL_DEFS, SKILL_ORDER, SKILL_LEVELS, skillLevel, FOOD_NEED, AGE_TEEN, AGE_ADULT, AGE_ELDER, AGE_RETIRE, STAGE_NAMES, JOB_TITLES, NAMES_M, NAMES_F, SURNAMES, BUILD_STAGES, buildStage, DIRS4, PLOT_FRONT, polyArea, pointInPoly, GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
     T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf, REGION_DEFS, REGION_COST, POLICY_DEFS, POLICY_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, MODE_BY_ID, DIFFICULTIES, DIFF_BY_ID };
 }
