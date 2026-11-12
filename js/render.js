@@ -61,17 +61,23 @@ NoiseGrid.prototype.at = function(x, y){
 };
 
 /* ======================================================
-   CACHE DU SOL
+   CACHE DU SOL, PAR MORCEAUX
+   La carte est grande (256 × 192 cases) : le sol n'est plus peint d'un bloc. Il est découpé en
+   morceaux de CHK × CHK cases, peints à la demande quand ils entrent dans la vue (et un peu avant),
+   gardés dans un cache limité, et repeints peu à peu au changement de saison.
    ====================================================== */
 var T = null;
+var CHK = 16, CPX = CHK*TS;           // un morceau : 16 × 16 cases = 256 × 256 pixels d'art (peint vite)
+var CACHE_MAX = 110;                  // morceaux gardés en mémoire (256 ko chacun : ≈ 28 Mo au plus)
 
 function tileAt(g, x, y){ return (x<0||y<0||x>=W||y>=H) ? -1 : g.tiles[y*W+x]; }
 function isRoad(g, x, y){ return x>=0 && y>=0 && x<W && y<H && g.roads[y*W+x]; }
 
-/* valeur d'un type de tuile (0/1), hors carte : forêt dense, ni eau ni pierre */
+/* valeur d'un type de tuile (0/1), hors carte : forêt dense, ni eau ni pierre. Un gué compte comme de l'eau. */
 function tv(g, kind, x, y){
   var t = tileAt(g, x, y);
   if(t<0) return kind===T_FOREST ? 0.8 : 0;
+  if(kind===T_WATER) return (t===T_WATER || t===T_FORD) ? 1 : 0;
   return t===kind ? 1 : 0;
 }
 /* masque lissé (bilinéaire + lissage) d'un type de tuile au pixel d'art (px, py) */
@@ -80,12 +86,6 @@ function mask(g, kind, px, py){
   var fu = u-i, fv = v-j; fu = fu*fu*(3-2*fu); fv = fv*fv*(3-2*fv);
   var a = tv(g,kind,i,j), b = tv(g,kind,i+1,j), c = tv(g,kind,i,j+1), d = tv(g,kind,i+1,j+1);
   return a + (b-a)*fu + (c-a)*fv + (a-b-c+d)*fu*fv;
-}
-function soilAt(g, px, py){
-  var u = px/TS - 0.5, v = py/TS - 0.5, i = Math.floor(u), j = Math.floor(v);
-  function s(x,y){ x = Math.max(0, Math.min(W-1, x)); y = Math.max(0, Math.min(H-1, y)); return g.soil[y*W+x]; }
-  var fu = u-i, fv = v-j;
-  return s(i,j)*(1-fu)*(1-fv) + s(i+1,j)*fu*(1-fv) + s(i,j+1)*(1-fu)*fv + s(i+1,j+1)*fu*fv;
 }
 /* distance d'un pixel au réseau de routes (tuiles voisines comprises) */
 function roadDist(g, px, py, tx, ty){
@@ -104,17 +104,20 @@ function roadDist(g, px, py, tx, ty){
   return best;
 }
 
+
 function terrainInit(g){
   var CW = (W+2*M)*TS, CH = (H+2*M)*TS;
-  var c = document.createElement("canvas"); c.width = CW; c.height = CH;
-  var cx = c.getContext("2d");
-  var img = cx.createImageData(CW, CH);
   var seed = (g.seed|0) % 100000;
+  var sc = document.createElement("canvas"); sc.width = CPX; sc.height = CPX;
+  var scx = sc.getContext("2d"), simg = scx.createImageData(CPX, CPX);
+  var jimg = scx.createImageData(CPX, CPX);
   T = {
-    g:g, w:CW, h:CH, c:c, cx:cx, img:img, d:new Uint32Array(img.data.buffer),
+    g:g, w:CW, h:CH, seed:seed,
     nA1:new NoiseGrid(CW, CH, 40, seed+1), nA2:new NoiseGrid(CW, CH, 13, seed+2), nB:new NoiseGrid(CW, CH, 4, seed+3),
     kind:new Uint8Array(W*H), season:-1, regionKey:"", tiles:new Uint8Array(W*H), roads:new Uint8Array(W*H),
-    water:[], mm:document.createElement("canvas"), seed:seed,
+    chunks:new Map(), nx:Math.ceil((W+2*M)/CHK), ny:Math.ceil((H+2*M)/CHK),
+    simg:simg, sd:new Uint32Array(simg.data.buffer), jimg:jimg, jd:new Uint32Array(jimg.data.buffer), job:null,
+    mm:document.createElement("canvas"), mmDirty:true, paintMs:null, frame:0, tw:null,
   };
   T.mm.width = W; T.mm.height = H;
   var kn = new NoiseGrid(W, H, 5, seed+4);
@@ -124,13 +127,12 @@ function terrainInit(g){
   }
 }
 
-function regionBorders(g){
-  var xs = [];
-  for(var x=1;x<W;x++) if(g.regionAt(x)!==g.regionAt(x-1)) xs.push(x*TS);
-  return xs;
-}
+/* cible de la peinture : un tableau de pixels et la position (en pixels d'art du monde) de son coin */
+var TD = null, TW = 0, TOX = 0, TOY = 0, TWATER = null;
+function target(d, w, ox, oy, water){ TD = d; TW = w; TOX = ox; TOY = oy; TWATER = water || null; }
+function tIdx(px, py){ return (py - TOY)*TW + (px - TOX); }
 
-/* peint les tuiles [tx0..tx1]×[ty0..ty1] (coordonnées carte, marge comprise) */
+/* peint les tuiles [tx0..tx1]×[ty0..ty1] (coordonnées carte, marge comprise) dans la cible */
 /* poids d'interpolation précalculés pour les 16 pixels d'une tuile */
 var IX = new Int8Array(TS), FS = new Float32Array(TS), FL = new Float32Array(TS);
 for(var ii=0; ii<TS; ii++){
@@ -139,15 +141,15 @@ for(var ii=0; ii<TS; ii++){
 }
 var NBW = new Float32Array(9), NBF = new Float32Array(9), NBS = new Float32Array(9), NBO = new Float32Array(9);
 function soilT(g, x, y){ x = Math.max(0, Math.min(W-1, x)); y = Math.max(0, Math.min(H-1, y)); return g.soil[y*W+x]; }
+var snowGrass = 0;
 
 function paintTerrain(g, tx0, ty0, tx1, ty1){
-  var s = T.season, R = GROUND[s], d = T.d, CW = T.w, off = M*TS;
-  var borders = regionBorders(g);
-  var owned = [];
-  for(var x=0;x<W;x++) owned.push(g.regionOwned(x));
-  var snowGrass = U("#8a9a7c");
+  var s = T.season, R = GROUND[s], d = TD, off = M*TS;
+  if(!snowGrass) snowGrass = U("#8a9a7c");
   for(var ty=ty0; ty<=ty1; ty++) for(var tx=tx0; tx<=tx1; tx++){
     var inMap = tx>=0 && ty>=0 && tx<W && ty<H;
+    var owned = !inMap || g.regionOwned(tx, ty);
+    var ford = inMap && g.tiles[ty*W+tx]===T_FORD;
     // voisinage 3×3 de la tuile : eau, forêt, pierre, fertilité
     var nearW = false, nearF = false, nearS = false, hasRoadNear = false;
     for(var k=0;k<9;k++){
@@ -160,7 +162,7 @@ function paintTerrain(g, tx0, ty0, tx1, ty1){
     for(var j=0;j<TS;j++){
       var cy = IX[j]*3, fv = FS[j], fvl = FL[j];
       for(var i=0;i<TS;i++){
-        var px = tx*TS+i, py = ty*TS+j, ci = (py+off)*CW + (px+off);
+        var px = tx*TS+i, py = ty*TS+j, ci = tIdx(px, py);
         var cx = IX[i], fu = FS[i], k0 = cy + cx;
         var a = T.nA1.at(px+off, py+off)*0.6 + T.nA2.at(px+off, py+off)*0.4;
         var b = T.nB.at(px+off, py+off);
@@ -170,7 +172,12 @@ function paintTerrain(g, tx0, ty0, tx1, ty1){
         var wm = 0;
         if(nearW){ A_ = NBW[k0]; B_ = NBW[k0+1]; C2 = NBW[k0+3]; D_ = NBW[k0+4];
           wm = A_ + (B_-A_)*fu + (C2-A_)*fv + (A_-B_-C2+D_)*fu*fv + (b-0.5)*0.22; }
-        if(wm > 0.5){
+        if(ford && wm > 0.5){
+          // gué : eau claire et peu profonde, galets
+          var hf = hash(px, py, 31);
+          if(s===0) col = hf<0.2 ? C_.st2 : (bay<0.5 ? C_.sn1 : C_.sn2);
+          else col = hf<0.16 ? (hf<0.07 ? C_.st4 : C_.st2) : (bay<0.45 ? C_.wa4 : C_.wa3);
+        } else if(wm > 0.5){
           var up1 = mask(g, T_WATER, px, py-1) + (T.nB.at(px+off, py-1+off)-0.5)*0.22;
           var up2 = mask(g, T_WATER, px, py-2) + (T.nB.at(px+off, py-2+off)-0.5)*0.22;
           if(s===0){
@@ -179,7 +186,7 @@ function paintTerrain(g, tx0, ty0, tx1, ty1){
           } else if(up1<=0.5) col = C_.dt1;               // berge vue de face
           else if(up2<=0.5) col = C_.wa0;                 // ombre de la berge sur l'eau
           else col = wm>0.85 ? C_.wa1 : (wm>0.64 ? (bay<0.5?C_.wa1:C_.wa2) : C_.wa2);
-          if(T.collect && s!==0 && wm>0.72 && hash(px, py, 77)<0.006 && (!inMap || owned[tx])) T.water.push(px, py);
+          if(TWATER && s!==0 && wm>0.72 && hash(px, py, 77)<0.006 && owned) TWATER.push(px, py);
         } else {
           // --- sol ---
           var soil = 0.5;
@@ -217,8 +224,8 @@ function paintTerrain(g, tx0, ty0, tx1, ty1){
             }
           }
         }
-        // --- région non réclamée : terre assombrie ---
-        if(inMap && !owned[tx]) col = shadeU(col, 0.68, 0.45);
+        // --- région qui n'est pas à vous : terre assombrie ---
+        if(!owned) col = shadeU(col, 0.68, 0.45);
         // --- hors carte : lisière qui s'enfonce dans l'ombre ---
         if(!inMap){
           var dx = Math.max(0, -px, px-(W*TS-1)), dy = Math.max(0, -py, py-(H*TS-1));
@@ -228,33 +235,40 @@ function paintTerrain(g, tx0, ty0, tx1, ty1){
         d[ci] = col;
       }
     }
-    if(inMap) decorateTile(g, tx, ty);
-  }
-  // frontières de régions : pointillé doré
-  for(var kb=0; kb<borders.length; kb++){
-    var bxp = borders[kb];
-    if(owned[bxp/TS] && owned[bxp/TS-1]) continue;          // frontière effacée entre deux terres possédées
-    if(bxp < tx0*TS-1 || bxp > (tx1+1)*TS) continue;
-    for(var py2=Math.max(0, ty0*TS); py2<Math.min(H*TS, (ty1+1)*TS); py2++){
-      if(((py2>>2)&1)===0) continue;
-      d[(py2+off)*CW + bxp-1+off] = GOLD; d[(py2+off)*CW + bxp+off] = GOLD_D;
-    }
+    if(inMap){ decorateTile(g, tx, ty, owned); regionEdges(g, tx, ty, owned); }
   }
 }
 
+/* frontières de régions : pointillé doré le long des bords de cases, dessiné dans chaque case
+   (doré du côté intérieur, ombre de l'autre côté), effacé entre deux terres qui sont à vous */
+function regionEdges(g, tx, ty, owned){
+  var r = g.regionAt(tx, ty), d = TD, x0 = tx*TS, y0 = ty*TS, k;
+  function line(horiz, fixed, col){
+    for(k=0;k<TS;k++){
+      var px = horiz ? x0+k : fixed, py = horiz ? fixed : y0+k;
+      if((((horiz ? px : py)>>2)&1)===0) continue;
+      d[tIdx(px, py)] = col;
+    }
+  }
+  function other(nx, ny){ var o = g.regionAt(nx, ny); return o>=0 && o!==r && !(owned && g.regionOwned(nx, ny)); }
+  if(other(tx+1, ty)) line(false, x0+TS-1, GOLD);
+  if(other(tx-1, ty)) line(false, x0, GOLD_D);
+  if(other(tx, ty+1)) line(true, y0+TS-1, GOLD);
+  if(other(tx, ty-1)) line(true, y0, GOLD_D);
+}
+
 /* petits détails du sol : touffes, fleurs, cailloux, feuilles mortes */
-function decorateTile(g, tx, ty){
+function decorateTile(g, tx, ty, owned){
   var s = T.season, i = ty*W+tx, t = g.tiles[i];
-  if(t===T_WATER || t===T_STONE || g.roads[i]) return;
-  var d = T.d, CW = T.w, off = M*TS, R = GROUND[s];
-  function put(x, y, c){ if(x<0||y<0||x>15||y>15) return; d[(ty*TS+y+off)*CW + tx*TS+x+off] = c; }
-  var owned = g.regionOwned(tx);
+  if(t===T_WATER || t===T_FORD || t===T_STONE || g.roads[i]) return;
+  var d = TD, off = M*TS, R = GROUND[s];
+  function put(x, y, c){ if(x<0||y<0||x>15||y>15) return; d[tIdx(tx*TS+x, ty*TS+y)] = c; }
   function fix(c){ return owned ? c : shadeU(c, 0.68, 0.45); }
   var n = 2 + Math.floor(hash(tx, ty, 1)*3);
   for(var k=0;k<n;k++){
     var x = 1 + Math.floor(hash(tx, ty, 10+k)*13), y = 2 + Math.floor(hash(tx, ty, 20+k)*12);
     if(s===0){ if(hash(tx,ty,30+k)<0.4) put(x, y, fix(U("#6f7f60"))); continue; }
-    var base = d[(ty*TS+y+off)*CW + tx*TS+x+off];
+    var base = d[tIdx(tx*TS+x, ty*TS+y)];
     var dk = mixU(base, R[0], 0.55), lt = mixU(base, R[4], 0.45);
     put(x, y, dk); put(x+2, y, dk); put(x, y-1, lt); put(x+2, y-1, lt); put(x+1, y-1, dk);
   }
@@ -274,100 +288,263 @@ function decorateTile(g, tx, ty){
   if(hash(tx, ty, 90)<0.12 && s!==0) put(Math.floor(hash(tx,ty,91)*15), Math.floor(hash(tx,ty,92)*15), fix(mixU(C_.st3, R[2], 0.4)));
 }
 
-/* arbres décoratifs cuits dans la marge */
-function paintMarginTrees(){
-  var d = T.d, CW = T.w, CH = T.h, off = M*TS, s = T.season;
-  for(var ty=-M; ty<H+M; ty++) for(var tx=-M; tx<W+M; tx++){
+/* arbres décoratifs dans la marge (hors carte), pour les cases [tx0..tx1]×[ty0..ty1] ; seuls les pixels
+   de la cible sont écrits (un arbre à cheval sur deux morceaux est dessiné moitié dans chacun) */
+function paintMarginTrees(tx0, ty0, tx1, ty1, x0, y0, x1, y1){
+  var d = TD, s = T.season;
+  for(var ty=ty0-1; ty<=ty1+2; ty++) for(var tx=tx0-1; tx<=tx1+1; tx++){
+    if(tx<-M || ty<-M || tx>=W+M || ty>=H+M) continue;
     if(tx>=0 && ty>=0 && tx<W && ty<H) continue;
     if(ty===H) continue;                       // ne pas déborder sur la carte
     if(hash(tx, ty, 123) > 0.62) continue;
     var kinds = ["pine_"+s+"_0","oak_"+s+"_0","birch_"+s+"_1","pine_"+s+"_1","oak_"+s+"_2"];
     var spr = SPR.keep[kinds[Math.floor(hash(tx,ty,124)*kinds.length)]];
     if(!spr) continue;
-    var bx = tx*TS + 3 + Math.floor(hash(tx,ty,125)*10) - spr.ax + off;
-    var by = ty*TS + 10 + Math.floor(hash(tx,ty,126)*6) - spr.ay + off;
+    var bx = tx*TS + 3 + Math.floor(hash(tx,ty,125)*10) - spr.ax;
+    var by = ty*TS + 10 + Math.floor(hash(tx,ty,126)*6) - spr.ay;
     var ddx = Math.max(0, -tx, tx-(W-1)), ddy = Math.max(0, -ty, ty-(H-1));
     var dark = Math.min(0.9, 0.42 + Math.sqrt(ddx*ddx+ddy*ddy)/(M*0.75));
     for(var y=0;y<spr.h;y++) for(var x=0;x<spr.w;x++){
       var c = spr.d[y*spr.w+x]; if(!c) continue;
       var X = bx+x, Y = by+y;
-      if(X<0||Y<0||X>=CW||Y>=CH) continue;
-      if(X>=off && X<off+W*TS && Y>=off && Y<off+H*TS) continue;   // jamais sur la carte
-      d[Y*CW+X] = mixU(c, BGU, dark);
+      if(X<x0 || Y<y0 || X>=x1 || Y>=y1) continue;
+      if(X>=0 && X<W*TS && Y>=0 && Y<H*TS) continue;   // jamais sur la carte
+      d[tIdx(X, Y)] = mixU(c, BGU, dark);
     }
   }
 }
 
-function paintMinimap(){
+/* ---- arbres ----
+   Les arbres d'une case (1 à 3 selon le bois qui reste), à des places fixes tirées de la case. */
+var TREE_SPOTS = [[4,7],[12,10],[7,15]];
+function treeCount(wood){ return wood>6 ? 3 : wood>3 ? 2 : 1; }
+function treeSpecs(g, tx, ty, season){
+  var ti = ty*W+tx, wood = g.treeWood[ti], kind = T.kind[ti], cnt = treeCount(wood), out = [];
+  for(var k=0;k<cnt;k++){
+    var px = tx*TS + TREE_SPOTS[k][0] + Math.floor(hash(tx,ty,k)*4) - 2, py = ty*TS + TREE_SPOTS[k][1] + Math.floor(hash(tx,ty,k+5)*3);
+    var r = hash(tx, ty, k+11), nm, shn = "sh_tree";
+    var young = wood<=2 && k===0;
+    if(young){ nm = "sap_"+season+"_"+(kind===0 ? 1 : 0); shn = "sh_sap"; }
+    else if(kind===0 ? r<0.8 : kind===1 ? r<0.4 : r<0.08){ nm = "pine_"+season+"_"+(r<0.3?1:0); shn = "sh_pine"; }
+    else if(kind===2 ? r<0.45 : r<0.6){ nm = "birch_"+season+"_"+(hash(tx,ty,k+3)<0.5?0:1); shn = "sh_pine"; }
+    else nm = "oak_"+season+"_"+Math.floor(hash(tx,ty,k+7)*3);
+    out.push({ n:nm, sh:shn, x:px, y:py });
+  }
+  return out;
+}
+/* Cœur de forêt : la case et tout ce qui l'entoure (une case de chaque côté, deux au-dessus, une
+   au-dessous) sont boisés, sans jeune pousse. Ses arbres sont peints une fois pour toutes dans le sol :
+   rien de ce qui est devant ne peut les cacher, et une grande forêt ne coûte plus rien à afficher. */
+function bakedTile(g, tx, ty){
+  if(tx<1 || ty<2 || tx>=W-1 || ty>=H-1) return false;
+  for(var y=ty-2; y<=ty+1; y++) for(var x=tx-1; x<=tx+1; x++){
+    var i = y*W+x;
+    if(g.tiles[i]!==T_FOREST || g.treeWood[i]<=2) return false;
+  }
+  return true;
+}
+var SHADOW_ELL = { sh_tree:[15,5,4,3], sh_pine:[11,4,3,2] };
+/* peint les arbres des cœurs de forêt qui débordent sur le rectangle de pixels [x0,x1[×[y0,y1[ de la cible */
+function bakeTrees(g, tx0, ty0, tx1, ty1, x0, y0, x1, y1){
+  var s = T.season, list = [], d = TD;
+  for(var ty=Math.max(0, ty0-1); ty<=Math.min(H-1, ty1+2); ty++) for(var tx=Math.max(0, tx0-2); tx<=Math.min(W-1, tx1+2); tx++){
+    if(!bakedTile(g, tx, ty)) continue;
+    var sp = treeSpecs(g, tx, ty, s);
+    for(var k=0;k<sp.length;k++) list.push(sp[k]);
+  }
+  if(!list.length) return;
+  list.sort(function(a, b){ return a.y - b.y || a.x - b.x; });
+  var shade = s===0 ? 0.82 : 0.72;
+  for(var a=0; a<list.length; a++){                       // les ombres d'abord, comme pour les objets
+    var e = SHADOW_ELL[list[a].sh]; if(!e) continue;
+    var cx = list[a].x - e[2] + e[0]/2, cy = list[a].y - e[3] + e[1]/2, rx = e[0]/2, ry = e[1]/2;
+    for(var yy=Math.floor(cy-ry); yy<=cy+ry; yy++) for(var xx=Math.floor(cx-rx); xx<=cx+rx; xx++){
+      if(xx<x0 || yy<y0 || xx>=x1 || yy>=y1) continue;
+      var u = (xx+0.5-cx)/rx, v = (yy+0.5-cy)/ry;
+      if(u*u + v*v > 1) continue;
+      var ci = tIdx(xx, yy); d[ci] = shadeU(d[ci], shade);
+    }
+  }
+  for(var b=0; b<list.length; b++){
+    var spr = SPR.keep[list[b].n]; if(!spr) continue;
+    var bx0 = list[b].x - spr.ax, by0 = list[b].y - spr.ay;
+    for(var y=0;y<spr.h;y++){
+      var Y = by0 + y; if(Y<y0 || Y>=y1) continue;
+      for(var x=0;x<spr.w;x++){
+        var X = bx0 + x; if(X<x0 || X>=x1) continue;
+        var c = spr.d[y*spr.w+x]; if(!c) continue;
+        var al = (c>>>24)&255, ci2 = tIdx(X, Y);
+        d[ci2] = al>=250 ? c : mixU(d[ci2], c|0xff000000, al/255);
+      }
+    }
+  }
+}
+
+/* ---- les morceaux ---- */
+function chunkKey(ci, cj){ return ci*100 + cj; }
+function chunkTiles(ci, cj){ var tx0 = -M + ci*CHK, ty0 = -M + cj*CHK; return { tx0:tx0, ty0:ty0, tx1:Math.min(W+M-1, tx0+CHK-1), ty1:Math.min(H+M-1, ty0+CHK-1) }; }
+function newChunk(ci, cj){
+  var c = document.createElement("canvas"); c.width = CPX; c.height = CPX;
+  return { ci:ci, cj:cj, c:c, cx:c.getContext("2d"), season:-1, rk:"", water:[], used:0, ready:false };
+}
+/* peint un morceau entier tout de suite (il entre dans la vue et n'a jamais été peint) */
+function paintChunkNow(g, ch){
+  var t0 = performance.now(), r = chunkTiles(ch.ci, ch.cj), ox = r.tx0*TS, oy = r.ty0*TS;
+  ch.water = [];
+  target(T.sd, CPX, ox, oy, ch.water);
+  paintTerrain(g, r.tx0, r.ty0, r.tx1, r.ty1);
+  paintMarginTrees(r.tx0, r.ty0, r.tx1, r.ty1, ox, oy, ox+CPX, oy+CPX);
+  bakeTrees(g, r.tx0, r.ty0, r.tx1, r.ty1, ox, oy, ox+CPX, oy+CPX);
+  ch.cx.putImageData(T.simg, 0, 0);
+  ch.season = T.season; ch.rk = T.regionKey; ch.ready = true;
+  var ms = performance.now() - t0;
+  T.paintMs = T.paintMs===null ? Math.round(ms) : Math.round(T.paintMs*0.8 + ms*0.2);
+}
+/* repeint un morceau rangée par rangée, sur plusieurs images (changement de saison ou de frontières) :
+   l'ancien reste affiché jusqu'au bout */
+function stepJob(g, budget){
+  var J = T.job; if(!J) return;
+  var ch = J.ch, r = chunkTiles(ch.ci, ch.cj), ox = r.tx0*TS, oy = r.ty0*TS, t0 = performance.now();
+  if(J.row===r.ty0){ J.water = []; }
+  target(T.jd, CPX, ox, oy, J.water);
+  while(J.row <= r.ty1 && performance.now() - t0 < budget){ paintTerrain(g, r.tx0, J.row, r.tx1, J.row); J.row++; }
+  if(J.row > r.ty1){
+    paintMarginTrees(r.tx0, r.ty0, r.tx1, r.ty1, ox, oy, ox+CPX, oy+CPX);
+    bakeTrees(g, r.tx0, r.ty0, r.tx1, r.ty1, ox, oy, ox+CPX, oy+CPX);
+    ch.cx.putImageData(T.jimg, 0, 0);
+    ch.water = J.water; ch.season = J.season; ch.rk = J.rk; ch.ready = true;
+    T.job = null;
+  }
+}
+function evict(){
+  if(T.chunks.size <= CACHE_MAX) return;
+  var list = []; T.chunks.forEach(function(ch){ list.push(ch); });
+  list.sort(function(a, b){ return a.used - b.used; });
+  for(var i=0; i<list.length && T.chunks.size > CACHE_MAX; i++){
+    if(T.job && T.job.ch===list[i]) continue;
+    T.chunks.delete(chunkKey(list[i].ci, list[i].cj));
+  }
+}
+
+/* minicarte : une couleur par case, calculée directement (pas besoin d'avoir peint le sol) */
+function paintMinimap(g){
   var mx = T.mm.getContext("2d"), id = mx.createImageData(W, H), md = new Uint32Array(id.data.buffer);
-  var off = M*TS, CW = T.w;
+  var R = GROUND[T.season], road = U("#c9b088"), berry = U("#8a3a5a"), ford = C_.wa3, water = T.season===0 ? C_.sn1 : C_.wa1;
   for(var y=0;y<H;y++) for(var x=0;x<W;x++){
-    var c = T.d[(y*TS+8+off)*CW + x*TS+8+off];
-    var t = T.g.tiles[y*W+x];
-    if(t===T_FOREST) c = shadeU(c, 0.62);
-    else if(t===T_BERRY) c = mixU(c, U("#8a3a5a"), 0.35);
-    else if(t===T_STONE) c = U(P.st3);
-    if(T.g.roads[y*W+x]) c = U("#c9b088");
-    md[y*W+x] = c;
+    var i = y*W+x, t = g.tiles[i], c;
+    if(t===T_WATER) c = water;
+    else if(t===T_FORD) c = ford;
+    else {
+      c = R[Math.max(0, Math.min(4, Math.round(3.2 - g.soil[i]*2.4)))];
+      if(t===T_FOREST) c = shadeU(c, 0.58);
+      else if(t===T_BERRY) c = mixU(c, berry, 0.4);
+      else if(t===T_STONE) c = C_.st3;
+      if(g.roads[i]) c = road;
+    }
+    var r = g.regionAt(x, y);
+    if(!g.regionOwned(x, y)) c = shadeU(c, 0.6, 0.5);
+    if((x+1<W && g.regionAt(x+1, y)!==r) || (y+1<H && g.regionAt(x, y+1)!==r)) c = mixU(c, GOLD, 0.55);
+    md[i] = c;
   }
   mx.putImageData(id, 0, 0);
+  T.mmDirty = false;
 }
 
-/* (re)construit ou met à jour le cache du sol.
-   Un changement de saison (ou de région) est repeint par bandes, sur plusieurs
-   images, dans l'image mémoire : l'ancien sol reste affiché jusqu'à la fin. */
-function finishFullPaint(){
-  paintMarginTrees();
-  T.cx.putImageData(T.img, 0, 0);
-  paintMinimap();
-}
-function updateTerrain(g){
+/* met le cache à jour pour la vue [vx0..vx1]×[vy0..vy1] (pixels d'art du monde) */
+function updateTerrain(g, vx0, vy0, vx1, vy1){
   var first = !T || T.g!==g;
   if(first) terrainInit(g);
+  T.frame++;
   var season = g.season();
   var rk = g.regions.map(function(r){ return r.owned ? 1 : 0; }).join("");
-  if(first){
-    T.season = season; T.regionKey = rk; T.collect = true;
-    var t0 = performance.now();
-    paintTerrain(g, -M, -M, W+M-1, H+M-1);
-    T.collect = false;
-    T.tiles.set(g.tiles); T.roads.set(g.roads);
-    finishFullPaint();
-    T.paintMs = Math.round(performance.now() - t0);
-    return;
+  if(first){ T.season = season; T.regionKey = rk; T.tiles.set(g.tiles); T.roads.set(g.roads); }
+  // saison ou frontières changées : tout est à repeindre, les morceaux lointains sont simplement oubliés
+  if(season!==T.season || rk!==T.regionKey){
+    T.season = season; T.regionKey = rk; T.mmDirty = true; T.job = null;
+    T.chunks.forEach(function(ch, key){ if(!inView(ch, vx0, vy0, vx1, vy1, CPX)) T.chunks.delete(key); });
   }
-  if(!T.job && (season!==T.season || rk!==T.regionKey)){
-    T.season = season; T.regionKey = rk; T.water = [];
-    T.tiles.set(g.tiles); T.roads.set(g.roads);   // les changements survenus pendant le repeint seront repris ensuite
-    T.job = { row:-M, ms:0 };
-  }
-  if(T.job){
-    var t1 = performance.now();
-    T.collect = true;
-    while(T.job.row < H+M && performance.now() - t1 < 5){
-      paintTerrain(g, -M, T.job.row, W+M-1, T.job.row);
-      T.job.row++;
-    }
-    T.collect = false;
-    T.job.ms += performance.now() - t1;
-    if(T.job.row >= H+M){ finishFullPaint(); T.paintMs = Math.round(T.job.ms); T.job = null; }
-    return;
-  }
-  // changements locaux (arbres abattus, routes...)
-  var x0 = W, y0 = H, x1 = -1, y1 = -1;
+  // changements locaux (arbres abattus, routes...) : seules les cases touchées sont repeintes, morceau par
+  // morceau. Une case qui change change aussi le cœur de forêt de ses voisines (une de chaque côté,
+  // une au-dessus, deux au-dessous) et les lisières peintes autour d'elle.
+  var dirty = null, tw = T.tw;
+  if(!tw){ tw = T.tw = new Uint8Array(W*H); for(var w0=0; w0<W*H; w0++) tw[w0] = g.tiles[w0]===T_FOREST ? treeCount(g.treeWood[w0]) + (g.treeWood[w0]<=2 ? 4 : 0) : 0; }
   for(var i=0;i<W*H;i++){
-    if(T.tiles[i]!==g.tiles[i] || T.roads[i]!==g.roads[i]){
-      var x = i % W, y = (i/W)|0;
-      if(x<x0) x0 = x; if(y<y0) y0 = y; if(x>x1) x1 = x; if(y>y1) y1 = y;
+    var tc = g.tiles[i]===T_FOREST ? treeCount(g.treeWood[i]) + (g.treeWood[i]<=2 ? 4 : 0) : 0;
+    if(T.tiles[i]===g.tiles[i] && T.roads[i]===g.roads[i] && tw[i]===tc) continue;
+    if(T.tiles[i]!==g.tiles[i] || T.roads[i]!==g.roads[i]) T.mmDirty = true;
+    T.tiles[i] = g.tiles[i]; T.roads[i] = g.roads[i]; tw[i] = tc;
+    var x = i % W, y = (i/W)|0;
+    if(!dirty) dirty = new Map();
+    for(var yy=Math.max(0, y-2); yy<=Math.min(H-1, y+2); yy++) for(var xx=Math.max(0, x-1); xx<=Math.min(W-1, x+1); xx++){
+      var ck = chunkKey(Math.floor((xx+M)/CHK), Math.floor((yy+M)/CHK)), rr = dirty.get(ck);
+      if(!rr) dirty.set(ck, { x0:xx, y0:yy, x1:xx, y1:yy });
+      else { if(xx<rr.x0) rr.x0 = xx; if(yy<rr.y0) rr.y0 = yy; if(xx>rr.x1) rr.x1 = xx; if(yy>rr.y1) rr.y1 = yy; }
     }
   }
-  if(x1<0) return;
-  T.tiles.set(g.tiles); T.roads.set(g.roads);
-  x0 = Math.max(0, x0-1); y0 = Math.max(0, y0-1); x1 = Math.min(W-1, x1+1); y1 = Math.min(H-1, y1+1);
-  paintTerrain(g, x0, y0, x1, y1);
-  var off = M*TS;
-  T.cx.putImageData(T.img, 0, 0, x0*TS+off, y0*TS+off, (x1-x0+1)*TS, (y1-y0+1)*TS);
-  paintMinimap();
+  if(dirty) dirty.forEach(function(rr, ck){
+    var ch = T.chunks.get(ck); if(!ch) return;
+    var r = chunkTiles(ch.ci, ch.cj);
+    if(T.job && T.job.ch===ch) T.job.row = r.ty0;                   // le repeint en cours reprend du début
+    if(!ch.ready || ch.season!==T.season || ch.rk!==T.regionKey) return;   // il sera repeint en entier
+    var ox = r.tx0*TS, oy = r.ty0*TS;
+    target(T.sd, CPX, ox, oy, null);
+    paintTerrain(g, rr.x0, rr.y0, rr.x1, rr.y1);
+    var px0 = rr.x0*TS, py0 = rr.y0*TS, px1 = (rr.x1+1)*TS, py1 = (rr.y1+1)*TS;
+    bakeTrees(g, rr.x0, rr.y0, rr.x1, rr.y1, px0, py0, px1, py1);
+    ch.cx.putImageData(T.simg, 0, 0, px0-ox, py0-oy, px1-px0, py1-py0);
+  });
+  // les morceaux visibles : peints tout de suite s'ils ne l'ont jamais été, repeints peu à peu s'ils sont périmés
+  var c0 = Math.max(0, Math.floor((vx0/TS + M)/CHK)), c1 = Math.min(T.nx-1, Math.floor((vx1/TS + M)/CHK));
+  var r0 = Math.max(0, Math.floor((vy0/TS + M)/CHK)), r1 = Math.min(T.ny-1, Math.floor((vy1/TS + M)/CHK));
+  var stale = null;
+  for(var cj=r0; cj<=r1; cj++) for(var ci=c0; ci<=c1; ci++){
+    var key = chunkKey(ci, cj), ch = T.chunks.get(key);
+    if(!ch){ ch = newChunk(ci, cj); T.chunks.set(key, ch); }
+    ch.used = T.frame;
+    if(!ch.ready) paintChunkNow(g, ch);
+    else if((ch.season!==T.season || ch.rk!==T.regionKey) && !stale) stale = ch;
+  }
+  if(!T.job && stale) T.job = { ch:stale, row:chunkTiles(stale.ci, stale.cj).ty0, season:T.season, rk:T.regionKey, water:[] };
+  // la caméra bouge-t-elle ? on peint d'avance là où elle va (dans une seconde environ)
+  var vcx = (vx0+vx1)/2, vcy = (vy0+vy1)/2;
+  if(T.pc){ T.vx = (T.vx||0)*0.85 + (vcx - T.pc.x)*0.15; T.vy = (T.vy||0)*0.85 + (vcy - T.pc.y)*0.15; }
+  T.pc = { x:vcx, y:vcy };
+  if(!T.job){
+    var aimX = vcx + (T.vx||0)*50, aimY = vcy + (T.vy||0)*50, best = null, bd = Infinity;
+    var moving = Math.abs(T.vx||0) + Math.abs(T.vy||0) > 0.4;
+    var span = moving ? 2 : 1;          // immobile : la couronne voisine seulement ; en mouvement, plus loin devant
+    for(var pj=r0-span; pj<=r1+span; pj++) for(var pi=c0-span; pi<=c1+span; pi++){
+      if(pi<0 || pj<0 || pi>=T.nx || pj>=T.ny) continue;
+      var pc = T.chunks.get(chunkKey(pi, pj));
+      if(pc && pc.ready && pc.season===T.season && pc.rk===T.regionKey) continue;
+      var d = Math.hypot((pi*CHK - M)*TS + CPX/2 - aimX, (pj*CHK - M)*TS + CPX/2 - aimY);
+      if(d<bd){ bd = d; best = { i:pi, j:pj }; }
+    }
+    if(best){
+      var bk = chunkKey(best.i, best.j), bc = T.chunks.get(bk);
+      if(!bc){ bc = newChunk(best.i, best.j); T.chunks.set(bk, bc); }
+      bc.used = T.frame;
+      T.job = { ch:bc, row:chunkTiles(bc.ci, bc.cj).ty0, season:T.season, rk:T.regionKey, water:[] };
+    }
+  }
+  if(T.job) stepJob(g, 4);
+  evict();
+  if(T.mmDirty) paintMinimap(g);
+}
+function inView(ch, vx0, vy0, vx1, vy1, pad){
+  var ox = (ch.ci*CHK - M)*TS, oy = (ch.cj*CHK - M)*TS;
+  return ox + CPX > vx0 - pad && ox < vx1 + pad && oy + CPX > vy0 - pad && oy < vy1 + pad;
+}
+/* dessine le sol visible dans le tampon */
+function drawGround(bw, bh){
+  T.chunks.forEach(function(ch){
+    if(!ch.ready) return;
+    var ox = (ch.ci*CHK - M)*TS - OX, oy = (ch.cj*CHK - M)*TS - OY;
+    if(ox >= bw || oy >= bh || ox + CPX <= 0 || oy + CPX <= 0) return;
+    // seule la partie visible du morceau est copiée
+    var sx = Math.max(0, -ox), sy = Math.max(0, -oy), w = Math.min(CPX - sx, bw - Math.max(0, ox)), h = Math.min(CPX - sy, bh - Math.max(0, oy));
+    if(w>0 && h>0) bx.drawImage(ch.c, sx, sy, w, h, Math.max(0, ox), Math.max(0, oy), w, h);
+  });
 }
 
 /* ======================================================
@@ -406,6 +583,7 @@ var TOOL_OF = { chop:"axe", mine:"pick", build:"hammer", plow:"hoe", harvest:"si
                 spread:"fork", sow:"seed", mow:"scythe", thresh:"flail", herd:"crook" };
 var JOBSET = {}; SPR.JOBS.forEach(function(j){ JOBSET[j] = true; });
 var WALKING = { walk:1, return:1, settle:1, wander:1 };
+var FIELD_T = { plow:1, spread:1, sow:1, harvest:1, mow:1 };   // le fermier avance de case en case : il marche entre deux coups de bêche
 
 /* ---- objets triés en profondeur ---- */
 var objs = [], nObj = 0;
@@ -797,11 +975,13 @@ function drawFamily(g, f, info){
   var m = info.m, now = info.now, dir = m.dir, sfx = dir<0 ? "_l" : "";
   var x = f.x*TS, y = f.y*TS;
   var herding = f.state==="work" && f.task && f.task.type==="herd";
-  var walking = (WALKING[f.state] || herding) && (now - m.mt) < 300;
+  var tilling = f.state==="work" && f.task && FIELD_T[f.task.type];
+  var walking = (WALKING[f.state] || herding || tilling) && (now - m.mt) < 300;
   var body = "idle", tool = null, up = false;
   if(walking){
     body = ["walkA","idle","walkB","idle"][(Math.floor(now/130) + f.id) % 4];
     if(herding) tool = "crook";
+    else if(tilling) tool = TOOL_OF[f.task.type];   // l'outil sur l'épaule
   } else if(herding){
     tool = "crook";
   } else if(f.state==="work" && f.task && TOOL_OF[f.task.type]){
@@ -904,14 +1084,17 @@ function weather(g, t, bw, bh){
 
 /* ---- étincelles sur l'eau ---- */
 function waterGlints(t, x0, y0, x1, y1){
-  var w = T.water;
   bx.fillStyle = "rgba(207,232,242,0.75)";
-  for(var i=0;i<w.length;i+=2){
-    var px = w[i], py = w[i+1];
-    if(px<x0 || px>x1 || py<y0 || py>y1) continue;
-    var ph = (t*0.45 + hash(px, py, 4)*7) % 3;
-    if(ph < 0.6) bx.fillRect(px-OX - (ph<0.3 ? 0 : 1), py-OY, ph<0.3 ? 2 : 3, 1);
-  }
+  T.chunks.forEach(function(ch){
+    if(!ch.ready || ch.season!==T.season) return;
+    var w = ch.water;
+    for(var i=0;i<w.length;i+=2){
+      var px = w[i], py = w[i+1];
+      if(px<x0 || px>x1 || py<y0 || py>y1) continue;
+      var ph = (t*0.45 + hash(px, py, 4)*7) % 3;
+      if(ph < 0.6) bx.fillRect(px-OX - (ph<0.3 ? 0 : 1), py-OY, ph<0.3 ? 2 : 3, 1);
+    }
+  });
 }
 
 /* ---- contour de sélection, cercle de rayon ---- */
@@ -937,7 +1120,6 @@ function dottedCircle(cx, cy, r, c){
    ====================================================== */
 function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
   SPR.build();
-  updateTerrain(g);
   var cw = canvas.width, ch = canvas.height;
   var dpr = cw/(canvas.clientWidth||1);
   var S = clampScale(Math.round(cam.zoom*dpr), Math.max(1, Math.round(dpr)));
@@ -948,13 +1130,11 @@ function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
   var fx = vx - OX, fy = vy - OY;
   var t = now/1000, season = g.season(), winter = season===0;
 
-  /* sol */
+  /* sol : les morceaux visibles du cache (peints à la demande) */
+  updateTerrain(g, OX, OY, OX+bw, OY+bh);
   bx.globalCompositeOperation = "source-over"; bx.globalAlpha = 1;
   bx.fillStyle = BG; bx.fillRect(0, 0, bw, bh);
-  var sx = OX + M*TS, sy = OY + M*TS, dx = 0, dy = 0, w = bw, h = bh;
-  if(sx<0){ dx = -sx; w += sx; sx = 0; } if(sy<0){ dy = -sy; h += sy; sy = 0; }
-  w = Math.min(w, T.w - sx); h = Math.min(h, T.h - sy);
-  if(w>0 && h>0) bx.drawImage(T.c, sx, sy, w, h, dx, dy, w, h);
+  drawGround(bw, bh);
 
   var tx0 = Math.max(0, Math.floor(OX/TS)-2), tx1 = Math.min(W-1, Math.floor((OX+bw)/TS)+2);
   var ty0 = Math.max(0, Math.floor(OY/TS)-1), ty1 = Math.min(H-1, Math.floor((OY+bh)/TS)+3);
@@ -999,21 +1179,10 @@ function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
   for(var ty=ty0; ty<=ty1; ty++) for(var tx=tx0; tx<=tx1; tx++){
     var ti = ty*W+tx, tt = g.tiles[ti];
     if(tt===T_FOREST){
-      var wood = g.treeWood[ti], kind = T.kind[ti];
-      var cnt = wood>6 ? 3 : wood>3 ? 2 : 1;
-      var spots = [[4,7],[12,10],[7,15]];
-      for(var k=0;k<cnt;k++){
-        var px = tx*TS + spots[k][0] + Math.floor(hash(tx,ty,k)*4) - 2, py = ty*TS + spots[k][1] + Math.floor(hash(tx,ty,k+5)*3);
-        var r = hash(tx, ty, k+11), nm, shn = "sh_tree";
-        var young = wood<=2 && k===0;
-        if(young){ nm = "sap_"+season+"_"+(kind===0 ? 1 : 0); shn = "sh_sap"; }
-        else if(kind===0 ? r<0.8 : kind===1 ? r<0.4 : r<0.08){ nm = "pine_"+season+"_"+(r<0.3?1:0); shn = "sh_pine"; }
-        else if(kind===2 ? r<0.45 : r<0.6){ nm = "birch_"+season+"_"+(hash(tx,ty,k+3)<0.5?0:1); shn = "sh_pine"; }
-        else nm = "oak_"+season+"_"+Math.floor(hash(tx,ty,k+7)*3);
-        sh(shn, px, py);
-        obj(py, drawTree, nm, px, py);
-      }
-      if(wood<=2){ var spx = tx*TS+12, spy = ty*TS+13; obj(spy, drawSprite, "stump", spx, spy); }
+      if(bakedTile(g, tx, ty)) continue;        // cœur de forêt : ses arbres sont déjà peints dans le sol
+      var specs = treeSpecs(g, tx, ty, season);
+      for(var k=0;k<specs.length;k++){ var sp0 = specs[k]; sh(sp0.sh, sp0.x, sp0.y); obj(sp0.y, drawTree, sp0.n, sp0.x, sp0.y); }
+      if(g.treeWood[ti]<=2){ var spx = tx*TS+12, spy = ty*TS+13; obj(spy, drawSprite, "stump", spx, spy); }
     } else if(tt===T_BERRY){
       var amt = g.berryY[ti], lvl = (!bs || season===0) ? 0 : amt>5 ? 3 : amt>3 ? 2 : amt>0.5 ? 1 : 0;
       for(var k2=0;k2<2;k2++){
@@ -1247,7 +1416,8 @@ function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
 
   /* minimap (en pixels CSS) */
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  var ppt = 2, mw = W*ppt, mh = H*ppt;
+  /* la carte est grande : la minicarte garde une taille fixe à l'écran */
+  var ppt = Math.min(2, 136/W), mw = Math.round(W*ppt), mh = Math.round(H*ppt);
   /* en haut à droite : le bas de l'écran est réservé aux panneaux et à l'aide de pose */
   var mmx = (canvas.clientWidth||1) - 8 - mw, mmy = 8;
   if(mmx > 120 && (canvas.clientHeight||1) > mh + 160){
@@ -1258,12 +1428,12 @@ function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
     ctx.fillStyle = "#7fae4a";
     for(var mp=0; mp<g.buildings.length; mp++){
       var Bp = g.buildings[mp]; if(Bp.def!=="pasture" || !Bp.plot) continue;
-      for(var mq=1; mq<Bp.plot.cells.length; mq++){ var mc0 = Bp.plot.cells[mq]; ctx.fillRect(mmx+(mc0%W)*ppt, mmy+((mc0/W)|0)*ppt, ppt, ppt); }
+      for(var mq=1; mq<Bp.plot.cells.length; mq++){ var mc0 = Bp.plot.cells[mq]; ctx.fillRect(mmx+(mc0%W)*ppt, mmy+((mc0/W)|0)*ppt, Math.max(1, ppt), Math.max(1, ppt)); }
     }
     for(var mb=0; mb<g.buildings.length; mb++){
       var Bm = g.buildings[mb];
       ctx.fillStyle = Bm.def==="field" ? "#d6b44a" : (Bm.done ? "#f2e6c8" : "#c97a4a");
-      ctx.fillRect(mmx+Bm.x*ppt, mmy+Bm.y*ppt, Math.max(ppt, Bm.w*ppt), Math.max(ppt, Bm.h*ppt));
+      ctx.fillRect(Math.floor(mmx+Bm.x*ppt), Math.floor(mmy+Bm.y*ppt), Math.max(1, Math.round(Bm.w*ppt)), Math.max(1, Math.round(Bm.h*ppt)));
     }
     ctx.fillStyle = "#e0402a";
     for(var mc=0; mc<g.camps.length; mc++) ctx.fillRect(mmx+g.camps[mc].x*ppt-1, mmy+g.camps[mc].y*ppt-1, 3, 3);
@@ -1282,7 +1452,7 @@ function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
   if(Math.random() < 0.01) mem.forEach(function(v, k){ if(now - v.seen > 5000) mem.delete(k); });
 }
 
-return { drawGame:drawGame, setOverlay:function(o){ OV = o || null; }, setSelVillager:function(id){ SELV = (id===undefined ? null : id); }, lookOf:lookOf, snapZoom:snapZoom, stepZoom:stepZoom, stats:function(){ return { terrainPaintMs: T ? T.paintMs : null, sprites: SPR.count, atlasMs: SPR.buildMs }; } };
+return { drawGame:drawGame, setOverlay:function(o){ OV = o || null; }, setSelVillager:function(id){ SELV = (id===undefined ? null : id); }, lookOf:lookOf, snapZoom:snapZoom, stepZoom:stepZoom, stats:function(){ return { terrainPaintMs: T ? T.paintMs : null, chunks: T ? T.chunks.size : 0, sprites: SPR.count, atlasMs: SPR.buildMs }; } };
 })();
 
 /* points d'entrée utilisés par app.js */

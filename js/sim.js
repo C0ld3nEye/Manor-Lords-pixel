@@ -12,10 +12,12 @@ const TS = TICKS_PER_DAY/10;   // échelle de temps : un mois dure TS fois plus 
 const WORK_DIV = 30;           // les villageois ne font avancer leur ouvrage (et leurs pauses) qu'un tick sur WORK_DIV :
                                // ils marchent à la même allure, mais travaillent à la mesure d'un mois plus long
 
-const W = 46;
-const H = 34;
+// Grande carte continentale : le domaine n'est qu'une partie d'un pays bien plus vaste
+// (au-delà des bords, le reste du royaume viendra plus tard).
+const W = 256;
+const H = 192;
 
-const T_GRASS = 0, T_FOREST = 1, T_BERRY = 2, T_STONE = 3, T_WATER = 4;
+const T_GRASS = 0, T_FOREST = 1, T_BERRY = 2, T_STONE = 3, T_WATER = 4, T_FORD = 5;   // gué : eau peu profonde qu'on traverse à pied
 
 const MONTHS = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
 const SEASONS = ["Hiver","Printemps","Été","Automne"];
@@ -28,6 +30,29 @@ function mulberry32(a        ){
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+}
+// tableaux de la carte en chaîne compacte (suites de valeurs égales) : une grande carte tient en quelques ko
+function rleEncode(arr, scale){
+  const out = []; let prev = null, n = 0;
+  const flush = ()=>{ if(n) out.push(prev.toString(36) + (n>1 ? "*"+n.toString(36) : "")); };
+  for(let i=0;i<arr.length;i++){
+    const v = Math.max(0, Math.round((Number(arr[i])||0)*scale));
+    if(v===prev) n++; else { flush(); prev = v; n = 1; }
+  }
+  flush();
+  return out.join(".");
+}
+function rleDecode(str, n, scale, Ctor){
+  const a = new Ctor(n); let i = 0;
+  if(typeof str!=="string") throw new Error("sauvegarde invalide (carte)");
+  for(const part of str.split(".")){
+    if(!part) continue;
+    const k = part.indexOf("*"), v = parseInt(k<0 ? part : part.slice(0, k), 36)/scale, c = k<0 ? 1 : parseInt(part.slice(k+1), 36);
+    if(!isFinite(v) || !(c>0) || i + c > n) throw new Error("sauvegarde invalide (carte)");
+    a.fill(v, i, i+c); i += c;
+  }
+  if(i!==n) throw new Error("sauvegarde invalide (taille de carte)");
+  return a;
 }
 function hash2(x        , y        ){ return ((x * 73856093) ^ (y * 19349663)) >>> 0; }
 
@@ -260,13 +285,17 @@ function isWinterMonth(m){ return m===11 || m===0 || m===1; }
 const PASTURE_MIN = 4, PASTURE_MAX = 90;
 const FIELD_MIN = 4, FIELD_MAX = 64;   // champ tracé librement (en cases)
 const PLOT_MIN = 3;                     // une maison et au moins deux cases de cour
+// habitants qu'une maison peut loger, selon son niveau (chaumière, maison à colombages, maison de pierre)
+const HOUSE_CAP = [0, 6, 8, 10];
 
-const REGION_DEFS = [
-  { id:0, name:"Vallée du Cœur",   bonus:null,          desc:"Votre terre natale (au centre). Déjà à vous." },
-  { id:1, name:"Marches de l'Ouest",bonus:{berries:2}, desc:"Réclamez-la : +2 baies par mois." },
-  { id:2, name:"Hautes Terres",    bonus:{stone:1},    desc:"Réclamez-la (à l'est) : +1 pierre par mois." },
-];
-const REGION_COST = { treasury:30, wealth:15 };
+// régions : découpées à la génération de la carte (formes organiques) ; on commence avec celle du centre.
+// Les noms sont tirés de cette liste ; le bonus dépend de ce que la région contient.
+const REGION_NAMES = ["Combe-aux-Loups","Marches de l'Ouest","Hautes Terres","Bois-Fendu","Plaine des Saules","Val-Brûlé",
+  "Les Essarts","Roche-Grise","Pré-Sauvage","Gué-Morin","Les Brandes","Haut-Bocage","Mont-Clair","La Fange","Champ-Doré",
+  "Bois-l'Abbé","La Tourbière","Les Chaumes","Val-Fleuri","Côte-aux-Cerfs","Les Genêts","Petit-Fresnay","La Saulaie","Font-Claire"];
+const START_REGION_NAME = "Val du Cœur";
+const REGION_COLS = 5, REGION_ROWS = 4;   // une vingtaine de régions
+const REGION_COST = { treasury:30, wealth:15 };   // première réclamation ; chaque région de plus coûte davantage
 
 const POLICY_DEFS = {
   tithe:         { id:"tithe",         name:"" + "Dîme ecclésiastique", desc:"+8 influence/mois, -4 approbation/mois." },
@@ -284,7 +313,7 @@ const MODES = [
   { id:"prosperity", name:"Prospérité",       desc:"Sans combat : faites prospérer la seigneurie (objectifs classiques).", combat:false },
   { id:"peace",       name:"Restaurer la paix", desc:"Brigands fréquents : protégez vos réserves et détruisez leurs camps.", combat:true, bandits:1.8 },
   { id:"edge",        name:"Au bord du gouffre", desc:"Ressources de départ réduites. Survivez 3 ans.", combat:true, bandits:1.4, harsh:true },
-  { id:"duel",        name:"Duel",             desc:"Le Baron est puissant et agressif : survivez à ses raids et réclamez tout.", combat:true, baron:1.8 },
+  { id:"duel",        name:"Duel",             desc:"Le Baron est puissant et agressif : survivez à ses raids et réclamez les terres voisines.", combat:true, baron:1.8 },
   { id:"fractured",   name:"Royaume fracturé", desc:"Tout à la fois : brigands, Baron, hiver. Le défi ultime.", combat:true, bandits:2.0, baron:2.0, harsh:true },
 ];
 const MODE_BY_ID = Object.fromEntries(MODES.map(m=>[m.id,m]));
@@ -399,7 +428,9 @@ class GameState {
     this.soil = new Float32Array(W*H);
     this.roads = new Uint8Array(W*H);
     this.wealth = 0;
-    this.regions = REGION_DEFS.map(r=>({ id:r.id, owned:r.id===0 }));
+    this.regions = [];                         // remplies par genMap (id, nom, bonus, centre, voisines, possédée ?)
+    this.regionMap = new Uint8Array(W*H);
+    this.startRegion = 0;
     this.baron = { name:"Baron von Graufeld", regions:[], power:0, nextClaim:6, nextRaid:10 };
     this.influence = 0;
     this.policies = { tithe:false, freeMarket:false, militiaService:false };
@@ -444,89 +475,210 @@ class GameState {
   /* ---------- génération de la carte ---------- */
   genMap(){
     const r = this.rnd;
-    // fertilité du sol par bruit bilinéaire
-    const gw = 9, gh = 7;
-    const g             = [];
-    for(let y=0;y<gh;y++){ g.push([]); for(let x=0;x<gw;x++) g[y].push(0.25 + r()*0.75); }
+    // bruit de valeur sur des grilles tirées au hasard (déterministe pour une graine donnée)
+    const grid = (cell)=>{
+      const gw = Math.ceil(W/cell)+2, gh = Math.ceil(H/cell)+2, v = new Float32Array(gw*gh);
+      for(let i=0;i<v.length;i++) v[i] = r();
+      return (x, y)=>{
+        const fx = x/cell, fy = y/cell, xi = Math.max(0, Math.floor(fx)), yi = Math.max(0, Math.floor(fy));
+        let u = fx-xi, w = fy-yi; u = u*u*(3-2*u); w = w*w*(3-2*w);
+        const i = yi*gw+xi, a = v[i], b = v[i+1], c = v[i+gw], d = v[i+gw+1];
+        return a + (b-a)*u + (c-a)*w + (a-b-c+d)*u*w;
+      };
+    };
+    const fbm = (cells, wts)=>{ const gs = cells.map(grid); return (x, y)=>{ let s = 0; for(let k=0;k<gs.length;k++) s += gs[k](x, y)*wts[k]; return s; }; };
+    const inMap = (x, y)=>x>=0 && y>=0 && x<W && y<H;
+    // 1) fertilité du sol
+    const soilN = fbm([40, 14, 6], [0.55, 0.3, 0.15]);
+    for(let y=0;y<H;y++) for(let x=0;x<W;x++) this.soil[y*W+x] = Math.max(0.15, Math.min(1, 0.2 + soilN(x, y)*0.85));
+    // 2) régions : graines sur une grille déformée, frontières ondulées ; la région de départ, au centre, est plus grande
+    const cw = W/REGION_COLS, ch = H/REGION_ROWS, seeds = [];
+    for(let j=0;j<REGION_ROWS;j++) for(let i=0;i<REGION_COLS;i++)
+      seeds.push({ x:(i+0.5)*cw + (r()-0.5)*cw*0.55, y:(j+0.5)*ch + (r()-0.5)*ch*0.55, k:1 });
+    let si = 0, sd = Infinity;
+    seeds.forEach((q, i)=>{ const d = Math.hypot(q.x-W/2, q.y-H/2); if(d<sd){ sd = d; si = i; } });
+    seeds[si].x = W/2; seeds[si].y = H/2; seeds[si].k = 0.72;
+    const wx = fbm([28, 11], [0.7, 0.3]), wy = fbm([28, 11], [0.7, 0.3]);
     for(let y=0;y<H;y++) for(let x=0;x<W;x++){
-      const fx = x/W*(gw-1), fy = y/H*(gh-1);
-      const x0=Math.floor(fx), y0=Math.floor(fy), x1=Math.min(gw-1,x0+1), y1=Math.min(gh-1,y0+1);
-      const tx=fx-x0, ty=fy-y0;
-      const v = g[y0][x0]*(1-tx)*(1-ty) + g[y0][x1]*tx*(1-ty) + g[y1][x0]*(1-tx)*ty + g[y1][x1]*tx*ty;
-      this.soil[y*W+x] = v;
+      const px = x + (wx(x, y)-0.5)*22, py = y + (wy(x, y)-0.5)*22;
+      let best = 0, bd = Infinity;
+      for(let k=0;k<seeds.length;k++){ const d = Math.hypot(px-seeds[k].x, py-seeds[k].y)*seeds[k].k; if(d<bd){ bd = d; best = k; } }
+      this.regionMap[y*W+x] = best;
     }
-    // clairière centrale (départ)
+    // un morceau de région coupé du reste rejoint sa voisine (pas d'enclaves)
+    const reach = new Uint8Array(W*H), q = [];
+    seeds.forEach((sd2, k)=>{ const i = Math.floor(sd2.y)*W + Math.floor(sd2.x); if(this.regionMap[i]===k){ reach[i] = 1; q.push(i); } });
+    for(let h=0; h<q.length; h++){
+      const i = q[h], x = i%W, y = (i/W)|0;
+      for(const d of DIRS4){ const nx = x+d[0], ny = y+d[1]; if(!inMap(nx, ny)) continue; const n = ny*W+nx;
+        if(!reach[n] && this.regionMap[n]===this.regionMap[i]){ reach[n] = 1; q.push(n); } }
+    }
+    for(let pass=0; pass<200; pass++){
+      let left = 0;
+      for(let i=0;i<W*H;i++){
+        if(reach[i]) continue;
+        const x = i%W, y = (i/W)|0;
+        for(const d of DIRS4){ const nx = x+d[0], ny = y+d[1]; if(!inMap(nx, ny)) continue; const n = ny*W+nx;
+          if(reach[n]){ this.regionMap[i] = this.regionMap[n]; reach[i] = 1; break; } }
+        if(!reach[i]) left++;
+      }
+      if(!left) break;
+    }
+    this.startRegion = si;
     const cx = Math.floor(W/2), cy = Math.floor(H/2);
-    // forêts
-    const centers       = [];
-    for(let i=0;i<3;i++){
-      let fx=0, fy=0, tries=0;
-      do { fx = 3 + Math.floor(r()*(W-6)); fy = 3 + Math.floor(r()*(H-6)); tries++; }
-      while(tries<40 && Math.abs(fx-cx)<9 && Math.abs(fy-cy)<7);
-      centers.push({x:fx,y:fy});
-    }
-    for(const c of centers){
-      const rad = 3.5 + r()*2;
-      for(let y=0;y<H;y++) for(let x=0;x<W;x++){
-        const d = Math.hypot(x-c.x, y-c.y);
-        if(d < rad && r() < 1 - d/(rad+1)){
-          const i = y*W+x;
-          this.tiles[i] = T_FOREST; this.treeWood[i] = 8;
-        }
-      }
-    }
-    // baies près des forêts
-    for(let k=0;k<2;k++){
-      const c = centers[k % centers.length];
-      const bx = Math.max(1,Math.min(W-2, c.x + (r()<0.5?-1:1)*(5+Math.floor(r()*3))));
-      const by = Math.max(1,Math.min(H-2, c.y + Math.floor(r()*5)-2));
-      for(let y=0;y<H;y++) for(let x=0;x<W;x++){
-        if(Math.hypot(x-bx,y-by) < 2.6 && r()<0.8){
-          const i=y*W+x;
-          if(this.tiles[i]===T_GRASS){ this.tiles[i]=T_BERRY; this.berryY[i]=8; }
-        }
-      }
-    }
-    // gisements de pierre
-    for(let k=0;k<2;k++){
-      let sx=0, sy=0, tries=0;
-      do { sx=2+Math.floor(r()*(W-4)); sy=2+Math.floor(r()*(H-4)); tries++; }
-      while(tries<50 && (Math.abs(sx-cx)<10 && Math.abs(sy-cy)<8));
-      for(let y=0;y<H;y++) for(let x=0;x<W;x++){
-        if(Math.hypot(x-sx,y-sy)<1.9 && r()<0.9){
-          const i=y*W+x;
-          if(this.tiles[i]===T_GRASS){ this.tiles[i]=T_STONE; this.stoneAmt[i]=260; }
-        }
-      }
-    }
-    // étang dans un coin
-    const px = r()<0.5 ? 3 : W-4, py = r()<0.5 ? 3 : H-4;
+    const nearStart = (x, y, rad)=>Math.hypot(x-cx, y-cy) < rad;
+    const setT = (i, t)=>{ this.tiles[i] = t; if(t!==T_FOREST) this.treeWood[i] = 0; if(t!==T_BERRY) this.berryY[i] = 0; if(t!==T_STONE) this.stoneAmt[i] = 0; };
+    // 3) forêts : de grands massifs et des bosquets
+    const forN = fbm([30, 12, 5], [0.55, 0.3, 0.15]), forV = new Float32Array(W*H);
     for(let y=0;y<H;y++) for(let x=0;x<W;x++){
-      if(Math.hypot(x-px,y-py) < 2.4){ const i=y*W+x; this.tiles[i]=T_WATER; this.treeWood[i]=0; this.berryY[i]=0; }
+      const f = forN(x, y); forV[y*W+x] = f;
+      if(f > 0.57){ const i = y*W+x; this.tiles[i] = T_FOREST; this.treeWood[i] = f > 0.62 ? 8 : 5 + Math.floor(r()*3); }
     }
-    // clairière de départ
-    for(let y=0;y<H;y++) for(let x=0;x<W;x++){
-      if(Math.hypot(x-cx,y-cy) < 5){
-        const i=y*W+x;
-        if(this.tiles[i]!==T_WATER){ this.tiles[i]=T_GRASS; this.treeWood[i]=0; this.berryY[i]=0; }
+    // la région de départ garde entre 20 et 35 % de bois : ni steppe, ni forêt sans clairière.
+    // On suit le bruit : on éclaircit les bois les moins denses, ou on épaissit les lisières les plus boisées.
+    {
+      const cells = [];
+      for(let i=0;i<W*H;i++) if(this.regionMap[i]===si && Math.hypot((i%W)-W/2, ((i/W)|0)-H/2) > 9) cells.push(i);
+      const share = ()=>cells.reduce((n, i)=>n + (this.tiles[i]===T_FOREST ? 1 : 0), 0)/Math.max(1, cells.length);
+      const sh = share();
+      if(sh > 0.35){
+        const fo = cells.filter(i=>this.tiles[i]===T_FOREST).sort((a, b)=>forV[a]-forV[b]);
+        const cut = Math.round((sh-0.32)*cells.length);
+        for(let k=0;k<cut && k<fo.length;k++){ this.tiles[fo[k]] = T_GRASS; this.treeWood[fo[k]] = 0; }
+      } else if(sh < 0.2){
+        const gr = cells.filter(i=>this.tiles[i]===T_GRASS).sort((a, b)=>forV[b]-forV[a]);
+        const add = Math.round((0.24-sh)*cells.length);
+        for(let k=0;k<add && k<gr.length;k++){ this.tiles[gr[k]] = T_FOREST; this.treeWood[gr[k]] = forV[gr[k]] > 0.5 ? 8 : 6; }
       }
     }
-    // cerfs en lisière
-    for(let i=0;i<7;i++){
-      const c = centers[i % centers.length];
-      const dx = c.x + (r()<0.5?-1:1)*(4+Math.floor(r()*2));
-      const dy = Math.max(1,Math.min(H-2, c.y + Math.floor(r()*4)-2));
-      const tx = Math.max(1,Math.min(W-2,dx));
-      if(this.tiles[dy*W+tx]!==T_WATER && this.occupied[dy*W+tx]<0)
-        this.deer.push({ id:this.nextD++, x:tx+0.5, y:dy+0.5, path:null, frozen:false });
+    // 4) rivière : elle traverse la carte du nord au sud en serpentant, et passe non loin du campement
+    const meander = grid(26), wobble = grid(9);
+    const side = r()<0.5 ? -1 : 1, rx = [];
+    for(let y=0;y<H;y++) rx.push(W*0.5 + (meander(W*0.5, y)-0.5)*70 + (wobble(W*0.3, y)-0.5)*10);
+    const shift = cx + side*15 - rx[cy];
+    for(let y=0;y<H;y++) rx[y] = Math.max(4, Math.min(W-6, rx[y] + shift));
+    for(let y=0;y<H;y++){
+      const wdt = 2 + (wobble(y, 40) > 0.62 ? 1 : 0);
+      const a = Math.round(Math.min(rx[y], y>0 ? rx[y-1] : rx[y])), b = Math.round(Math.max(rx[y], y>0 ? rx[y-1] : rx[y])) + wdt - 1;
+      for(let x=a; x<=b; x++) if(inMap(x, y)) setT(y*W+x, T_WATER);   // pas de trou en diagonale : l'eau reste d'un seul tenant
+    }
+    // gués : tous les 16 à 26 rangs, et un tout près du campement
+    const fordAt = (y)=>{ let x = Math.round(rx[y]); while(x>0 && this.tiles[y*W+x-1]===T_WATER) x--; while(x<W && this.tiles[y*W+x]===T_WATER){ setT(y*W+x, T_FORD); x++; } };
+    for(let y=6; y<H-4; y+=16 + Math.floor(r()*11)) fordAt(y);
+    fordAt(Math.min(H-2, cy+3 + Math.floor(r()*4)));
+    // 5) lacs et étangs (jamais dans la clairière du départ)
+    const nLakes = Math.round(W*H/9000) + 2;
+    for(let k=0;k<nLakes;k++){
+      let lx = 0, ly = 0, tries = 0;
+      do { lx = 6 + r()*(W-12); ly = 6 + r()*(H-12); tries++; } while(tries<40 && nearStart(lx, ly, 22));
+      const rad = k<2 ? 2 + r()*1.5 : 3 + r()*4.5, lw = grid(4);
+      for(let y=Math.floor(ly-rad-3); y<=ly+rad+3; y++) for(let x=Math.floor(lx-rad-3); x<=lx+rad+3; x++){
+        if(!inMap(x, y)) continue;
+        if(Math.hypot((x-lx)*0.9, y-ly) < rad + (lw(x, y)-0.5)*3) setT(y*W+x, T_WATER);
+      }
+    }
+    // la terre est plus riche au bord de l'eau
+    for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+      const i = y*W+x; if(this.tiles[i]===T_WATER) continue;
+      let near = false;
+      for(let dy=-3; dy<=3 && !near; dy++) for(let dx=-3; dx<=3 && !near; dx++){ const nx = x+dx, ny = y+dy; if(inMap(nx, ny) && this.tiles[ny*W+nx]===T_WATER) near = true; }
+      if(near) this.soil[i] = Math.min(1, this.soil[i] + 0.15);
+    }
+    // 6) baies en lisière, gisements de pierre (un ou deux par région)
+    const isEdge = (x, y)=>{ const i = y*W+x; if(this.tiles[i]!==T_GRASS) return false; for(const d of DIRS4){ const nx = x+d[0], ny = y+d[1]; if(inMap(nx, ny) && this.tiles[ny*W+nx]===T_FOREST) return true; } return false; };
+    const patch = (x0, y0, rad, kind)=>{
+      for(let y=Math.floor(y0-rad); y<=y0+rad; y++) for(let x=Math.floor(x0-rad); x<=x0+rad; x++){
+        if(!inMap(x, y) || Math.hypot(x-x0, y-y0) >= rad || r() > 0.85) continue;
+        const i = y*W+x, t = this.tiles[i];
+        if(t===T_WATER || t===T_FORD) continue;
+        if(kind===T_BERRY){ if(t===T_GRASS){ setT(i, T_BERRY); this.berryY[i] = 8; } }
+        else { setT(i, T_STONE); this.stoneAmt[i] = 260; }
+      }
+    };
+    const nBerry = Math.round(W*H/1400);
+    for(let k=0, tries=0; k<nBerry && tries<4000; tries++){
+      const x = 2 + Math.floor(r()*(W-4)), y = 2 + Math.floor(r()*(H-4));
+      if(!isEdge(x, y)) continue;
+      patch(x, y, 2 + r()*0.8, T_BERRY); k++;
+    }
+    for(let reg=0; reg<seeds.length; reg++){
+      const n = 1 + (r()<0.55 ? 1 : 0);
+      for(let k=0, tries=0; k<n && tries<300; tries++){
+        const x = 3 + Math.floor(r()*(W-6)), y = 3 + Math.floor(r()*(H-6)), i = y*W+x;
+        if(this.regionMap[i]!==reg || this.tiles[i]===T_WATER || this.tiles[i]===T_FORD || nearStart(x, y, 9)) continue;
+        patch(x, y, 1.6 + r()*0.7, T_STONE); k++;
+      }
+    }
+    // 7) clairière du départ, et de quoi commencer à proximité : un bois, des baies, de la pierre
+    for(let y=cy-7; y<=cy+7; y++) for(let x=cx-8; x<=cx+8; x++){
+      if(!inMap(x, y) || Math.hypot((x-cx)*0.85, y-cy) >= 6.5) continue;
+      const i = y*W+x; if(this.tiles[i]!==T_WATER && this.tiles[i]!==T_FORD) setT(i, T_GRASS);
+    }
+    const countNear = (t, rad)=>{ let n = 0; for(let y=cy-rad; y<=cy+rad; y++) for(let x=cx-rad; x<=cx+rad; x++) if(inMap(x, y) && this.tiles[y*W+x]===t && Math.hypot(x-cx, y-cy)<=rad) n++; return n; };
+    const awayFromStart = (d0, d1)=>{
+      for(let tries=0; tries<200; tries++){
+        const a = r()*Math.PI*2, d = d0 + r()*(d1-d0), x = Math.round(cx + Math.cos(a)*d), y = Math.round(cy + Math.sin(a)*d);
+        if(!inMap(x, y) || this.regionMap[y*W+x]!==si) continue;
+        if(this.tiles[y*W+x]===T_WATER || this.tiles[y*W+x]===T_FORD) continue;
+        if(Math.abs(x - rx[Math.max(0, Math.min(H-1, y))]) < 5) continue;   // pas sur la rivière
+        return { x, y };
+      }
+      return { x:cx + d0, y:cy };
+    };
+    if(countNear(T_FOREST, 14) < 30){
+      const g0 = awayFromStart(9, 12);
+      for(let y=g0.y-5; y<=g0.y+5; y++) for(let x=g0.x-5; x<=g0.x+5; x++){
+        if(!inMap(x, y) || Math.hypot(x-g0.x, y-g0.y) >= 4.5 || nearStart(x, y, 7)) continue;
+        const i = y*W+x; if(this.tiles[i]===T_GRASS){ this.tiles[i] = T_FOREST; this.treeWood[i] = 8; }
+      }
+    }
+    if(countNear(T_BERRY, 16) < 5){ const b0 = awayFromStart(8, 13); patch(b0.x, b0.y, 2.4, T_BERRY); }
+    if(countNear(T_STONE, 26) < 4){ const s0 = awayFromStart(12, 20); patch(s0.x, s0.y, 2, T_STONE); }
+    // 8) les régions : nom, superficie, voisines, bonus selon ce qu'elles contiennent
+    const regs = seeds.map((q2, k)=>({ id:k, owned:k===si, name:"", cx:0, cy:0, n:0, nb:[], bonus:null, forest:0, stone:0, berry:0, water:0, soil:0 }));
+    const nbs = seeds.map(()=>new Set());
+    for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+      const i = y*W+x, k = this.regionMap[i], g = regs[k], t = this.tiles[i];
+      g.n++; g.cx += x; g.cy += y;
+      if(t===T_FOREST) g.forest++; else if(t===T_STONE) g.stone++; else if(t===T_BERRY) g.berry++; else if(t===T_WATER) g.water++;
+      g.soil += this.soil[i];
+      if(x+1<W && this.regionMap[i+1]!==k){ nbs[k].add(this.regionMap[i+1]); nbs[this.regionMap[i+1]].add(k); }
+      if(y+1<H && this.regionMap[i+W]!==k){ nbs[k].add(this.regionMap[i+W]); nbs[this.regionMap[i+W]].add(k); }
+    }
+    const names = REGION_NAMES.slice();
+    for(let k=names.length-1;k>0;k--){ const j = Math.floor(r()*(k+1)); const t = names[k]; names[k] = names[j]; names[j] = t; }
+    // ce que contient une région, rapporté à sa taille, puis comparé à la moyenne des régions
+    const met = (g)=>{ const land = Math.max(1, g.n - g.water); return { stone:g.stone/land, berries:g.berry/land, firewood:g.forest/land, grain:g.soil/Math.max(1, g.n) }; };
+    const avg = { stone:0, berries:0, firewood:0, grain:0 };
+    regs.forEach(g=>{ const m = met(g); for(const k in avg) avg[k] += m[k]/regs.length; });
+    regs.forEach((g, k)=>{
+      g.cx = Math.round(g.cx/Math.max(1, g.n)); g.cy = Math.round(g.cy/Math.max(1, g.n));
+      g.nb = Array.from(nbs[k]).sort((a, b)=>a-b);
+      g.name = k===si ? START_REGION_NAME : names.pop() || ("Région "+(k+1));
+      // le bonus suit ce que la région a de plus remarquable (pierre, baies, bois, ou une terre grasse)
+      const m = met(g), sc = {};
+      for(const q3 in avg) sc[q3] = m[q3]/Math.max(1e-6, avg[q3]) * (q3==="grain" ? 0.97 : 1);   // la terre grasse ne l'emporte qu'à l'évidence
+      const best = Object.keys(sc).sort((a, b)=>sc[b]-sc[a])[0];
+      g.bonus = k===si ? null : { [best]: best==="stone" ? 1 : 2 };
+      delete g.soil;
+    });
+    this.regions = regs;
+    // 9) cerfs dans les bois
+    const nDeer = this.deerCap();
+    for(let k=0, tries=0; k<nDeer && tries<5000; tries++){
+      const x = 1 + Math.floor(r()*(W-2)), y = 1 + Math.floor(r()*(H-2));
+      if(!isEdge(x, y) || nearStart(x, y, 8)) continue;
+      this.deer.push({ id:this.nextD++, x:x+0.5, y:y+0.5, path:null, frozen:false }); k++;
     }
   }
+  // autant de cerfs que la carte en nourrit (un pour 700 cases environ)
+  deerCap(){ return Math.round(W*H/700); }
 
   // Départ façon Manor Lords : un campement de survivants, le poteau du bœuf et un bout de chemin.
   // Aucune maison : le joueur trace sa première zone le long du chemin.
   placeStart(){
     const cx = Math.floor(W/2), cy = Math.floor(H/2);
-    const free = (x,y)=>x>=0&&y>=0&&x<W&&y<H && this.tiles[y*W+x]===T_GRASS && this.occupied[y*W+x]<0 && this.regionOwned(x);
+    const free = (x,y)=>x>=0&&y>=0&&x<W&&y<H && this.tiles[y*W+x]===T_GRASS && this.occupied[y*W+x]<0 && this.regionOwned(x, y);
     let spot = null;
     for(let r=0; r<10 && !spot; r++) for(let dy=-r; dy<=r && !spot; dy++) for(let dx=-r; dx<=r && !spot; dx++){
       const x=cx+dx, y=cy+dy;
@@ -613,6 +765,9 @@ class GameState {
   membersOf(fid){ return this.villagers.filter(v=>v.fam===fid); }
   villager(id){ return this.villagers.find(v=>v.id===id) || null; }
   fullName(v){ return v ? v.first+" "+this.surnameOf(this.famOf(v)) : "?"; }
+  houseCap(b){ return HOUSE_CAP[Math.max(1, Math.min(3, (b && b.lvl) || 1))]; }
+  houseFamily(b){ return this.families.find(f=>f.home===b.id) || null; }
+  houseCount(b){ const f = this.houseFamily(b); return f ? this.membersOf(f.id).length : 0; }
   homeOf(v){ const f=this.famOf(v); return f && f.home>0 ? this.buildings.find(b=>b.id===f.home) || null : null; }
   // peut tenir un poste : adulte ou ancien de moins de 65 ans, pas alité
   canWork(v){
@@ -756,12 +911,12 @@ class GameState {
     const w = d.uiSize ? this.fieldSize() : d.w;
     const h = d.uiSize ? this.fieldSize() : d.h;
     if(x<0 || y<0 || x+w>W || y+h>H) return "Hors de la carte";
-    if(!this.regionOwned(x) || !this.regionOwned(x+w-1)) return "Région non réclamée";
+    for(let yy=0;yy<h;yy++) for(let xx=0;xx<w;xx++) if(!this.regionOwned(x+xx, y+yy)) return "Région non réclamée";
     for(let yy=0;yy<h;yy++) for(let xx=0;xx<w;xx++){
       const i=(y+yy)*W+(x+xx);
       const t=this.tiles[i];
       if(this.occupied[i]>=0) return "Emplacement occupé";
-      if(t===T_WATER) return "Impossible sur l'eau";
+      if(t===T_WATER || t===T_FORD) return "Impossible sur l'eau";
       if(def==="quarry"){ if(t!==T_STONE) return "Doit être posé sur un gisement de pierre"; }
       else { if(t!==T_GRASS) return "Terrain impropre (forêt, baies ou rocher)"; }
     }
@@ -862,7 +1017,7 @@ class GameState {
       if(this.roads[i]) return fail("La zone empiète sur une route", { poly });
       if(this.occupied[i]>=0) return fail("La zone empiète sur un bâtiment", { poly });
       if(this.tiles[i]!==T_GRASS) return fail("Terrain impropre dans la zone (eau, forêt ou rocher)", { poly });
-      if(!this.regionOwned(x)) return fail("Région non réclamée", { poly });
+      if(!this.regionOwned(x, y)) return fail("Région non réclamée", { poly });
       inside.push(i);
     }
     if(inside.length<2) return fail("Zone trop petite", { poly });
@@ -1167,9 +1322,59 @@ class GameState {
   // culture proposée pour un nouveau champ : la prochaine qu'on pourra semer
   defaultCrop(){ const m = this.time.month; return (m>=4 && m<=9) ? "wheat" : "peas"; }
   // cases d'un champ (toujours une forme tracée ; les anciens rectangles sont convertis)
+  // Les cases sont rangées en serpentin (une rangée dans un sens, la suivante dans l'autre) : c'est l'ordre où
+  // le travail avance, case après case. L'affichage des cases labourées, semées ou moissonnées et la place du
+  // fermier suivent la même liste.
   fieldCells(b){
-    if(b.plot) return b.plot.cells;
-    const c = []; for(let yy=0;yy<b.h;yy++) for(let xx=0;xx<b.w;xx++) c.push((b.y+yy)*W+(b.x+xx)); return c;
+    let src = b.plot ? b.plot.cells : null;
+    if(!src){ src = []; for(let yy=0;yy<b.h;yy++) for(let xx=0;xx<b.w;xx++) src.push((b.y+yy)*W+(b.x+xx)); }
+    const c = b._snake;
+    if(c && c.n===src.length && c.a===src[0] && c.z===src[src.length-1]) return c.list;
+    const rows = new Map();
+    for(const i of src){ const y = (i/W)|0; if(!rows.has(y)) rows.set(y, []); rows.get(y).push(i); }
+    const list = []; let back = false;
+    for(const y of Array.from(rows.keys()).sort((p, q)=>p-q)){
+      const r = rows.get(y).sort((p, q)=>p-q); if(back) r.reverse(); back = !back;
+      for(const i of r) list.push(i);
+    }
+    try{ Object.defineProperty(b, "_snake", { value:{ n:src.length, a:src[0], z:src[src.length-1], list }, writable:true, enumerable:false, configurable:true }); }catch(e){}
+    return list;
+  }
+  // où le fermier se tient pour travailler : sur la case qu'il est en train de travailler (celle d'après si
+  // un collègue est déjà sur la première)
+  fieldAim(v, fd, t){
+    const f = fd.f, cells = this.fieldCells(fd), n = cells.length; if(!n) return;
+    const p = t.type==="plow" ? f.plow : t.type==="sow" ? f.sowP : t.type==="spread" ? f.dungP : f.harvestP;
+    let rank = 0;
+    for(const o of this.villagers) if(o!==v && o.id<v.id && o.state==="work" && o.task && o.task.bid===fd.id && o.task.type===t.type) rank++;
+    const c = cells[Math.min(n-1, Math.floor((p||0)*n + 1e-6) + rank)];
+    t.gx = (c%W) + 0.5 + ((v.id*7)%5-2)*0.06;
+    t.gy = ((c/W)|0) + 0.55 + ((v.id*3)%3-1)*0.05;
+  }
+  // un pas vers cette case, à chaque instant (le travail, lui, n'avance qu'un tick sur WORK_DIV)
+  fieldGlide(v){
+    const t = v.task, dx = t.gx - v.x, dy = t.gy - v.y, d = Math.hypot(dx, dy);
+    if(d<0.02) return;
+    const s = Math.min(d, 0.1);
+    v.x += dx/d*s; v.y += dy/d*s;
+  }
+  // un villageois resté sur une case occupée (au milieu d'un champ) en sort avant de repartir : le chemin
+  // ne traverse pas les bâtiments, il n'aurait aucune route depuis l'intérieur
+  unstick(f){
+    const sx = Math.floor(f.x), sy = Math.floor(f.y);
+    if(sx<0 || sy<0 || sx>=W || sy>=H || this.occupied[sy*W+sx]<0 || this.passable(sx, sy)) return false;
+    if(DIRS4.some(d=>this.passable(sx+d[0], sy+d[1]))) return false;   // une case libre à côté : le chemin sait déjà sortir
+    let best = null, bd = Infinity;
+    for(let r=1; r<=10 && !best; r++){
+      for(let dy=-r; dy<=r; dy++) for(let dx=-r; dx<=r; dx++){
+        if(Math.max(Math.abs(dx), Math.abs(dy))!==r || !this.passable(sx+dx, sy+dy)) continue;
+        const d = Math.hypot(dx + sx+0.5 - f.x, dy + sy+0.5 - f.y);
+        if(d<bd){ bd = d; best = { x:sx+dx, y:sy+dy }; }
+      }
+    }
+    if(!best) return false;
+    f.path = [{ x:best.x+0.5, y:best.y+0.5 }]; f.state = "wander"; f.task = null;
+    return true;
   }
   fieldN(b){ return b.plot ? b.plot.cells.length : b.w*b.h; }
   fieldCenter(b){
@@ -1197,7 +1402,7 @@ class GameState {
       if(this.roads[i]) return fail("Le champ empiète sur une route", { poly });
       if(this.occupied[i]>=0) return fail("Le champ empiète sur un bâtiment, un pâturage ou un autre champ", { poly });
       if(this.tiles[i]!==T_GRASS) return fail("Terrain impropre dans le champ (eau, forêt ou rocher)", { poly });
-      if(!this.regionOwned(x)) return fail("Région non réclamée", { poly });
+      if(!this.regionOwned(x, y)) return fail("Région non réclamée", { poly });
       cells.push(i);   // ordre de lecture : on laboure rang par rang
     }
     if(cells.length<FIELD_MIN) return fail("Champ trop petit ("+FIELD_MIN+" cases au moins)", { poly, n:cells.length });
@@ -1364,6 +1569,7 @@ class GameState {
     const fd = t.bid!==undefined ? this.buildings.find(x=>x.id===t.bid) : null;
     const stop = (c)=>{ v.task=null; v.state="idle"; v.cool=c; };
     if(!fd || !fd.f){ stop(5); return; }
+    this.fieldAim(v, fd, t);
     const f = fd.f, m = this.time.month, cal = this.cropCal(this.liveCrop(f)), sk = this.skillMul(v, "farm");
     if(t.type==="harvest" || t.type==="mow"){
       if(!this.harvestable(fd)){ stop(10); return; }
@@ -1532,7 +1738,7 @@ class GameState {
       if(this.roads[i]) return fail("Le pâturage empiète sur une route", { poly });
       if(this.occupied[i]>=0) return fail("Le pâturage empiète sur un bâtiment ou un champ", { poly });
       if(this.tiles[i]!==T_GRASS) return fail("Terrain impropre dans l'enclos (eau, forêt ou rocher)", { poly });
-      if(!this.regionOwned(x)) return fail("Région non réclamée", { poly });
+      if(!this.regionOwned(x, y)) return fail("Région non réclamée", { poly });
       inside.push(i);
     }
     if(inside.length<PASTURE_MIN) return fail("Pâturage trop petit ("+PASTURE_MIN+" cases au moins)", { poly, n:inside.length });
@@ -1920,18 +2126,27 @@ class GameState {
   }
 
   /* ---------- régions ---------- */
-  regionAt(x       ){ return x < W/3 ? 1 : (x < (2*W)/3 ? 0 : 2); }
-  regionOwned(x       ){ const r=this.regions[this.regionAt(x)]; return r ? r.owned : true; }
+  regionAt(x, y){ return (x<0 || y<0 || x>=W || y>=H) ? -1 : this.regionMap[y*W+x]; }
+  regionOwned(x, y){ const r = this.regions[this.regionAt(x, y)]; return r ? r.owned : false; }
+  ownedRegions(){ return this.regions.filter(r=>r.owned); }
+  // une région se réclame si elle touche vos terres ; chaque région de plus coûte un peu plus cher
+  regionCost(){ const k = Math.max(0, this.ownedRegions().length - 1); return { treasury:REGION_COST.treasury + 15*k, wealth:REGION_COST.wealth + 5*k }; }
+  regionClaimable(r){ return !!r && !r.owned && !this.baron.regions.includes(r.id) && r.nb.some(k=>this.regions[k] && this.regions[k].owned); }
+  // les terres voisines du départ : ce que les modes de conquête demandent de réunir
+  goalRegions(){ const s = this.regions[this.startRegion]; return s ? [s].concat(s.nb.map(k=>this.regions[k])) : []; }
   claimRegion(rid       ){
     const r=this.regions[rid]; if(!r || r.owned) return false;
-    if(this.treasury < REGION_COST.treasury || this.wealth < REGION_COST.wealth){
-      this.toast("Réclamation impossible : il faut "+REGION_COST.treasury+" deniers et "+REGION_COST.wealth+" de richesse régionale.","bad");
+    if(this.baron.regions.includes(rid)){ this.toast("Le "+this.baron.name+" tient cette région.","bad"); return false; }
+    if(!this.regionClaimable(r)){ this.toast("On ne réclame qu'une région qui touche vos terres.","bad"); return false; }
+    const c = this.regionCost();
+    if(this.treasury < c.treasury || this.wealth < c.wealth){
+      this.toast("Réclamation impossible : il faut "+c.treasury+" deniers et "+c.wealth+" de richesse régionale.","bad");
       return false;
     }
-    this.treasury -= REGION_COST.treasury; this.wealth -= REGION_COST.wealth;
+    this.treasury -= c.treasury; this.wealth -= c.wealth;
     r.owned = true;
     this.influence += 10;
-    this.toast("🗺️ "+REGION_DEFS[rid].name+" est désormais vôtre !","good");
+    this.toast("🗺️ "+r.name+" est désormais vôtre !","good");
     this.uiVersion++;
     return true;
   }
@@ -1996,58 +2211,64 @@ class GameState {
   /* ---------- pathfinding ---------- */
   passable(x       ,y       ){
     if(x<0||y<0||x>=W||y>=H) return false;
-    if(!this.regionOwned(x)) return false;
     const i=y*W+x;
     if(this.tiles[i]===T_WATER) return false;
-    const ob=this.occupied[i];
-    if(ob>=0){
-      if(this.pastureCell[i]) return true;   // étape 5 : on traverse un pâturage (barrières), pas son abri
-      const b=this.buildings.find(b=>b.id===ob);
-      if(b && b.def==="wall" && b.done) return false; // rempart infranchissable
-      return false;
-    }
-    return true;
+    if(this.occupied[i]>=0 && !this.pastureCell[i]) return false;   // bâtiments infranchissables ; on traverse un pâturage
+    const r = this.regions[this.regionMap[i]];
+    return !!(r && r.owned);
   }
+  // les bêtes sauvages vont partout, sauf dans l'eau et les bâtiments
+  walkable(x, y){
+    if(x<0||y<0||x>=W||y>=H) return false;
+    const i=y*W+x;
+    return this.tiles[i]!==T_WATER && (this.occupied[i]<0 || !!this.pastureCell[i]);
+  }
+  // A* sur la grille. Les tableaux de travail sont gardés d'un appel à l'autre (une grande carte : pas
+  // d'allocation de plusieurs centaines de ko à chaque trajet) ; un « tampon » marque ce qui est à jour.
   astar(sx       ,sy       ,tx       ,ty       )           {
     if(sx===tx && sy===ty) return [];
     const N=W*H;
-    // tas binaire min sur f=g+h : évite la recherche linéaire du meilleur nœud
-    const heap=[]; // [f, node]
-    const heapPush=(f,n)=>{ heap.push([f,n]); let i=heap.length-1;
-      while(i>0){ const p=(i-1)>>1; if(heap[p][0]<=heap[i][0]) break; const t=heap[p]; heap[p]=heap[i]; heap[i]=t; i=p; } };
-    const heapPop=()=>{ const top=heap[0]; const last=heap.pop();
-      if(heap.length>0){ heap[0]=last; let i=0;
-        for(;;){ const l=i*2+1, r=l+1; let m=i;
-          if(l<heap.length&&heap[l][0]<heap[m][0]) m=l;
-          if(r<heap.length&&heap[r][0]<heap[m][0]) m=r;
-          if(m===i) break; const t=heap[m]; heap[m]=heap[i]; heap[i]=t; i=m; } }
+    let A = this._astar;
+    if(!A || A.gS.length!==N){
+      A = { gS:new Float32Array(N), came:new Int32Array(N), seen:new Uint32Array(N), stamp:0, hf:[], hn:[] };
+      try{ Object.defineProperty(this, "_astar", { value:A, writable:true, enumerable:false, configurable:true }); }catch(e){ this._astar = A; }
+    }
+    A.stamp = (A.stamp + 1) >>> 0;
+    if(A.stamp===0){ A.seen.fill(0); A.stamp = 1; }
+    const st = A.stamp, gS = A.gS, came = A.came, seen = A.seen, hf = A.hf, hn = A.hn;
+    hf.length = 0; hn.length = 0;
+    // tas binaire min sur f = g + h (deux tableaux parallèles)
+    const push = (f, n)=>{ let i = hf.length; hf.push(f); hn.push(n);
+      while(i>0){ const p = (i-1)>>1; if(hf[p]<=hf[i]) break; let t = hf[p]; hf[p] = hf[i]; hf[i] = t; t = hn[p]; hn[p] = hn[i]; hn[i] = t; i = p; } };
+    const pop = ()=>{ const top = hn[0], lf = hf.pop(), ln = hn.pop();
+      if(hf.length>0){ hf[0] = lf; hn[0] = ln; let i = 0;
+        for(;;){ const l = i*2+1, r = l+1; let m = i;
+          if(l<hf.length && hf[l]<hf[m]) m = l;
+          if(r<hf.length && hf[r]<hf[m]) m = r;
+          if(m===i) break; let t = hf[m]; hf[m] = hf[i]; hf[i] = t; t = hn[m]; hn[m] = hn[i]; hn[i] = t; i = m; } }
       return top; };
-    const gS=new Float32Array(N).fill(Infinity); gS[sy*W+sx]=0;
-    const came=new Int32Array(N).fill(-1);
-    const inO=new Uint8Array(N); inO[sy*W+sx]=1;
+    const s0 = sy*W+sx;
+    const g = (n)=>seen[n]===st ? gS[n] : Infinity;
+    seen[s0] = st; gS[s0] = 0; came[s0] = -1;
     const h=(n)=>Math.abs((n%W)-tx)+Math.abs(((n/W)|0)-ty);
-    heapPush(h(sy*W+sx), sy*W+sx);
+    push(h(s0), s0);
+    const limit = Math.min(N, 30000);
     let guard=0;
-    while(heap.length>0 && guard++<4000){
-      const cur=heapPop()[1]; inO[cur]=0;
+    while(hf.length>0 && guard++<limit){
+      const cur = pop();
       const cxx=cur%W, cyy=(cur/W)|0;
       if(cxx===tx && cyy===ty){
         const path      =[]; let c=cur;
-        while(c!==-1 && c!==sy*W+sx){ path.push({x:(c%W)+0.5, y:((c/W)|0)+0.5}); c=came[c]; }
+        while(c!==-1 && c!==s0){ path.push({x:(c%W)+0.5, y:((c/W)|0)+0.5}); c=came[c]; }
         path.reverse(); return path;
       }
-      const dirs=[1,-1,W,-W];
+      const gc = gS[cur];
       for(let k=0;k<4;k++){
-        const n=cur+dirs[k];
-        const nx=n%W, ny=(n/W)|0;
-        if(Math.abs(nx-cxx)+Math.abs(ny-cyy)!==1) continue;
+        const nx = cxx + DIRS4[k][0], ny = cyy + DIRS4[k][1];
         if(nx<0||ny<0||nx>=W||ny>=H) continue;
         if(!this.passable(nx,ny)) continue;
-        const ng=gS[cur]+this.passableCost(nx,ny);
-        if(ng<gS[n]){ gS[n]=ng; came[n]=cur;
-          if(!inO[n]){ inO[n]=1; heapPush(ng+h(n), n); }
-          else heapPush(ng+h(n), n); // doublon autorisé, le meilleur sortira en premier
-        }
+        const n = ny*W+nx, ng = gc + this.passableCost(nx,ny);
+        if(ng<g(n)){ seen[n] = st; gS[n] = ng; came[n] = cur; push(ng+h(n), n); }
       }
     }
     return null;
@@ -2110,7 +2331,8 @@ class GameState {
   /* ---------- travail des familles ---------- */
   findForestNear(b         )       {
     let best=-1, bd=Infinity;
-    for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+    const R = BUILD_DEFS.woodcutter.radius||5;
+    for(let y=Math.max(0, b.y-R-1); y<=Math.min(H-1, b.y+R+1); y++) for(let x=Math.max(0, b.x-R-1); x<=Math.min(W-1, b.x+R+1); x++){
       const i=y*W+x;
       if(this.tiles[i]===T_FOREST && this.treeWood[i]>0){
         const d=Math.hypot(x+0.5-(b.x+0.5), y+0.5-(b.y+0.5));
@@ -2121,7 +2343,8 @@ class GameState {
   }
   findBerryNear(b         )       {
     let best=-1, bd=Infinity;
-    for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+    const R = BUILD_DEFS.forager.radius||4;
+    for(let y=Math.max(0, b.y-R-1); y<=Math.min(H-1, b.y+R+1); y++) for(let x=Math.max(0, b.x-R-1); x<=Math.min(W-1, b.x+R+1); x++){
       const i=y*W+x;
       if(this.tiles[i]===T_BERRY && this.berryY[i]>1){
         const d=Math.hypot(x+0.5-(b.x+0.5), y+0.5-(b.y+0.5));
@@ -2133,7 +2356,7 @@ class GameState {
   findDeerNear(b         )          {
     let best          =null, bd=Infinity;
     for(const d of this.deer){
-      if(d.frozen) continue;
+      if(d.frozen || !this.regionOwned(Math.floor(d.x), Math.floor(d.y))) continue;
       const dist=Math.hypot(d.x-(b.x+0.5), d.y-(b.y+0.5));
       if(dist<=(BUILD_DEFS.hunter.radius||9) && dist<bd){ bd=dist; best=d; }
     }
@@ -2168,6 +2391,7 @@ class GameState {
   workGate(f){ return ((this.stepN|0) + f.id) % WORK_DIV === 0; }
   assignTask(f       ){
     if(f.cool>0){ if(this.workGate(f)) f.cool--; return; }
+    if(this.unstick(f)) return;
     // seuls les adultes valides (et les apprentis) travaillent
     if(!(this.canWork(f) || (f.appr && this.canApprentice(f)))){ this.idleNearHome(f); return; }
     const b = f.work>0 ? this.buildings.find(x=>x.id===f.work && x.done) : undefined;
@@ -2585,6 +2809,7 @@ class GameState {
         }
         break;
       case "work":
+        if(f.task && f.task.gx!==undefined && FIELD_TASKS[f.task.type]) this.fieldGlide(f);   // il avance de case en case
         if(this.workGate(f)) this.doWork(f);
         break;
       case "return":
@@ -2702,7 +2927,7 @@ class GameState {
       f.carry={ berries:3 };
     } else if(t.type==="hunt" && t.deer!==undefined){
       const di=this.deer.findIndex(d=>d.id===t.deer);
-      if(di>=0){ this.deer.splice(di,1); this.deerTimer=Math.round(300*TS); }
+      if(di>=0){ this.deer.splice(di,1); this.deerTimer=Math.max(this.deerTimer, Math.round(30*TS)); }
       f.carry={ meat:3 };
     } else if(t.type==="mine"){
       const b=f.work>0?this.buildings.find(x=>x.id===f.work):null;
@@ -2888,6 +3113,7 @@ class GameState {
       if(!home || home.def!=="burgage" || !home.done) continue;
       if((f.fed===undefined ? 1 : f.fed) < 0.999 || this.approval < 25) continue;
       const mem = this.membersOf(f.id);
+      if(mem.length >= this.houseCap(home)) continue;   // maison pleine : pas de place pour un enfant de plus
       if(mem.filter(v=>this.ageOf(v)<AGE_TEEN).length>=3) continue;
       for(const w of mem){
         if(w.sex!=="f" || w.spouse<0 || w.sick>0 || w.health<50) continue;
@@ -2994,8 +3220,10 @@ class GameState {
   campStep(){
     // spawn : un camp tous les ~2 ans à partir de 1178, max 2
     if(this.mode().combat && this.time.year>=1177 && this.camps.length<2 && this.rnd()<0.004/TS*(this.mode().bandits||1)*this.diff().bandits){
-      for(let tries=0; tries<30; tries++){
-        const x=2+Math.floor(this.rnd()*(W-4)), y=2+Math.floor(this.rnd()*(H-4));
+      const c0 = this.settlementCenter();
+      for(let tries=0; tries<40; tries++){
+        const a = this.rnd()*Math.PI*2, dd = 9 + this.rnd()*9;
+        const x = Math.floor(c0.x + Math.cos(a)*dd), y = Math.floor(c0.y + Math.sin(a)*dd);
         if(this.passable(x,y)){
           this.camps.push({ id:this.nextC++, x:x+0.5, y:y+0.5, hp:20, maxHp:20 });
           this.toast("🏕️ Un camp de brigands s'installe aux alentours !","bad");
@@ -3006,6 +3234,25 @@ class GameState {
     for(const c of this.camps){
       // les brigands pillent un peu de nourriture chaque mois (géré dans onMonth)
     }
+  }
+  // le cœur du village : le manoir, sinon le campement ou le premier bâtiment
+  settlementCenter(){
+    const b = this.buildings.find(x=>x.done && x.def==="manor") || this.buildings.find(x=>x.def==="camp") || this.buildings.find(x=>x.def==="burgage") || this.buildings[0];
+    return b ? { x:b.x+b.w/2, y:b.y+b.h/2 } : { x:W/2, y:H/2 };
+  }
+  // l'endroit où arrivent les nouveaux venus : une case libre au bord de vos terres, du côté le plus proche
+  entryPoint(){
+    const c = this.settlementCenter();
+    let best = null, bd = Infinity;
+    for(let tries=0; tries<400; tries++){
+      const x = Math.floor(this.rnd()*W), y = Math.floor(this.rnd()*H);
+      if(!this.passable(x, y)) continue;
+      const border = x===0 || y===0 || x===W-1 || y===H-1 || DIRS4.some(q=>!this.regionOwned(x+q[0], y+q[1]));
+      if(!border) continue;
+      const d = Math.hypot(x-c.x, y-c.y);
+      if(d<bd){ bd = d; best = { x, y }; }
+    }
+    return best || { x:Math.floor(c.x), y:Math.floor(c.y) };
   }
   militiaCount(){ return Math.floor(this.families.length/2) + this.militiaBonus(); }
   raiseMilitia(){
@@ -3031,7 +3278,7 @@ class GameState {
       // cherche le camp le plus proche
       let best=null, bd=Infinity;
       for(const c of this.camps){ const d=Math.hypot(c.x-u.x, c.y-u.y); if(d<bd){ bd=d; best=c; } }
-      if(best && bd<14){ u.state="attack"; u.target=best.id; }
+      if(best && bd<30){ u.state="attack"; u.target=best.id; }
       else if(u.cool>0) u.cool--;
     } else if(u.state==="attack"){
       const c = this.camps.find(c=>c.id===u.target);
@@ -3099,14 +3346,22 @@ class GameState {
           const dirs=[[1,0],[-1,0],[0,1],[0,-1]];
           const dd=dirs[Math.floor(this.rnd()*4)];
           const nx=Math.floor(d.x)+dd[0], ny=Math.floor(d.y)+dd[1];
-          if(this.passable(nx,ny)) d.path=[{x:nx+0.5,y:ny+0.5}];
+          if(this.walkable(nx,ny)) d.path=[{x:nx+0.5,y:ny+0.5}];
         }
         if(d.path && d.path.length>0) this.moveAlong(d, d.path, 0.06);
       }
-      if(this.deerTimer>0){ this.deerTimer--; if(this.deerTimer<=0 && this.deer.length<7){
-        const cx=2+Math.floor(this.rnd()*(W-4)), cy=2+Math.floor(this.rnd()*(H-4));
-        if(this.passable(cx,cy)) this.deer.push({id:this.nextD++, x:cx+0.5, y:cy+0.5, path:null, frozen:false});
-      }}
+      // le gibier se renouvelle : un cerf de plus en lisière de bois, jusqu'à ce que la carte en soit pleine
+      if(this.deerTimer>0) this.deerTimer--;
+      else if(this.deer.length<this.deerCap()){
+        this.deerTimer = Math.round(30*TS);
+        for(let tries=0; tries<20; tries++){
+          const cx=1+Math.floor(this.rnd()*(W-2)), cy=1+Math.floor(this.rnd()*(H-2));
+          if(!this.walkable(cx,cy) || this.tiles[cy*W+cx]===T_FORD) continue;
+          if(!DIRS4.some(q=>this.tiles[(cy+q[1])*W+cx+q[0]]===T_FOREST)) continue;
+          this.deer.push({id:this.nextD++, x:cx+0.5, y:cy+0.5, path:null, frozen:false});
+          break;
+        }
+      }
       // camps de brigands : spawn aléatoire + déplacement + pillage
       this.campStep();
       // milice : les soldats patrouillent et affrontent les brigands
@@ -3183,7 +3438,8 @@ class GameState {
     }
     // reforestation lente : de jeunes arbres repoussent en lisière
     let planted=0;
-    for(let tries=0; tries<50 && planted<3; tries++){
+    const scale = W*H/1564;   // même densité de jeunes arbres que sur l'ancienne petite carte
+    for(let tries=0; tries<50*scale && planted<3*scale; tries++){
       const i=Math.floor(this.rnd()*W*H);
       if(this.tiles[i]!==T_GRASS || this.occupied[i]>=0) continue;
       const x=i%W, y=(i/W)|0;
@@ -3329,7 +3585,7 @@ class GameState {
     // bonus des régions réclamées
     for(const r of this.regions){
       if(!r.owned) continue;
-      const bd = REGION_DEFS[r.id].bonus;
+      const bd = r.bonus;
       if(!bd) continue;
       for(const k of Object.keys(bd)) this.stock[k]=Math.min(this.capFor(k), (this.stock[k]||0)+bd[k]);
     }
@@ -3359,14 +3615,13 @@ class GameState {
         if(!fb) break;
         const f=this.makeFamily();
         f.home=fb.id;
-        // point d'entrée praticable sur le bord ouest : toute la famille arrive à pied
-        let ey=Math.floor(H/2);
-        for(let y2=0;y2<H;y2++){ const yy=(Math.floor(H/2)+y2)%H; if(this.passable(0,yy)){ ey=yy; break; } }
-        const mem = this.populateFamily(f, this.randomFamilyKind(), 0.5, ey+0.5);
-        const spot=this.spotFor(fb, 0.5, ey+0.5);
-        const p0 = spot ? this.astar(0,ey,spot.x,spot.y) : null;
+        // ils arrivent à pied, par le bord de vos terres
+        const ep = this.entryPoint(), ex = ep.x, ey = ep.y;
+        const mem = this.populateFamily(f, this.randomFamilyKind(), ex+0.5, ey+0.5);
+        const spot=this.spotFor(fb, ex+0.5, ey+0.5);
+        const p0 = spot ? this.astar(ex,ey,spot.x,spot.y) : null;
         mem.forEach((v, k)=>{
-          v.x = 0.5 - k*0.4; v.y = ey+0.5;
+          v.x = ex+0.5; v.y = ey+0.5 + k*0.3;
           if(p0 && p0.length>0){ v.path = p0.map(q=>({ x:q.x, y:q.y })); v.state="settle"; }
           else if(spot){ v.x=spot.x+0.5; v.y=spot.y+0.5; v.state="idle"; }
           else { v.x=fb.x+0.5; v.y=fb.y+0.5; v.state="idle"; }
@@ -3396,9 +3651,9 @@ class GameState {
       } else if(mode.id==="edge"){
         win = this.time.year>=1179;
       } else if(mode.id==="peace" || mode.id==="duel"){
-        win = this.camps.length===0 && this.regions.every(r=>r.owned) && this.time.year>=1179;
+        win = this.camps.length===0 && this.goalRegions().every(r=>r.owned) && this.time.year>=1179;
       } else if(mode.id==="fractured"){
-        win = this.regions.every(r=>r.owned) && this.baron.power===0 && this.time.year>=1180;
+        win = this.goalRegions().every(r=>r.owned) && this.baron.power===0 && this.time.year>=1180;
       }
       if(win){ this.victory=true; this.endReason="victoire"; this.toast("🏆 Victoire ! "+mode.name+" accomplie !","good"); }
 
@@ -3616,12 +3871,13 @@ class GameState {
     if(this.time.year < 1177) return;
     // il réclame une région tous les ~6 mois s'il le peut (gratuit pour lui, il a ses propres terres)
     if(this.time.month % 6 === 0 && b.nextClaim <= 0){
-      const free = this.regions.filter(r=>!r.owned && !b.regions.includes(r.id));
+      let free = this.regions.filter(r=>this.regionClaimable(r));
+      if(!free.length) free = this.regions.filter(r=>!r.owned && !b.regions.includes(r.id));
       if(free.length){
         const r = free[Math.floor(this.rnd()*free.length)];
         b.regions.push(r.id);
         b.power += 1;
-        this.toast("⚔️ Le "+b.name+" réclame la région « "+REGION_DEFS[r.id].name+" » !","bad");
+        this.toast("⚔️ Le "+b.name+" réclame la région « "+r.name+" » !","bad");
       }
       b.nextClaim = 6;
     }
@@ -3672,7 +3928,8 @@ class GameState {
       case T_FOREST: return "Forêt (bois restant : "+Math.round(this.treeWood[i])+")";
       case T_BERRY: return "Baies : "+Math.round(this.berryY[i]);
       case T_STONE: return "Pierre : "+Math.round(this.stoneAmt[i]);
-      case T_WATER: return "Étang";
+      case T_WATER: return "Eau";
+      case T_FORD: return "Gué (on traverse à pied)";
       default: return "Prairie · fertilité "+Math.round(this.soil[i]*100)+" %";
     }
   }
@@ -3739,16 +3996,17 @@ class GameState {
   }
   serialize(){
     return {
-      v:7, // v7 : ateliers (b.inp), farine, fromage, viande fumée, disette ; v6 : matériaux des chantiers (b.mat) ; v5 : champs détaillés (b.f), pâturages (b.herd), bœufs (oxen) ; v4 : villageois ; v3 : parcelles de bourgage (b.plot)
+      v:8, // v8 : grande carte (256×192), régions organiques, tableaux compressés ; v7 : ateliers (b.inp), farine, fromage, viande fumée, disette ; v6 : matériaux des chantiers (b.mat) ; v5 : champs détaillés (b.f), pâturages (b.herd), bœufs (oxen) ; v4 : villageois ; v3 : parcelles de bourgage (b.plot)
       seed:this.seed,
       modeId:this.modeId,
       weather:this.weather,
       lowApprovalStreak:this.lowApprovalStreak,
       diffId:this.diffId,
-      tiles:Array.from(this.tiles),
-      treeWood:Array.from(this.treeWood),
-      berryY:Array.from(this.berryY),
-      stoneAmt:Array.from(this.stoneAmt),
+      mapW:W, mapH:H,
+      tiles:rleEncode(this.tiles, 1),
+      treeWood:rleEncode(this.treeWood, 10),
+      berryY:rleEncode(this.berryY, 10),
+      stoneAmt:rleEncode(this.stoneAmt, 1),
       buildings:this.buildings,
       families:this.families,
       villagers:this.villagers,
@@ -3761,8 +4019,8 @@ class GameState {
       taxRate:this.taxRate,
       objectives:this.objectives,
       log:this.log,
-      roads:Array.from(this.roads),
-      regions:this.regions,
+      roads:rleEncode(this.roads, 1),
+      regions:this.regions.map(r=>({ id:r.id, owned:!!r.owned })),
       baron:this.baron,
       influence:this.influence,
       policies:this.policies,
@@ -3784,15 +4042,15 @@ class GameState {
     };
   }
   static load(data    )          {
-    if(!data || typeof data.seed!=="number" || !Array.isArray(data.tiles)) throw new Error("sauvegarde invalide");
-    if(data.tiles.length!==W*H) throw new Error("sauvegarde invalide (taille de carte)");
+    if(!data || typeof data.seed!=="number") throw new Error("sauvegarde invalide");
+    // la grande carte (v8) : les parties d'avant, sur l'ancienne petite carte, ne se chargent plus
+    if(!(data.v>=8) || data.mapW!==W || data.mapH!==H) throw new Error("sauvegarde d'une ancienne carte (incompatible)");
     const num = (v)=>typeof v==="number" && isFinite(v);
     const g = new GameState(data.seed);
-    g.tiles = Uint8Array.from(data.tiles);
-    const arr = (a)=>Array.isArray(a) ? a : new Array(W*H).fill(0);
-    g.treeWood = Float32Array.from(arr(data.treeWood));
-    g.berryY = Float32Array.from(arr(data.berryY));
-    g.stoneAmt = Float32Array.from(arr(data.stoneAmt));
+    g.tiles = rleDecode(data.tiles, W*H, 1, Uint8Array);
+    g.treeWood = rleDecode(data.treeWood, W*H, 10, Float32Array);
+    g.berryY = rleDecode(data.berryY, W*H, 10, Float32Array);
+    g.stoneAmt = rleDecode(data.stoneAmt, W*H, 1, Float32Array);
     g.buildings = (data.buildings || []).map(b=>{
       if(b.ext !== undefined && b.ext !== null){
         if(!Array.isArray(b.exts) || b.exts.length===0) b.exts=[b.ext];
@@ -3840,15 +4098,18 @@ class GameState {
     if(typeof data.taxRate==="number") g.taxRate = data.taxRate;
     if(data.objectives) g.objectives = data.objectives;
     g.log = Array.isArray(data.log) ? data.log : [];
-    if(Array.isArray(data.roads) && data.roads.length===W*H) g.roads = Uint8Array.from(data.roads);
+    if(typeof data.roads==="string") g.roads = rleDecode(data.roads, W*H, 1, Uint8Array);
     if(data.baron && typeof data.baron==="object") g.baron = Object.assign(g.baron, data.baron);
+    if(!Array.isArray(g.baron.regions)) g.baron.regions = [];
+    g.baron.regions = g.baron.regions.filter(k=>g.regions[k] && !g.regions[k].owned);
     g.influence = typeof data.influence==="number" ? data.influence : 0;
     if(data.policies && typeof data.policies==="object") g.policies = Object.assign(g.policies, data.policies);
     g.camps = Array.isArray(data.camps) ? data.camps : [];
     g.units = Array.isArray(data.units) ? data.units : [];
     g.nextC = Math.max(0, ...g.camps.map(c=>typeof c.id==="number"?c.id:0)) + 1;
     g.nextU = Math.max(0, ...g.units.map(u=>typeof u.id==="number"?u.id:0)) + 1;
-    if(Array.isArray(data.regions)) g.regions = REGION_DEFS.map(r=>({ id:r.id, owned: !!(data.regions[r.id] && data.regions[r.id].owned) || r.id===0 }));
+    // régions : leur forme vient de la graine ; seule la possession est gardée
+    if(Array.isArray(data.regions)) for(const r of g.regions){ const d = data.regions.find(x=>x && x.id===r.id); r.owned = r.id===g.startRegion || !!(d && d.owned); }
     g.wealth = typeof data.wealth==="number" ? data.wealth : 0;
     if(data.prices && typeof data.prices==="object"){
       for(const k of Object.keys(data.prices)) if(num(data.prices[k])) g.prices[k] = Math.max(1, data.prices[k]);
@@ -3931,6 +4192,6 @@ class GameState {
 }
 
 if(typeof module!=="undefined" && module.exports){
-  module.exports = { FOOD_DEFS, FOOD_GROUPS, FOOD_GROUP_ORDER, STORE_SPOIL, GRUEL, GRANARY_CAP, GRANARY_MUL, VARIETY_APPROVAL, RECIPES, SMOKE_KEEP, HOME_BAKE, MAT_RES, PORTER_LOAD, OX_LOAD, OX_SPEED, DRAG_SPEED, DEPOT_DEFS, TS, WORK_DIV, TICKS_PER_DAY, DAYS_PER_MONTH, FIELD_MIN, FIELD_MAX, PLOT_MIN, CROP_CAL, GROW_RATE, SHEAF_RES, LIVESTOCK, LIVESTOCK_ORDER, GRASS, PASTURE_MIN, PASTURE_MAX, monthsTxt, isWinterMonth, MONTHS_ABBR, SKILL_DEFS, SKILL_ORDER, SKILL_LEVELS, skillLevel, FOOD_NEED, AGE_TEEN, AGE_ADULT, AGE_ELDER, AGE_RETIRE, STAGE_NAMES, JOB_TITLES, NAMES_M, NAMES_F, SURNAMES, BUILD_STAGES, buildStage, DIRS4, PLOT_FRONT, polyArea, pointInPoly, GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
-    T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf, REGION_DEFS, REGION_COST, POLICY_DEFS, POLICY_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, MODE_BY_ID, DIFFICULTIES, DIFF_BY_ID };
+  module.exports = { T_FORD, REGION_NAMES, START_REGION_NAME, REGION_COLS, REGION_ROWS, rleEncode, rleDecode, HOUSE_CAP, FOOD_DEFS, FOOD_GROUPS, FOOD_GROUP_ORDER, STORE_SPOIL, GRUEL, GRANARY_CAP, GRANARY_MUL, VARIETY_APPROVAL, RECIPES, SMOKE_KEEP, HOME_BAKE, MAT_RES, PORTER_LOAD, OX_LOAD, OX_SPEED, DRAG_SPEED, DEPOT_DEFS, TS, WORK_DIV, TICKS_PER_DAY, DAYS_PER_MONTH, FIELD_MIN, FIELD_MAX, PLOT_MIN, CROP_CAL, GROW_RATE, SHEAF_RES, LIVESTOCK, LIVESTOCK_ORDER, GRASS, PASTURE_MIN, PASTURE_MAX, monthsTxt, isWinterMonth, MONTHS_ABBR, SKILL_DEFS, SKILL_ORDER, SKILL_LEVELS, skillLevel, FOOD_NEED, AGE_TEEN, AGE_ADULT, AGE_ELDER, AGE_RETIRE, STAGE_NAMES, JOB_TITLES, NAMES_M, NAMES_F, SURNAMES, BUILD_STAGES, buildStage, DIRS4, PLOT_FRONT, polyArea, pointInPoly, GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
+    T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf, REGION_COST, POLICY_DEFS, POLICY_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, MODE_BY_ID, DIFFICULTIES, DIFF_BY_ID };
 }

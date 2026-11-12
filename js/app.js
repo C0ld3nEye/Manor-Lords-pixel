@@ -17,9 +17,18 @@ function slotInfo(i){
   try{ raw = window.localStorage.getItem(SAVE_SLOTS[i]); }catch(e){}
   if(!raw) return null;
   if(_slotCache[i] && _slotCache[i].raw===raw.length && Date.now()-_slotCache[i].t < 4000) return _slotCache[i].info;
-  var g = loadSlot(i);
-  var info = g ? { mode:g.mode().name, diff:g.diff().name, month:g.time.month, year:g.time.year, pop:g.families.length,
-    level:g.settlementName(), victory:g.victory, defeat:g.defeat } : null;
+  /* résumé lu directement dans la sauvegarde : recharger une partie régénère toute la grande carte (trop lent ici) */
+  var info = null;
+  try{
+    var d = JSON.parse(raw);
+    if(d && d.v>=8 && d.mapW===W && d.mapH===H && d.time){
+      var pop = Array.isArray(d.families) ? d.families.length : 0, lv = 0;
+      for(var li=0; li<SETTLEMENT_LEVELS.length; li++) if(pop >= SETTLEMENT_LEVELS[li].minPop) lv = li;
+      info = { mode:(MODE_BY_ID[d.modeId] || MODE_BY_ID.prosperity).name, diff:(DIFF_BY_ID[d.diffId] || DIFF_BY_ID.normal).name,
+        month:d.time.month, year:d.time.year, pop:Array.isArray(d.families) ? d.families.length : 0,
+        level:SETTLEMENT_LEVELS[lv].name, victory:!!d.victory, defeat:!!d.defeat };
+    }
+  }catch(e){ info = null; }
   _slotCache[i] = { raw:raw.length, info:info, t:Date.now() };
   return info;
 }
@@ -578,6 +587,7 @@ document.addEventListener("click", function(e){
     case "militia": if(!g.raiseMilitia()) flash("Toute la milice disponible est déjà levée."); break;
     case "merc": g.hireMercenary(); break;
     case "claim": g.claimRegion(Number(arg)); break;
+    case "rlook": { var rr = g.regions[Number(arg)]; if(rr){ cam.x = rr.cx + 0.5; cam.y = rr.cy + 0.5; ui.modal = null; } break; }
     case "resolve": g.resolveEvent(Number(arg)); break;
     /* --- fenêtres --- */
     case "modal": ui.modal = arg; ui.sheet = null; break;
@@ -912,6 +922,11 @@ function sheetSelection(g){
     var fam = g.families.filter(function(f){ return f.home===sel.id; })[0];
     h += "<div class='kv'><span class='k'>"+ic("family","s")+(fam ? esc(fam.name) : "Logement vacant")+"</span>"
        + (sel.monthsGood>0 ? "<span class='v good'>Bien loti : "+sel.monthsGood+" mois</span>" : "")+"</div>";
+    var hn = g.houseCount(sel), hc = g.houseCap(sel);
+    h += "<div class='kv'><span class='k'>Habitants</span>"+bar(hn/hc, hn>hc ? "red" : hn===hc ? "gold" : "")+"<span class='v "+(hn>hc ? "bad" : hn===hc ? "gold" : "")+"'>"+hn+" / "+hc+"</span></div>";
+    if(hn>hc) h += "<div class='bad' style='font-size:11px;margin:-2px 0 4px'>Surpeuplée : des familles s'entassent faute d'autre maison.</div>";
+    else if(fam && hn===hc) h += "<div class='gold' style='font-size:11px;margin:-2px 0 4px'>Maison pleine : plus de naissances ici"+(sel.lvl<3 ? " tant qu'elle n'a pas gagné un niveau ("+g.houseCap({ lvl:sel.lvl+1 })+" places)" : "")+".</div>";
+    else if(fam && sel.lvl<3) h += "<div class='dim' style='font-size:11px;margin:-2px 0 4px'>Niveau "+sel.lvl+" : "+hc+" places ; "+g.houseCap({ lvl:sel.lvl+1 })+" au niveau suivant.</div>";
     if(fam && fam.menu) h += "<div class='kv'><span class='k dim' style='font-size:11px'>Au menu le mois dernier</span><span class='v' style='font-size:11px'>"
        + (fam.menu.length ? fam.menu.map(function(gk){ return esc(FOOD_GROUPS[gk] ? FOOD_GROUPS[gk].name.toLowerCase() : gk); }).join(", ") : "rien")
        + (fam.gruel ? " <span class='bad'>(bouillie de disette)</span>" : "")+"</span></div>";
@@ -1583,19 +1598,31 @@ function modalLog(g){
   }
   return h + closeBtn();
 }
-function modalRegions(g){
-  var h = "<h2>"+ic("flag","l")+"Régions</h2>";
-  h += "<p class='dim'>Réclamer une région coûte "+REGION_COST.treasury+" deniers et "+REGION_COST.wealth+" de richesse régionale (vous avez "+Math.floor(g.treasury)+" et "+Math.floor(g.wealth)+").</p>";
-  for(var i=0;i<REGION_DEFS.length;i++){
-    var rd = REGION_DEFS[i], rr = g.regions[i];
-    var baron = g.baron.regions.indexOf(i)>=0;
-    h += "<h3>"+esc(rd.name)+(rr.owned ? " · <span class='good'>à vous</span>" : baron ? " · <span class='bad'>au Baron</span>" : "")+"</h3>";
-    h += "<p style='font-size:12px'>"+esc(rd.desc)+"</p>";
-    if(!rr.owned){
-      var can = g.treasury>=REGION_COST.treasury && g.wealth>=REGION_COST.wealth;
-      h += "<button class='b"+(can?" gold":" dis")+"' data-act='claim' data-arg='"+i+"'>Réclamer · "+REGION_COST.treasury+ic("coin","s")+" "+REGION_COST.wealth+ic("bag","s")+"</button>";
-    }
+/* régions de la grande carte : les vôtres, celles qui touchent vos terres (réclamables), puis les autres */
+var BONUS_TXT = { stone:"+1 pierre par mois", berries:"+2 baies par mois", firewood:"+2 bois de chauffe par mois", grain:"+2 grain par mois" };
+function regionBonusTxt(r){ var k = r.bonus ? Object.keys(r.bonus)[0] : null; return k ? (BONUS_TXT[k] || ("+"+r.bonus[k]+" "+k)) : "votre terre natale"; }
+function regionRow(g, r, cost){
+  var baron = g.baron.regions.indexOf(r.id)>=0, near = g.regionClaimable(r);
+  var tag = r.owned ? " · <span class='good'>à vous</span>" : baron ? " · <span class='bad'>au Baron</span>" : near ? " · <span class='gold'>voisine</span>" : "";
+  var h = "<div class='kv' style='align-items:center;gap:6px'><div style='flex:1 1 auto;min-width:0'><div><b>"+esc(r.name)+"</b>"+tag+"</div>"
+        + "<div class='dim' style='font-size:11px'>"+r.n+" cases · "+esc(regionBonusTxt(r))+"</div></div>";
+  h += "<button class='b sm' data-act='rlook' data-arg='"+r.id+"'>Voir</button>";
+  if(near){
+    var can = g.treasury>=cost.treasury && g.wealth>=cost.wealth;
+    h += "<button class='b sm"+(can?" gold":" dis")+"' data-act='claim' data-arg='"+r.id+"'>Réclamer</button>";
   }
+  return h + "</div>";
+}
+function modalRegions(g){
+  var cost = g.regionCost();
+  var h = "<h2>"+ic("flag","l")+"Régions</h2>";
+  h += "<p class='dim'>On ne réclame qu'une région qui touche vos terres. La prochaine coûte "+cost.treasury+" deniers et "+cost.wealth+" de richesse régionale (vous avez "+Math.floor(g.treasury)+" et "+Math.floor(g.wealth)+") ; chaque région de plus coûte un peu plus.</p>";
+  var mine = g.regions.filter(function(r){ return r.owned; });
+  var near = g.regions.filter(function(r){ return !r.owned && (g.regionClaimable(r) || (g.baron.regions.indexOf(r.id)>=0 && r.nb.some(function(k){ return g.regions[k].owned; }))); });
+  var rest = g.regions.length - mine.length - near.length;
+  h += "<h3>Vos terres</h3>"; mine.forEach(function(r){ h += regionRow(g, r, cost); });
+  if(near.length){ h += "<h3>Aux frontières</h3>"; near.forEach(function(r){ h += regionRow(g, r, cost); }); }
+  if(rest>0) h += "<p class='dim' style='font-size:12px'>Plus loin, "+rest+" autres régions : vous pourrez les réclamer de proche en proche.</p>";
   return h + closeBtn();
 }
 function modalHelp(){
@@ -1610,6 +1637,7 @@ function modalHelp(){
   h += "<h3>Agriculture</h3><p>Les champs sont gratuits ; les fermiers d'une <b>ferme</b> les travaillent au fil des saisons. Chaque culture a son calendrier : le <b>blé d'hiver</b> et le <b>seigle</b> se sèment à l'automne et se moissonnent l'été suivant ; l'orge, l'avoine, le lin et les pois se sèment au printemps ; le <b>pré de fauche</b> donne du foin en juin-juillet sans labour. Les céréales sont moissonnées en <b>gerbes</b>, battues ensuite à la ferme (surtout l'hiver) ; le moulin moud le grain, la boulangerie fait le pain.</p>"
      + "<p><b>Rotation</b> : la même céréale deux ans de suite rend moins ; après des pois ou une jachère, davantage. Le <b>fumier</b> des bêtes, épandu avant le labour, remonte la fertilité ; un <b>bœuf</b> accélère le labour. La météo compte : gel tardif, printemps sec, grêle, été pourri. Le panneau d'un champ montre la récolte attendue et pourquoi.</p>";
   h += "<h3>Élevage</h3><p>Tracez un <b>pâturage</b> (tiroir Terres) comme une zone, n'importe où : la clôture coûte du bois, un abri se pose au bord. Achetez des moutons (laine en mai), des vaches (lait après le vêlage, les jeunes taureaux deviennent des bœufs) ou des porcs (glandée en forêt l'automne). Il faut un mâle pour les naissances et un <b>gardien</b> pour traire, tondre et soigner. L'herbe nourrit les bêtes du printemps à l'automne ; l'hiver, il faut du <b>foin</b> (pré de fauche, herbe en trop fauchée en juin, paille du battage) ou de l'avoine. Réglez l'<b>abattage de novembre</b> pour ne garder que ce que vous pourrez nourrir. Une maladie se propage dans un troupeau : abattre les bêtes malades l'arrête.</p>";
+  h += "<h3>La carte et les régions</h3><p>Le pays est vaste : une rivière qu'on traverse aux <b>gués</b>, des lacs, de grandes forêts, et une vingtaine de <b>régions</b> aux frontières en pointillé doré. Vous commencez au Val du Cœur ; les terres assombries ne sont pas à vous : on n'y passe pas et on n'y bâtit pas. Ouvrez <b>Régions</b> (vue d'ensemble de la seigneurie) pour réclamer une région qui touche les vôtres, chacune avec son bonus. La minicarte, en haut à droite, vous emmène n'importe où d'un toucher.</p>";
   h += "<h3>Croissance</h3><p>Une approbation d'au moins 40 % et une maison libre attirent une nouvelle famille ; les jeunes couples du village qui vivent chez leurs parents passent avant. Les bourgages bien approvisionnés montent de niveau et débloquent des arrière-cours (potager, rucher, atelier…). Le <b>manoir</b> permet de lever l'impôt.</p>";
   h += "<h3>Commandes</h3><p>Glisser pour déplacer · pincer ou molette pour zoomer · toucher un bâtiment pour l'ouvrir · <b>appui long</b> pour annuler · toucher la minimap pour s'y rendre. Le bandeau des réserves et la date ouvrent le détail. Au clavier : Espace = pause, 1/2/3/4 = vitesse (×1, ×4, ×16, ×60), ZQSD = caméra, Échap = annuler.</p>";
   h += "<h3>Sauvegarde</h3><p>Automatique sur cet appareil (3 emplacements). Le menu permet de copier un code pour continuer sur un autre appareil.</p>";

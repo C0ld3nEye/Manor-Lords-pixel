@@ -81,13 +81,14 @@ Le détail technique et l'historique (audit, anciennes phases 0 à 7) restent da
 | Domaine | État |
 |---|---|
 | Rendu pixel-art | ✅ Étape 1 : sprites dessinés par le code, saisons, météo, animations. |
+| Carte | ✅ Étape 6 bis : 256 × 192 cases (31 fois l'ancienne), continentale : rivière et gués, lacs, massifs forestiers ; une vingtaine de régions aux frontières naturelles, réclamées de proche en proche ; sol peint par morceaux à la demande. |
 | Interface mobile | ✅ Étape 2 : barre compacte, construction par catégories, panneaux en bas d'écran. |
 | Maisons et chantiers | ✅ Étape 3 : zones tracées point par point, parcelles, jardins et clôtures, chantiers en quatre étapes, départ au campement. |
 | Villageois | ✅ Étape 4 : chaque habitant a un prénom, un âge, une santé, une humeur et un savoir-faire ; un métier par adulte, apprentis, mariages, naissances, vieillesse, décès. |
 | Logistique | ✅ Étape 5 bis : le bois et la pierre sont réservés à la pose et sortent du stock à la livraison ; un journalier mène le bœuf, qui traîne trois troncs (la pierre se porte une à une), depuis le campement, l'entrepôt, le camp de bûcherons ou la carrière ; le chantier ne progresse qu'avec ce qui est livré ; chantier prioritaire. |
 | Nourriture | ✅ Étape 6 : moulin (farine), boulangerie, laiterie (fromage), fumoir ; les artisans vont chercher leurs ingrédients à pied ; chaque denrée se gâte à son rythme (froid, chaleur, grange qui abrite 200 denrées) ; repas comptés en cinq sortes d'aliments, foyer par foyer, le plus périssable mangé d'abord ; disette, bouillie de grain, soudure annoncée, marchand de grain. |
 | Agriculture et élevage | ✅ Étape 5 : 8 cultures et leur calendrier, fumure, labour, semailles, moisson en gerbes, battage, rotation, météo, prévision de récolte ; pâturages tracés, moutons, vaches, porcs, foin d'hiver, maladies, bœufs de trait. |
-| Simulation | 20 bâtiments, 8 cultures, 3 espèces de bétail, 11 denrées en 5 sortes, routes, comptoir, 3 régions, un baron rival, brigands, milice, 5 modes, 3 difficultés. 155 tests. |
+| Simulation | 20 bâtiments, 8 cultures, 3 espèces de bétail, 11 denrées en 5 sortes, routes, comptoir, une vingtaine de régions, un baron rival, brigands, milice, 5 modes, 3 difficultés. 159 tests. |
 | Administration, vassaux, dynastie | ❌ À construire. |
 | Équilibrage et fun | ❓ À vérifier en jouant sur téléphone. |
 | Distribution | Page web uniquement. |
@@ -117,6 +118,9 @@ Les matériaux ne sortent plus du stock par magie : le chantier réclame son boi
 
 **Étape 6 — Nourriture et transformation** ✅
 Moulin (grain → farine), boulangerie (farine → pain), laiterie (lait → fromage), fumoir (viande → viande fumée) ; les artisans vont chercher leurs ingrédients au plus proche et les portent à l'atelier. Pourrissement denrée par denrée, ralenti par le froid et la grange. Variété des repas comptée en cinq sortes d'aliments, foyer par foyer. Disettes : bouillie de grain, soudure annoncée, marchand de grain. La brasserie reste un agrandissement de cour (orge → ale).
+
+**Étape 6 bis — Une vraie carte** ✅
+La carte passe de 46 × 34 à 256 × 192 cases, sans forme géométrique imposée : un pays continental (rivière avec gués, lacs, massifs forestiers, prairies) découpé en une vingtaine de régions aux frontières naturelles. On commence au centre, dans une région bien plus grande qu'avant, et on s'étend de proche en proche. Plus tard (étape 11), ce pays ne sera qu'une partie du royaume, avec ses vassaux et ses voisins. Les anciennes sauvegardes (petite carte) ne se chargent plus.
 
 **Étape 7 — Administration**
 Taxes multiples, corvées, lois et décrets, justice, personnel (intendant, bailli…), livre de comptes.
