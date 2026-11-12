@@ -13,8 +13,9 @@ Constat après la première version : le jeu était fonctionnel en simulation ma
 |---|---|---|
 | 1 | **Moteur de rendu pixel-art** : sprites dessinés par le code (`js/sprites.js`), atlas unique, vue 3/4, 4 saisons, neige sur les toits, sol peint en cache (berges, routes à ornières, prairies, lisières), ombres, chantiers avec échafaudage, villageois animés avec outils et charges, fumées, drapeaux, météo, minimap ; rendu basse résolution agrandi par paliers entiers (pixels nets, léger sur mobile) | ✅ |
 | 2 | **Interface mobile** : barre du haut sur 2 lignes (la carte passe d'environ 60 % à 84 % de l'écran), icônes pixel-art à la place des emojis (`js/icons.js`), dock de construction par catégories avec tiroir de cartes, panneaux en feuille du bas (bâtiment, réserves avec capacité, seigneurie, menu), objectifs repliables, notifications discrètes, minimap et calques en haut à droite, appui long pour annuler, mise à jour de l'interface sur place (un toucher n'est plus perdu quand un chiffre change), nouvel écran d'accueil (mode, difficulté, emplacement) ; correctif : le choix de taille des champs n'était jamais proposé | ✅ |
-| 3 | **Parcelles de bourgage** en bandes le long des routes (maison sur rue, cour à l'arrière avec extensions visibles) | à faire |
-| 3+ | Nouvelle direction (dynastie, vassaux, ascension de châtelain à empereur, domaine très détaillé) : voir [`ROADMAP.md`](../ROADMAP.md) | à faire |
+| 3 | **Maisons automatiques et chantiers visibles** : zones tracées point par point, parcelles, cours, clôtures, chantiers en étapes (détail en section 6) | ✅ |
+| 4 | **Villageois individuels** : âge, santé, humeur, savoir-faire, un métier par adulte, apprentis, mariages, naissances, décès (détail en section 7) | ✅ |
+| 5+ | Suite de la nouvelle direction (élevage, administration, suzerain, dynastie, vassaux…) : voir [`ROADMAP.md`](../ROADMAP.md) | à faire |
 
 Note : l'audit ci-dessous (sections 1 à 3) décrit l'état **avant** les phases 1 à 7 ; il est conservé comme historique.
 
@@ -161,7 +162,7 @@ Impact maximal / effort minimal d'abord :
 - `js/app.js` ne fait que brancher les entrées et l'UI.
 - **Aucune dépendance externe** : le « zéro build » est un atout du projet.
 
-## 6. Étape 3 — Maisons automatiques et chantiers visibles ✅ (PR à valider)
+## 6. Étape 3 — Maisons automatiques et chantiers visibles ✅
 
 - **Tracé libre, point par point (façon Manor Lords)** : le joueur pose les points du contour le long d'une route (calés au quart de case), touche le premier point pour fermer, glisse un point pour ajuster. `planZone(points, n)` repère la façade, propose une maison toutes les 2 cases (réglable avec − / +), coupe la zone perpendiculairement à la route ; chaque parcelle garde son contour (`plot.poly`) et sa cour = ses cases hors maison, donc la forme décide de la taille des jardins et du nombre d'agrandissements.
 - **Aimant de route** : `snapZonePoint` colle un point au bord d'une route à moins d'une demi-case, et un trait presque parallèle à la route reste bien droit ; on peut tirer un trait depuis le dernier point.
@@ -171,3 +172,17 @@ Impact maximal / effort minimal d'abord :
 - **Chantiers** : `buildStage` (fondations, charpente, murs, toit), dessinés étape par étape ; les journaliers bâtissent.
 - **Rendu** : clôtures en lignes pixel qui suivent le contour exact (côté rue ouvert), cour teintée, agrandissements posés sur leur case (choix de la case verte ou « Auto »).
 - **Sauvegarde v3** : champ `plot` optionnel, anciennes sauvegardes compatibles (cour à plusieurs agrandissements : le premier est gardé, les autres remboursés). 80 tests. Vérifié en Chrome mobile émulé 390×844, pas encore sur un vrai téléphone.
+
+## 7. Étape 4 — Villageois individuels ✅ (PR à valider)
+
+- **Des personnes plutôt que des familles anonymes** : `g.villagers` (prénom, sexe, date de naissance `bornAt` en mois, compétences 0-100 dans 8 savoir-faire, santé, maladie, humeur et ses causes, conjoint, parents). Les familles (`g.families`) deviennent des foyers : une maison, une marmite, un nom. Âges : enfant < 12 ≤ adolescent < 16 ≤ adulte < 55 ≤ ancien ; retraite à 65 ans. Un an de jeu fait vieillir d'un an.
+- **Un métier par adulte** : `b.want` = ouvriers voulus ; + embauche l'adulte libre le plus doué dans le métier du lieu, − renvoie le moins doué. Un poste voulu se pourvoit tout seul dès qu'un adulte se libère (adolescent devenu adulte, retraite, décès, nouvel arrivant). Affectation à la main depuis la fiche (`assignVillager`). Les journaliers (adultes sans poste) bâtissent les chantiers.
+- **Savoir-faire** : vitesse de travail ×0,75 (novice) à ×1,25 (maître), moins pour un ancien ou un malade ; on progresse en travaillant (bilan mensuel du temps passé à l'ouvrage). Niveaux : novice, initié, compagnon, confirmé, maître. Le négociant du comptoir vend de −10 % à +10 %.
+- **Apprentissage** : un adolescent (12-15 ans) par atelier ; il apprend vite auprès d'un maître compagnon ou mieux, lentement sinon. À 16 ans, il prend un poste dans l'atelier s'il y a de la place. Les enfants apprennent aussi un peu le métier de leurs parents. Si un savoir-faire de 60 ou plus meurt avec son détenteur sans que personne n'ait atteint 40, le journal le signale.
+- **La vie** : chacun mange selon son âge (un foyer type mange à peu près autant qu'une famille de l'ancienne version) ; la faim, le froid et la maladie abîment la santé, on se remet quand tout va bien ; décès de faim, de froid, de maladie ou de vieillesse ; deuil des proches ; orphelins recueillis par une autre famille. Mariages entre célibataires d'âge voisin sans lien de parenté ; le jeune couple prend une maison libre (avant les nouveaux venus), sinon vit chez les parents du mari. Naissances chez les couples logés dans une maison et nourris. La peste emporte les plus fragiles au lieu de familles entières. Les nouveaux venus arrivent en familles de 1 à 4 personnes.
+- **Humeur et approbation** : l'approbation est détaillée cause par cause (`g.approvalWhy`, panneau de la seigneurie) ; chaque villageois a son humeur = approbation + ce qui le touche (faim, maladie, deuil, naissance, mariage, métier aimé ou non…), visible dans sa fiche ; la moyenne compte un peu dans l'approbation.
+- **Interface** : toucher un villageois sur la carte ouvre sa fiche (humeur et causes, santé, métier, savoir-faire, famille, « Voir sur la carte » avec une flèche dorée au-dessus de lui) ; compteur d'habitants en haut → liste par foyer avec filtres (journaliers, adolescents, enfants, malades) ; panneau d'un bâtiment : ses ouvriers avec leur niveau, son apprenti ; panneau d'une maison : les membres de la famille.
+- **Rendu** : femmes en robe, anciens aux cheveux gris, enfants plus petits qui jouent près de la maison ; les nourrissons restent à la maison.
+- **Sauvegarde v4** : `villagers`, `approvalWhy`, `b.want` ; les sauvegardes v3 et plus anciennes sont converties (chaque famille reçoit ses membres, le premier adulte reprend la place et le métier de l'ancienne famille). 98 tests.
+- **Équilibrage** : un robot qui joue la même stratégie simple sur 48 cartes (4 ans, mode Prospérité) gagne 17 parties contre 11 avant l'étape 4 (approbation moyenne 41 % contre 38 %) : deux adultes par foyer donnent plus de bras. En contrepartie, une famine prolongée tue désormais (aucun village éteint sur ces 48 cartes, mais c'est arrivé sur d'autres réglages pendant la mise au point). Le vrai passage d'équilibrage reste l'étape 8.
+- Vérifié en Chrome mobile émulé 390×844 (touchers simulés) ; pas encore sur un vrai téléphone.

@@ -206,7 +206,7 @@ const SKILL_DEFS = {
   build:  { id:"build",  name:"Construction" },
 };
 const SKILL_ORDER = ["farm","wood","gather","hunt","stone","craft","trade","build"];
-const SKILL_LEVELS = ["Novice","Apprenti","Compagnon","Confirmé","Maître"]; // tranches de 20 points
+const SKILL_LEVELS = ["Novice","Initié","Compagnon","Confirmé","Maître"]; // tranches de 20 points
 function skillLevel(s){ return SKILL_LEVELS[Math.max(0, Math.min(4, Math.floor((Number(s)||0)/20)))]; }
 // métier exercé dans chaque bâtiment (masculin, féminin)
 const JOB_TITLES = {
@@ -502,11 +502,14 @@ class GameState {
   }
   noteWork(v, skill){ if(!v.wt) v.wt = {}; v.wt[skill] = (v.wt[skill]||0) + 1; }
 
+  // un prénom que personne ne porte encore dans la seigneurie (sinon, au moins pas dans la famille)
   pickName(sex, fid){
     const pool = sex==="f" ? NAMES_F : NAMES_M;
-    const taken = new Set(this.villagers.filter(o=>o.fam===fid).map(o=>o.first));
-    const free = pool.filter(n=>!taken.has(n));
-    const list = free.length ? free : pool;
+    const village = new Set(this.villagers.map(o=>o.first));
+    const family = new Set(this.villagers.filter(o=>o.fam===fid).map(o=>o.first));
+    let list = pool.filter(n=>!village.has(n));
+    if(!list.length) list = pool.filter(n=>!family.has(n));
+    if(!list.length) list = pool;
     return list[Math.floor(this.rnd()*list.length)];
   }
   // un nouveau villageois ; age en années, skills = compétences de départ (0 à 100)
@@ -918,8 +921,9 @@ class GameState {
       v = c[0];
     }
     v.work = b.id; v.appr = true; this.resetWorker(v);
-    const m = this.masterOf(b);
-    this.toast(this.fullName(v)+" entre en apprentissage : "+BUILD_DEFS[b.def].name+(m ? " auprès de "+this.fullName(m)+"." : " (sans maître pour l'instant)."));
+    const m = this.masterOf(b), sk = this.jobSkill(b);
+    this.toast(this.fullName(v)+" entre en apprentissage : "+BUILD_DEFS[b.def].name
+      +(m && (m.skills[sk]||0)>=40 ? ", auprès de "+this.fullName(m)+"." : " (sans maître confirmé : "+(v.sex==="f"?"elle":"il")+" apprendra lentement)."));
     this.uiVersion++;
     return null;
   }
@@ -1223,6 +1227,7 @@ class GameState {
   }
   // enfants, anciens, malades, ou adultes sans rien à faire : ils restent autour de la maison
   idleNearHome(f){
+    if(this.stageOf(f)==="baby"){ f.cool = 200; return; }   // un nourrisson reste à la maison
     const kid = !this.isAdult(f);
     if(this.rnd() < (kid ? 0.5 : 0.3)){
       const home = this.homeOf(f);

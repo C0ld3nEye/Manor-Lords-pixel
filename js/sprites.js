@@ -970,6 +970,7 @@ var HEAD = {
   hair:  [ "..KKKK..", ".KHHHHK.", ".KHHSSK.", ".KHSESK.", "..KSSsK." ],
   hood:  [ "..KKKK..", ".KTTTTK.", ".KTTSSK.", ".KTSESK.", "..KtSsK." ],
   coif:  [ "..KKKK..", ".KWWWWK.", ".KWHSSK.", ".KHSESK.", "..KSSsK." ],
+  long:  [ "..KKKK..", ".KHHHHK.", "KHHHSSK.", "KHHSESK.", "KHKSSsK." ],
   helm:  [ ".KKKKKK.", "KMMMMMMK", ".KmSSSK.", ".KmSESK.", "..KSSsK." ],
 };
 var BODY = {
@@ -991,6 +992,10 @@ var HAIRS = [P.hrBrown, P.hrBlond, P.hrBlack, P.hrRed, P.hrGrey];
 function person(head, body, cloth, hair, opts){
   opts = opts || {};
   var rows = HEAD[head].concat(BODY[body]);
+  /* cheveux longs : ils tombent sur l'épaule, dans le dos */
+  if(head==="long") rows[5] = "KH" + rows[5].slice(2);
+  /* robe : la jupe descend jusqu'aux pieds */
+  if(opts.dress) rows[10] = ".KTTTtK.";
   var lg = {
     K:P.ink, H:hair, h:mix(hair, P.ink, 0.35), S:P.sk1, s:P.sk0, E:P.ink,
     T:cloth[0], t:cloth[1], u:cloth[2], B:P.wood1, L:opts.legs||"#3a2c22", F:"#22180f",
@@ -998,6 +1003,20 @@ function person(head, body, cloth, hair, opts){
   };
   var o = Px.fromStrings(rows, lg);
   o.ax = 4; o.ay = 12;
+  return o;
+}
+/* Nourrisson emmailloté (portrait de la fiche ; il n'est pas dessiné sur la carte) */
+function babySprite(){
+  var o = Px.fromStrings([ ".KKKK.", "KWSSEK", "KWSSsK", "KWWWWK", "KWWWwK", ".KKKK." ],
+    { K:P.ink, W:P.linen, w:P.linen0, S:P.sk1, s:P.sk0, E:P.ink });
+  o.ax = 3; o.ay = 6;
+  return o;
+}
+/* Repère au-dessus du villageois sélectionné (petite flèche dorée qui rebondit) */
+function marker(f){
+  var o = S(9, 7, 4, 7);
+  o.r(1, 1, 7, 1, f ? "#ffffff" : "#e8c35a"); o.r(2, 2, 5, 1, f ? "#ffffff" : "#e8c35a"); o.r(3, 3, 3, 1, "#e8c35a"); o.p(4, 4, "#e8c35a");
+  o.outline(C(P.ink));
   return o;
 }
 /* Outils portés pendant le travail (16 × 16 ; le corps 8×12 y occupe (4,2)-(11,13)) */
@@ -1383,7 +1402,30 @@ function addLR(name, o){
 }
 function addW(name, o){ add(name, o); add(name+"_w", snowify(o)); }
 
-var LOOKS = [["hair",P.hrBrown],["hair",P.hrBlond],["hood",P.hrBrown],["hair",P.hrBlack],["coif",P.hrBrown],["hair",P.hrRed]];
+/* allures des villageois : 0-4 hommes, 5-8 femmes (robe), 9 ancien, 10 ancienne */
+var LOOKS = [["hair",P.hrBrown],["hair",P.hrBlond],["hood",P.hrBrown],["hair",P.hrBlack],["hair",P.hrRed],
+  ["coif",P.hrBrown,{dress:1}],["long",P.hrBlond,{dress:1}],["long",P.hrBrown,{dress:1}],["long",P.hrRed,{dress:1}],
+  ["hair",P.hrGrey],["coif",P.hrGrey,{dress:1}]];
+/* enfants (6 × 9) : 4 garçons, 4 filles */
+var KID_HEAD = {
+  m: [ ".KKKK.", "KHHHHK", "KHHSEK", ".KSSsK" ],
+  f: [ ".KKKK.", "KHHHHK", "KHHSEK", "KHKSsK" ],
+};
+var KID_BODY = {
+  idle:  [ ".KTTK.", "KSTTSK", ".KTtK.", ".KLLK.", ".KFFK." ],
+  walkA: [ ".KTTK.", "KSTTSK", ".KTtK.", "KLK.LK", "KF..KF" ],
+  walkB: [ ".KTTK.", ".STTSK", ".KTtK.", ".KLLK.", ".KFKF." ],
+};
+var KID_LOOKS = [[P.hrBrown,"#8a6a4a"],[P.hrBlond,"#5a7a9a"],[P.hrBlack,"#9a5a4a"],[P.hrRed,"#6a8a4a"]];
+var KID_BODIES = ["idle","walkA","walkB"];
+function kid(sex, look, body){
+  var rows = KID_HEAD[sex].concat(KID_BODY[body]);
+  if(sex==="f") rows[7] = "KTTTtK";   /* robe */
+  var L = KID_LOOKS[look], cl = sex==="f" ? mix(L[1], "#b04a6a", 0.45) : L[1];
+  var o = Px.fromStrings(rows, { K:P.ink, H:L[0], S:P.sk1, s:P.sk0, E:P.ink, T:cl, t:mix(cl, P.ink, 0.3), L:"#3a2c22", F:"#22180f" });
+  o.ax = 3; o.ay = 9;
+  return o;
+}
 var JOBS = ["laborer","woodcutter","forager","hunter","quarry","farm","windmill","market","trade"];
 var BODIES = ["idle","walkA","walkB","workU","workD"];
 
@@ -1430,7 +1472,10 @@ function build(){
   add("sheaf", sheaf());
   /* personnages */
   for(var l=0;l<LOOKS.length;l++) for(var j=0;j<JOBS.length;j++) for(var b=0;b<BODIES.length;b++)
-    addLR("p_"+l+"_"+JOBS[j]+"_"+BODIES[b], person(LOOKS[l][0], BODIES[b], JOB_CLOTH[JOBS[j]], LOOKS[l][1]));
+    addLR("p_"+l+"_"+JOBS[j]+"_"+BODIES[b], person(LOOKS[l][0], BODIES[b], JOB_CLOTH[JOBS[j]], LOOKS[l][1], LOOKS[l][2]));
+  for(var ks=0;ks<2;ks++) for(var kl=0;kl<KID_LOOKS.length;kl++) for(var kb=0;kb<KID_BODIES.length;kb++)
+    addLR("kid_"+(ks?"f":"m")+"_"+kl+"_"+KID_BODIES[kb], kid(ks?"f":"m", kl, KID_BODIES[kb]));
+  add("mark_0", marker(0)); add("mark_1", marker(1)); add("baby", babySprite());
   ["axe","pick","hoe","hammer","sickle","basket","bow"].forEach(function(t){ addLR("tool_"+t+"_u", toolSprite(t,true)); addLR("tool_"+t+"_d", toolSprite(t,false)); });
   ["timber","berries","meat","stone","sack"].forEach(function(c){ addLR("carry_"+c, carrySprite(c)); });
   ["militia","merc","brigand"].forEach(function(kd){ for(var f=0;f<3;f++) addLR("sol_"+kd+"_"+f, soldier(kd,f)); });

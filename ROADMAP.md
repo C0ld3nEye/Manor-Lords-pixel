@@ -82,8 +82,10 @@ Le détail technique et l'historique (audit, anciennes phases 0 à 7) restent da
 |---|---|
 | Rendu pixel-art | ✅ Étape 1 : sprites dessinés par le code, saisons, météo, animations. |
 | Interface mobile | ✅ Étape 2 : barre compacte, construction par catégories, panneaux en bas d'écran. |
-| Simulation | Version simple : familles anonymes, 16 bâtiments, champs avec fertilité, nourriture variée, routes, comptoir, 3 régions, un baron rival, brigands, milice, 5 modes, 3 difficultés. 66 tests. |
-| Villageois individuels, élevage, administration, vassaux, dynastie | ❌ À construire. |
+| Maisons et chantiers | ✅ Étape 3 : zones tracées point par point, parcelles, jardins et clôtures, chantiers en quatre étapes, départ au campement. |
+| Villageois | ✅ Étape 4 : chaque habitant a un prénom, un âge, une santé, une humeur et un savoir-faire ; un métier par adulte, apprentis, mariages, naissances, vieillesse, décès. |
+| Simulation | 16 bâtiments, champs avec fertilité, nourriture variée, routes, comptoir, 3 régions, un baron rival, brigands, milice, 5 modes, 3 difficultés. 98 tests. |
+| Élevage, administration, vassaux, dynastie | ❌ À construire. |
 | Équilibrage et fun | ❓ À vérifier en jouant sur téléphone. |
 | Distribution | Page web uniquement. |
 
@@ -95,10 +97,10 @@ Chaque étape se termine par une **version jouable**. Le cœur du domaine passe 
 
 ### Bloc A — Le domaine vivant
 
-**Étape 3 — Maisons automatiques et chantiers visibles**
+**Étape 3 — Maisons automatiques et chantiers visibles** ✅
 Tracé d'une zone le long d'une route → découpe en parcelles, maison, jardin et clôture adaptés à la forme. Chantiers en plusieurs étapes visibles (fondations, charpente, murs, toit). Extensions de cour posées dans la cour.
 
-**Étape 4 — Villageois individuels**
+**Étape 4 — Villageois individuels** ✅
 Chaque villageois a un nom, un âge, des compétences, une santé et une humeur. Familles, naissances, vieillesse, décès. Affectation aux métiers, progression des compétences, apprentissage.
 
 **Étape 5 — Agriculture et élevage approfondis**

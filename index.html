@@ -140,6 +140,35 @@ button { font:inherit; color:inherit; touch-action:manipulation; }
 .chips { display:flex; flex-wrap:wrap; gap:4px; }
 .chip { display:inline-flex; align-items:center; gap:3px; background:#00000040; padding:2px 6px; font-size:12px; }
 .menu-list .b { justify-content:flex-start; }
+/* ---------- étape 4 : villageois ---------- */
+.vrow { display:flex; align-items:center; gap:8px; width:100%; min-height:44px; padding:3px 8px 3px 4px; margin:3px 0; text-align:left; color:inherit; font:inherit;
+  background:var(--panel2); border:2px solid var(--line); cursor:pointer; }
+.vrow .t { flex:1 1 auto; min-width:0; font-size:13px; }
+.vrow .t .s { display:block; font-size:11px; color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.vrow .t .s.bad { color:var(--bad); }
+.ppw { flex:0 0 auto; width:26px; display:flex; justify-content:center; align-items:flex-end; }
+.sh-head .ppw { width:30px; }
+.mood { flex:0 0 auto; display:flex; align-items:center; gap:2px; font-size:12px; font-weight:700; }
+.why { display:flex; flex-direction:column; gap:1px; margin:4px 0 2px; font-size:12px; }
+.why div { display:flex; justify-content:space-between; gap:8px; padding:2px 6px; background:#00000026; }
+.why b { min-width:28px; text-align:right; }
+.rel { display:flex; align-items:center; gap:8px; margin:4px 0; font-size:12px; }
+.rel > .dim { flex:0 0 92px; }
+.chip.lnk { border:1px solid var(--line); color:inherit; font:inherit; font-size:12px; cursor:pointer; min-height:28px; }
+.chip.lnk.on { border-color:var(--gold); color:var(--gold); }
+.kv.lnk { width:100%; background:transparent; border:0; border-bottom:1px solid #ffffff12; color:inherit; font:inherit; cursor:pointer; text-align:left; }
+.kv.sk { padding:3px 0; font-size:12px; }
+.kv.sk .k { flex:0 0 96px; }
+.kv.sk .v { flex:0 0 74px; text-align:right; font-weight:400; color:var(--dim); }
+.kv.sk.on .k, .kv.sk.on .v { color:var(--gold); font-weight:600; }
+.fam { display:flex; align-items:center; gap:8px; margin:12px 0 2px; }
+.jobs { margin:4px 0; }
+.jobs .ext { min-height:44px; }
+.jobs .ext .tb { flex:0 0 34px; height:32px; display:flex; align-items:flex-end; justify-content:center; overflow:hidden; }
+.jobs .ext .tb .th { zoom:.5; }
+.ext.off { opacity:.5; }
+.b.sm { min-height:30px; padding:2px 8px; font-size:12px; }
+.b.off { opacity:.55; }
 input[type=range] { width:100%; accent-color:var(--gold); height:28px; }
 
 /* ---------- dock des catégories ---------- */

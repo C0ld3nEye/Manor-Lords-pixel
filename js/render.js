@@ -460,13 +460,19 @@ function wallMask(g, b, byId){
   return m;
 }
 
+/* un bâtiment où quelqu'un travaille (étals garnis, ailes du moulin qui tournent) */
+function staffed(g, b){
+  if(b.preview) return true;
+  if(g.villagers){ for(var i=0;i<g.villagers.length;i++){ var v = g.villagers[i]; if(v.work===b.id && !v.appr) return true; } return false; }
+  return !!(b.families && b.families.length);
+}
 function buildingSprite(g, b, winter, byId){
   var w = winter ? "_w" : "";
   switch(b.def){
     case "burgage":
       var lv = Math.max(1, Math.min(3, b.lvl||1));
       return "burgage"+lv+"_"+(lv===3 ? b.id%2 : b.id%3)+w;
-    case "market": return "market_"+((b.families && b.families.length>0) ? 1 : 0)+w;
+    case "market": return "market_"+(staffed(g, b) ? 1 : 0)+w;
     case "church":
       var cu = b.churchUp || [];
       return "church_"+(cu.indexOf("bell")>=0 ? 1 : 0)+(cu.indexOf("altar")>=0 ? 1 : 0)+w;
@@ -484,7 +490,7 @@ function drawBuilding(g, b, info){
   if(b.def==="windmill"){
     var f = SPR.frames[name];
     var hubX = bxp - f.ax + 17.5, hubY = byp - f.ay + 9.5;
-    var turning = b.families && b.families.length>0;
+    var turning = staffed(g, b);
     var fr = turning ? Math.floor(info.now/110) % 8 : 0;
     spr("sails_"+fr, hubX - 19.5, hubY - 19.5);
   }
@@ -641,6 +647,7 @@ function drawStart(g, B, winter, now){
 
 /* étape 3 : aperçu du tracé de zone et des cases libres de cour (fourni par app.js) */
 var OV = null;
+var SELV = null;                    // villageois sélectionné (fiche ouverte)
 var PLOT_TINTS = ["rgba(90,224,110,0.30)", "rgba(110,190,255,0.30)"];
 function drawOverlay(g, now){
   var k, j;
@@ -677,7 +684,19 @@ function drawExtensionsFront(g, b, info){
   if(ex.indexOf("tailor")>=0) spr("cloth", x+1, y-2);
 }
 
-function personSprite(f, job, body, dir){ return "p_"+(f.id % 6)+"_"+job+"_"+body+(dir<0 ? "_l" : ""); }
+/* allure d'un villageois : sexe et âge (voir SPR.LOOKS) */
+function lookOf(g, v){
+  if(g.stageOf && g.stageOf(v)==="elder") return v.sex==="f" ? 10 : 9;
+  return v.sex==="f" ? 5 + (v.id % 4) : v.id % 5;
+}
+function personSprite(g, f, job, body, dir){ return "p_"+lookOf(g, f)+"_"+job+"_"+body+(dir<0 ? "_l" : ""); }
+/* un enfant (3 à 11 ans) : petit, sans outil, il joue près de la maison */
+function drawKid(g, v, info){
+  var m = info.m, now = info.now, sfx = m.dir<0 ? "_l" : "";
+  var walking = WALKING[v.state] && (now - m.mt) < 300;
+  var body = walking ? ["walkA","idle","walkB","idle"][(Math.floor(now/110) + v.id) % 4] : "idle";
+  spr("kid_"+(v.sex==="f" ? "f" : "m")+"_"+(v.id % 4)+"_"+body+sfx, v.x*TS, v.y*TS);
+}
 
 function drawFamily(g, f, info){
   var m = info.m, now = info.now, dir = m.dir, sfx = dir<0 ? "_l" : "";
@@ -696,7 +715,7 @@ function drawFamily(g, f, info){
     var ck = f.carry.timber ? "timber" : f.carry.berries ? "berries" : f.carry.meat ? "meat" : f.carry.stone ? "stone" : "sack";
     spr("carry_"+ck+sfx, x, y);
   }
-  spr(personSprite(f, info.job, body, dir), x, y);
+  spr(personSprite(g, f, info.job, body, dir), x, y);
   if(tool) spr("tool_"+tool+"_"+(up ? "u" : "d")+sfx, x, y);
 }
 
@@ -952,10 +971,19 @@ function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
     sh("sh_deer", D.x*TS, D.y*TS);
     obj(D.y*TS, drawDeer, g, D, { m:dm, now:now });
   }
-  for(var fi=0; fi<g.families.length; fi++){
-    var Fm = g.families[fi];
-    var fm = track("f"+Fm.id, Fm.x, Fm.y, now);
+  /* villageois : les nourrissons restent à la maison, les enfants jouent autour, les adultes travaillent */
+  var VS = g.villagers || [];
+  for(var fi=0; fi<VS.length; fi++){
+    var Fm = VS[fi];
+    var stg = g.stageOf ? g.stageOf(Fm) : "adult";
+    if(stg==="baby") continue;
+    var fm = track("v"+Fm.id, Fm.x, Fm.y, now);
     if(Fm.x*TS < vx0 || Fm.x*TS > vx1 || Fm.y*TS < vy0 || Fm.y*TS > vy1) continue;
+    if(stg==="child"){
+      sh("sh_person", Fm.x*TS, Fm.y*TS);
+      obj(Fm.y*TS, drawKid, g, Fm, { m:fm, now:now });
+      continue;
+    }
     var wb = Fm.work>=0 ? byId[Fm.work] : null;
     var job = (wb && JOBSET[wb.def]) ? wb.def : "laborer";
     sh("sh_person", Fm.x*TS, Fm.y*TS);
@@ -1029,6 +1057,15 @@ function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
     }
   }
 
+  /* villageois sélectionné : une flèche dorée rebondit au-dessus de sa tête */
+  if(SELV!=null && g.villager){
+    var sv = g.villager(SELV);
+    if(sv){
+      var kidS = g.stageOf && (g.stageOf(sv)==="child" || g.stageOf(sv)==="baby");
+      var bob = Math.round(Math.abs(Math.sin(now/220))*2);
+      spr("mark_"+(Math.floor(now/450)%2), sv.x*TS, sv.y*TS - (kidS ? 11 : 15) - bob);
+    }
+  }
   /* sélection */
   if(selId!=null){
     var sb = byId[selId];
@@ -1053,7 +1090,7 @@ function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
       for(var a1=0;a1<ph;a1++) for(var a2=0;a2<pw;a2++) SPR.draw(bx, "field_plow_"+((a1+a2)&1), gx0+a2*TS-OX, gy0+a1*TS+TS-OY);
       bx.globalAlpha = 1;
     } else {
-      var gn = buildingSprite(g, { def:buildSel, id:1, lvl:1, x:hover.tx, y:hover.ty, w:bd.w, h:bd.h, families:[1], exts:[], churchUp:[] }, winter, byId);
+      var gn = buildingSprite(g, { def:buildSel, id:1, lvl:1, x:hover.tx, y:hover.ty, w:bd.w, h:bd.h, preview:true, exts:[], churchUp:[] }, winter, byId);
       if(gn){ bx.globalAlpha = 0.7; spr(gn, gx0, gy0 + ph*TS); bx.globalAlpha = 1; }
     }
     corners(gx0, gy0, pw*TS, ph*TS, err ? "#e05a3a" : "#5ae06e");
@@ -1111,7 +1148,7 @@ function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
   if(Math.random() < 0.01) mem.forEach(function(v, k){ if(now - v.seen > 5000) mem.delete(k); });
 }
 
-return { drawGame:drawGame, setOverlay:function(o){ OV = o || null; }, snapZoom:snapZoom, stepZoom:stepZoom, stats:function(){ return { terrainPaintMs: T ? T.paintMs : null, sprites: SPR.count, atlasMs: SPR.buildMs }; } };
+return { drawGame:drawGame, setOverlay:function(o){ OV = o || null; }, setSelVillager:function(id){ SELV = (id===undefined ? null : id); }, lookOf:lookOf, snapZoom:snapZoom, stepZoom:stepZoom, stats:function(){ return { terrainPaintMs: T ? T.paintMs : null, sprites: SPR.count, atlasMs: SPR.buildMs }; } };
 })();
 
 /* points d'entrée utilisés par app.js */
