@@ -576,6 +576,9 @@ document.addEventListener("click", function(e){
     case "proclaim": { var pl = String(arg).split(":"), pe = g.proclaim(pl[0], Number(pl[1])); if(pe) flash(pe); break; }
     case "ennoble": { var en = g.ennoble(Number(arg)); if(en) flash(en); break; }
     case "office": if(ui.selV!=null){ var oe = g.setOffice(ui.selV, arg); if(oe) flash(oe); } break;
+    /* --- étape 7d : justice et audiences --- */
+    case "judge": { var jd = String(arg).split(":"), je = g.judge(Number(jd[0]), jd[1]); if(je) flash(je); break; }
+    case "petition": { var pt = String(arg).split(":"), pe2 = g.answer(Number(pt[0]), pt[1]==="1"); if(pe2) flash(pe2); break; }
     case "alms": { var al = g.giveAlms(); if(al) flash(al); break; }
     case "feast": { var fe = g.giveFeast(); if(fe) flash(fe); break; }
     case "borrow": { var be2 = g.borrow(LOAN_STEP); if(be2) flash(be2); break; }
@@ -783,6 +786,9 @@ function renderHud(g){
   var list = [["wood","Bûcherons au travail"],["happy","Approbation ≥ 50 % pendant 3 mois"],["pop","8 familles"],["manor","Un manoir achevé"]];
   var done = list.filter(function(o){ return ob[o[0]]; }).length;
   var l = "<button class='frame pill' data-act='obj'>"+ic("scroll","s")+"<b>Objectifs</b> <span class='"+(done===list.length?"good":"dim")+"'>"+done+"/"+list.length+"</span></button>";
+  /* étape 7d : affaires et pétitions qui attendent le seigneur */
+  var nj = g.cases.length + g.petitions.length;
+  if(nj) l += " <button class='frame pill' data-act='sheet' data-arg='justice'>"+ic("crown","s")+"<b>Audiences</b> <span class='gold'>"+nj+"</span></button>";
   if(ui.objOpen){
     l += "<div class='frame obj' data-act='obj'>";
     for(var i=0;i<list.length;i++) l += "<div class='"+(ob[list[i][0]]?"done":"")+"'>"+(ob[list[i][0]]?"✔":"○")+" "+list[i][1]+"</div>";
@@ -881,6 +887,7 @@ function renderSheet(g){
     else if(ui.sheet==="book") h = sheetBook(g);
     else if(ui.sheet==="council") h = sheetCouncil(g);
     else if(ui.sheet==="laws") h = sheetLaws(g);
+    else if(ui.sheet==="justice") h = sheetJustice(g);
     else if(ui.sheet==="menu") h = sheetMenu(g);
   }
   var key = (ui.cat||"")+"|"+ui.selId+"|"+ui.selV+"|"+(ui.sheet||"");
@@ -1538,6 +1545,7 @@ function sheetFisc(g){
   });
   h += "<button class='kv lnk' data-act='sheet' data-arg='book' style='margin-top:8px'><span class='k'>"+ic("scroll")+"Livre de comptes</span><span class='v'>›</span></button>";
   h += "<button class='kv lnk' data-act='sheet' data-arg='council'><span class='k'>"+ic("crown")+"Le conseil et la réputation</span><span class='v'>"+councilCount(g)+"/4 ›</span></button>";
+  h += "<button class='kv lnk' data-act='sheet' data-arg='justice'><span class='k'>"+ic("crown")+"Justice et audiences</span><span class='v'>"+(g.cases.length+g.petitions.length ? "<span class='gold'>"+(g.cases.length+g.petitions.length)+" en attente</span> " : "")+"›</span></button>";
   h += "<button class='kv lnk' data-act='sheet' data-arg='laws'><span class='k'>"+ic("scroll")+"Le coutumier (lois)</span><span class='v'>"+(Object.keys(g.lawPending).length ? "proclamation en cours " : "")+"›</span></button>";
   return h;
 }
@@ -1674,6 +1682,49 @@ function sheetLaws(g){
   return h;
 }
 
+/* ===== étape 7d : justice et audiences ===== */
+function famName(g, id){ var f = g.famById(id); return f ? esc(f.name) : "?"; }
+function sheetJustice(g){
+  var np = g.nextOf(PLAID_MONTHS);
+  var h = head(ic("crown","l"), "Justice et audiences", "Prochains plaids : "+MONTHS[np.month].toLowerCase()+(np.inMonths===12 ? " (ce mois-ci)" : ""));
+  h += "<div class='desc'>Jugez quand vous voulez, au plus tard aux plaids de la saison : une affaire laissée sans jugement fâche les deux familles. "
+     + (g.seatHolder("bailiff") ? "Votre bailli enquête : les preuves sont fiables à "+Math.round(g.proofAcc()*100)+" %." : "Sans bailli, les preuves sont incertaines (fiables à 60 %).")+"</div>";
+  h += "<div class='sec'>Affaires ("+g.cases.length+")</div>";
+  if(!g.cases.length) h += "<div class='dim' style='font-size:12px'>Aucune affaire en attente.</div>";
+  g.cases.forEach(function(c){
+    var d = CASE_DEFS[c.type], acc = c.v ? g.villager(c.v) : null;
+    h += "<div class='kv'><span class='k'><b>"+esc(d.name)+"</b></span><span class='v dim' style='font-weight:400'>avant "+MONTHS[c.until%12].toLowerCase()+"</span></div>";
+    var who = c.type==="border" ? famName(g, c.a)+" contre "+famName(g, c.b)
+      : c.type==="theft" ? famName(g, c.b)+" accuse "+(acc ? esc(g.fullName(acc)) : "?")
+      : c.type==="poach" ? (acc ? esc(g.fullName(acc)) : "?")+" ("+famName(g, c.a)+")"
+      : c.type==="debt" ? famName(g, c.a)+" réclame son dû à la "+famName(g, c.b).toLowerCase()
+      : "Un homme de la "+famName(g, c.a).toLowerCase()+" contre un de la "+famName(g, c.b).toLowerCase();
+    h += "<div class='desc' style='margin-bottom:4px'>"+esc(d.desc)+" "+who+"."+(c.proof ? " <b class='"+(c.proof==="solides"?"gold":"dim")+"'>Preuves "+c.proof+".</b>" : "")+"</div>";
+    var vs = d.verdicts.map(function(x){
+      var lbl = x.id==="a" ? "Raison aux "+esc(g.surnameOf(g.famById(c.a))) : x.id==="b" ? "Raison aux "+esc(g.surnameOf(g.famById(c.b))) : esc(x.name);
+      return "<button class='b"+(x.high ? " off" : "")+"' data-act='judge' data-arg='"+c.id+":"+x.id+"'><b>"+lbl+"</b>"+(x.high ? "<span>baron</span>" : "")+"</button>";
+    });
+    h += "<div class='lvls' style='grid-template-columns:repeat("+Math.min(3, vs.length)+",1fr)'>"+vs.join("")+"</div>";
+    var last = g.prec[c.type];
+    if(last!==undefined && d.accused) h += "<div class='dim' style='font-size:11px'>Précédent : la dernière fois, sur preuves solides, "+esc((d.verdicts.find(function(x){ return x.sev===last; })||{ name:"?" }).name.toLowerCase())+". Un revirement brutal choque le village.</div>";
+  });
+  h += "<div class='sec'>Pétitions ("+g.petitions.length+")</div>";
+  if(!g.petitions.length) h += "<div class='dim' style='font-size:12px'>Personne ne demande audience.</div>";
+  g.petitions.forEach(function(p){
+    var d = PETITION_DEFS[p.type], f = g.famById(p.f), v = p.v ? g.villager(p.v) : null;
+    h += "<div class='kv'><span class='k'><b>"+esc(d.name)+"</b> · "+famName(g, p.f)+"</span><span class='v dim' style='font-weight:400'>"+(f ? "opinion "+g.famOpinion(f) : "")+"</span></div>";
+    h += "<div class='desc' style='margin-bottom:4px'>"+esc(d.desc)+(p.amount ? " Elle demande "+p.amount+" deniers." : "")+(v ? " ("+esc(g.fullName(v))+", "+g.ageOf(v)+" ans)" : "")
+       + (p.type!=="freedom" ? " Accordée, la famille vous devra une faveur." : "")+"</div>";
+    h += "<div class='row'><button class='b' data-act='petition' data-arg='"+p.id+":1'>Accorder</button><button class='b' data-act='petition' data-arg='"+p.id+":0'>Refuser</button></div>";
+  });
+  var debtors = g.families.filter(function(f){ return (f.favor||0)>0; });
+  if(debtors.length){
+    h += "<div class='sec'>Faveurs dues</div><div class='chips'>"+debtors.map(function(f){ return "<span class='chip'>"+esc(g.surnameOf(f))+" · "+f.favor+"</span>"; }).join("")+"</div>"
+       + "<div class='dim' style='font-size:11px'>Une famille redevable accepte un verdict contre elle sans trop de rancune, ou reste au lieu de partir.</div>";
+  }
+  return h;
+}
+
 /* vue d'ensemble de la seigneurie */
 function sheetRealm(g){
   var homeless = g.families.filter(function(f){ return f.home<0; }).length;
@@ -1693,6 +1744,7 @@ function sheetRealm(g){
   h += "<div class='kv'><span class='k' style='padding-left:24px'>Bourgages libres</span><span class='v'>"+g.freeBurgages()+"</span></div>";
   if(homeless) h += "<div class='kv'><span class='k bad' style='padding-left:24px'>Sans logis</span><span class='v bad'>"+homeless+"</span></div>";
   h += "<div class='kv'><span class='k'>"+ic("crown")+"Influence</span><span class='v'>"+Math.floor(g.influence)+"</span></div>";
+  h += "<button class='kv lnk' data-act='sheet' data-arg='justice'><span class='k'>"+ic("crown")+"Justice et audiences</span><span class='v'>"+(g.cases.length+g.petitions.length)+" en attente ›</span></button>";
   h += "<button class='kv lnk' data-act='sheet' data-arg='laws'><span class='k'>"+ic("scroll")+"Coutumier et ordres</span><span class='v'>"+orderCounts(g)+" ›</span></button>";
   h += "<button class='kv lnk' data-act='sheet' data-arg='council'><span class='k'>"+ic("crown")+"Conseil et réputation</span><span class='v'>"+councilCount(g)+"/4"+g.repTitles().map(function(t){ return " · "+esc(t.name.toLowerCase()); }).join("")+" ›</span></button>";
   h += "<div class='kv'><span class='k'>"+ic("bag")+"Richesse régionale</span><span class='v'>"+Math.floor(g.wealth)+"</span></div>";
@@ -1857,7 +1909,7 @@ function modalHelp(){
   h += "<h3>Élevage</h3><p>Tracez un <b>pâturage</b> (tiroir Terres) comme une zone, n'importe où : la clôture coûte du bois, un abri se pose au bord. Achetez des moutons (laine en mai), des vaches (lait après le vêlage, les jeunes taureaux deviennent des bœufs) ou des porcs (glandée en forêt l'automne). Il faut un mâle pour les naissances et un <b>gardien</b> pour traire, tondre et soigner. L'herbe nourrit les bêtes du printemps à l'automne ; l'hiver, il faut du <b>foin</b> (pré de fauche, herbe en trop fauchée en juin, paille du battage) ou de l'avoine. Réglez l'<b>abattage de novembre</b> pour ne garder que ce que vous pourrez nourrir. Une maladie se propage dans un troupeau : abattre les bêtes malades l'arrête.</p>";
   h += "<h3>La carte et les régions</h3><p>Le pays est vaste : une rivière qu'on traverse aux <b>gués</b>, des lacs, de grandes forêts, et une vingtaine de <b>régions</b> aux frontières en pointillé doré. Vous commencez au Val du Cœur ; les terres assombries ne sont pas à vous : on n'y passe pas et on n'y bâtit pas. Ouvrez <b>Régions</b> (vue d'ensemble de la seigneurie) pour réclamer une région qui touche les vôtres, chacune avec son bonus. La minicarte, en haut à droite, vous emmène n'importe où d'un toucher.</p>";
   h += "<h3>Croissance</h3><p>Une approbation d'au moins 40 % et une maison libre attirent une nouvelle famille ; les jeunes couples du village qui vivent chez leurs parents passent avant. Les bourgages bien approvisionnés montent de niveau et débloquent des arrière-cours (potager, rucher, atelier…). Le <b>manoir</b> permet de lever l'impôt.</p>";
-  h += "<h3>Le fisc</h3><p>Dans le panneau du <b>manoir</b> : la <b>taille</b> (curseur) court chaque mois selon les maisons habitées et leur niveau, mais ne se lève qu'à <b>Pâques</b> (avril) et à la <b>Saint-Michel</b> (septembre) ; une seigneurie mécontente en cache une partie. La <b>dîme</b> (il faut une église) donne à l'Église une part des céréales et des pois récoltés, en octobre, contre de l'influence chaque mois. Les <b>péages</b> se lèvent chaque mois sur les marchands du marché et du comptoir. La <b>corvée</b> appelle, certains jours, les ouvriers des postes sur vos chantiers. Chaque redevance a son coût en approbation. Le <b>conseil</b> (facultatif) : intendant, bailli, chapelain, maître d'armes, chacun avec sa mission ; un intendant cupide détourne des deniers, faites vérifier ses comptes. Chaque famille se souvient de ce que vous lui faites (maison rasée, mort de faim, corvée, aumône, fête…) : touchez un villageois pour voir l'opinion de sa famille. Votre <b>réputation</b> (généreux, avare, craint) se fait au fil de vos choix. <b>Les trois ordres</b> : les familles arrivent <b>serves</b> (tâches de base, chantiers, corvée) ; quand leur maison atteint le niveau 2, elles entrent dans la <b>bourgeoisie</b> et peuvent tenir les métiers d'artisan (moulin, boulangerie, laiterie, fumoir, marché, comptoir) ; une famille d'une maison de niveau 3 peut être <b>anoblie</b> (influence) : elle ne travaille plus, sert à la cour, au clergé ou comme lettrée, ne paie pas la taille et mène grand train. Le <b>coutumier</b> (panneau du manoir) rassemble les lois : chasse, bois mort, port d'armes, couvre-feu, mainmorte, charte du bourg, taille des nobles. Touchez le <b>trésor</b>, en haut, pour le <b>livre de comptes</b> : recettes et dépenses poste par poste, prévision jusqu'au printemps, calendrier fiscal, et le <b>changeur</b> qui prête à 2 % par mois (trois échéances manquées : il saisit des biens).</p>";
+  h += "<h3>Le fisc</h3><p>Dans le panneau du <b>manoir</b> : la <b>taille</b> (curseur) court chaque mois selon les maisons habitées et leur niveau, mais ne se lève qu'à <b>Pâques</b> (avril) et à la <b>Saint-Michel</b> (septembre) ; une seigneurie mécontente en cache une partie. La <b>dîme</b> (il faut une église) donne à l'Église une part des céréales et des pois récoltés, en octobre, contre de l'influence chaque mois. Les <b>péages</b> se lèvent chaque mois sur les marchands du marché et du comptoir. La <b>corvée</b> appelle, certains jours, les ouvriers des postes sur vos chantiers. Chaque redevance a son coût en approbation. Le <b>conseil</b> (facultatif) : intendant, bailli, chapelain, maître d'armes, chacun avec sa mission ; un intendant cupide détourne des deniers, faites vérifier ses comptes. Chaque famille se souvient de ce que vous lui faites (maison rasée, mort de faim, corvée, aumône, fête…) : touchez un villageois pour voir l'opinion de sa famille. Votre <b>réputation</b> (généreux, avare, craint) se fait au fil de vos choix. <b>Les trois ordres</b> : les familles arrivent <b>serves</b> (tâches de base, chantiers, corvée) ; quand leur maison atteint le niveau 2, elles entrent dans la <b>bourgeoisie</b> et peuvent tenir les métiers d'artisan (moulin, boulangerie, laiterie, fumoir, marché, comptoir) ; une famille d'une maison de niveau 3 peut être <b>anoblie</b> (influence) : elle ne travaille plus, sert à la cour, au clergé ou comme lettrée, ne paie pas la taille et mène grand train. <b>Justice et audiences</b> : des affaires (bornage, vol, braconnage, dette, rixe) et des pétitions (prêt, exemption, affranchissement, dispense de corvée, mariage au dehors) arrivent au fil des mois ; le bouton « Audiences » apparaît sur la carte. Jugez avant les plaids de la saison ; sans bailli, les preuves sont incertaines et l'on peut condamner un innocent. Une faveur accordée rend la famille redevable. Le <b>coutumier</b> (panneau du manoir) rassemble les lois : chasse, bois mort, port d'armes, couvre-feu, mainmorte, charte du bourg, taille des nobles. Touchez le <b>trésor</b>, en haut, pour le <b>livre de comptes</b> : recettes et dépenses poste par poste, prévision jusqu'au printemps, calendrier fiscal, et le <b>changeur</b> qui prête à 2 % par mois (trois échéances manquées : il saisit des biens).</p>";
   h += "<h3>Commandes</h3><p>Glisser pour déplacer · pincer ou molette pour zoomer · toucher un bâtiment pour l'ouvrir · <b>appui long</b> pour annuler · toucher la minimap pour s'y rendre. Le bandeau des réserves et la date ouvrent le détail. Au clavier : Espace = pause, 1/2/3/4 = vitesse (×1, ×4, ×16, ×60), ZQSD = caméra, Échap = annuler.</p>";
   h += "<h3>Sauvegarde</h3><p>Automatique sur cet appareil (3 emplacements). Le menu permet de copier un code pour continuer sur un autre appareil.</p>";
   return h + "<button class='b gold wide' data-act='modalclose'>Compris</button>";

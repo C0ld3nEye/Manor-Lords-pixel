@@ -2853,7 +2853,7 @@ test("étape 7b : sauvegarde — conseil, réputation, souvenirs ; un siège mal
   for(const x of old.villagers) delete x.seat;
   const g4 = GameState.load(old);
   assert.ok(SEAT_ORDER.every(id=>g4.council[id].vid===-1));
-  assert.deepStrictEqual(g4.rep, { gen:0, sev:0 });
+  assert.deepStrictEqual(g4.rep, { gen:0, sev:0, just:0 });
 });
 
 /* ================= étape 7c : les ordres et le coutumier ================= */
@@ -2949,6 +2949,67 @@ test("étape 7c : sauvegarde — lois et ordres gardés ; une partie d'avant gar
   assert.strictEqual(g3.families[1].ord, "bourg", "le meunier d'avant reste meunier");
   assert.strictEqual(g3.families[2].ord, "serf");
   assert.strictEqual(g3.law("curfew"), 0);
+});
+
+/* ================= étape 7d : justice et audiences ================= */
+const { CASE_DEFS, FREEDOM_PRICE } = require("../js/sim.js");
+
+test("étape 7d : une affaire de vol — condamner un innocent laisse une rancune, la haute justice est verrouillée", () => {
+  const g = fresh();
+  g.rnd = (()=>{ let i=0; const seq=[0.0, 0.1, 0.9, 0.9]; return ()=>seq[i++%seq.length]; })();
+  let c = null;
+  for(let k=0;k<20 && !c;k++){ const x = g.newCase(); if(x && x.type==="theft") c = x; else if(x) g.cases = []; }
+  if(!c){ c = { id:g.nextCase++, type:"theft", a:g.families[0].id, b:g.families[1].id, until:g.nextPlaid(), v:g.membersOf(g.families[0].id).find(v=>g.isAdult(v)).id, guilty:false, proof:"minces" }; g.cases.push(c); }
+  c.guilty = false;
+  assert.ok(/baron/.test(g.judge(c.id, "hang")), "pas de haute justice");
+  const fa = g.famById(c.a), j0 = g.rep.just;
+  assert.strictEqual(g.judge(c.id, "fine"), null);
+  assert.ok(fa.mem.some(x=>/à tort/.test(x.t)), "condamné à tort");
+  assert.ok(g.rep.just < j0);
+  assert.strictEqual(g.book.cur.fines, 5);
+  assert.strictEqual(g.cases.length, 0);
+});
+
+test("étape 7d : une affaire non jugée aux plaids est close au détriment des deux familles", () => {
+  const g = fresh();
+  const c = { id:g.nextCase++, type:"border", a:g.families[0].id, b:g.families[1].id, until:g.monthIdx()-1, right:"a" };
+  g.cases.push(c);
+  g.rnd = ()=>0.99;
+  g.justiceMonth(g.time.month);
+  assert.strictEqual(g.cases.length, 0);
+  assert.ok(g.families[0].mem.some(x=>x.k==="case"+c.id && x.v<0));
+});
+
+test("étape 7d : pétitions — l'affranchissement fait un bourgeois ; une faveur due retient une famille qui voulait partir", () => {
+  const g = fresh(); houses(g, 3);
+  const f = g.families[1];
+  g.petitions.push({ id:g.nextCase++, type:"freedom", f:f.id, until:g.monthIdx()+2 });
+  const t0 = g.treasury;
+  assert.strictEqual(g.answer(g.petitions[0].id, true), null);
+  assert.strictEqual(f.ord, "bourg");
+  assert.strictEqual(g.treasury, t0 + FREEDOM_PRICE);
+  g.petitions.push({ id:g.nextCase++, type:"loan", f:f.id, until:g.monthIdx()+2, amount:8 });
+  g.treasury = 20;
+  g.answer(g.petitions[0].id, true);
+  assert.strictEqual(f.favor, 1, "elle vous doit une faveur");
+  for(const x of g.families) x.founder = false;
+  g.addMem(f, "x", "Grief", -90, 0); f.sour = 2;
+  g.time.month = 4; g.onMonth(); g.pendingEvent = null;
+  assert.ok(g.families.includes(f), "elle reste");
+  assert.strictEqual(f.favor, 0, "faveur soldée");
+});
+
+test("étape 7d : sauvegarde des affaires, pétitions et précédents", () => {
+  const g = fresh();
+  g.cases.push({ id:3, type:"debt", a:g.families[0].id, b:g.families[1].id, until:g.monthIdx()+2 });
+  g.petitions.push({ id:4, type:"exempt", f:g.families[2].id, until:g.monthIdx()+2 });
+  g.prec.theft = 2; g.nextCase = 5; g.families[0].favor = 2;
+  const g2 = GameState.load(JSON.parse(JSON.stringify(g.serialize())));
+  assert.deepStrictEqual(g2.cases, g.cases);
+  assert.deepStrictEqual(g2.petitions, g.petitions);
+  assert.deepStrictEqual(g2.prec, { theft:2 });
+  assert.strictEqual(g2.nextCase, 5);
+  assert.strictEqual(g2.families[0].favor, 2);
 });
 
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));
