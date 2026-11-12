@@ -1294,6 +1294,250 @@ function fruitTree(season){
 }
 
 /* ======================================================
+   COURS HABILLÉES : l'agrandissement d'un bourgage occupe toute l'arrière-cour.
+   Tuiles de sol (16 × 16, transparentes sur les bords : l'herbe de la cour fait les allées)
+   et petits objets posés dessus. Saisons : 0 hiver, 1 printemps, 2 été, 3 automne.
+   ====================================================== */
+/* planche de potager : terre bêchée, bordure de plessis, trois rangs ; v = 0 choux, 1 poireaux et
+   oignons, 2 racines (courges à l'automne), 3 herbes et fleurs */
+function gardenBed(season, v){
+  var o = new Px(16, 16), x, y, k;
+  for(y=2;y<14;y++) for(x=2;x<14;x++){
+    var n = hash(x, y, 90+v), row = (y-2)%4;
+    o.p(x, y, row===3 ? P.dt0 : (n<0.12 ? P.dt0 : n>0.88 ? P.dt2 : P.dt1));
+  }
+  // plessis : bordure d'osier tressé, claire en haut et à gauche
+  for(k=1;k<15;k++){
+    o.p(k, 1, (k&1) ? P.wood3 : P.wood4); o.p(k, 14, (k&1) ? P.wood1 : P.wood2);
+    o.p(1, k, (k&1) ? P.wood3 : P.wood2); o.p(14, k, (k&1) ? P.wood1 : P.wood0);
+  }
+  var rows = [4, 8, 12];
+  if(season===0){
+    for(y=2;y<14;y++) for(x=2;x<14;x++) if((y-2)%4!==3 || hash(x,y,95)<0.5) o.p(x, y, hash(x,y,96)<0.2 ? P.sn1 : P.sn2);
+    if(v===0) for(k=0;k<3;k++) for(x=3;x<13;x+=4){ o.p(x, rows[k]-1, "#5f7a6a"); o.p(x+1, rows[k]-1, "#7a9484"); }   // chou d'hiver
+    return o;
+  }
+  for(k=0;k<3;k++){
+    y = rows[k];
+    if(season===1){                                          // printemps : les semis lèvent
+      for(x=3;x<13;x+=2){ o.p(x, y-1, "#7fbf52"); if(hash(x,y,97+v)<0.5) o.p(x+1, y-1, "#5a9140"); }
+      continue;
+    }
+    if(v===0){                                               // choux pommés
+      for(x=3;x<13;x+=4){
+        var cc = season===3 ? ["#3e6a52","#5f8a6a","#8ab094"] : ["#3f7238","#5a9140","#9ccc6a"];
+        o.p(x, y-2, cc[1]); o.p(x+1, y-2, cc[1]); o.p(x-1, y-1, cc[0]); o.p(x, y-1, cc[2]); o.p(x+1, y-1, cc[2]); o.p(x+2, y-1, cc[0]);
+        o.p(x, y, cc[0]); o.p(x+1, y, cc[0]);
+      }
+    } else if(v===1){                                        // poireaux, oignons
+      for(x=3;x<13;x+=2){
+        if(season===3 && hash(x,y,98)<0.4) continue;         // déjà arrachés
+        var lf = season===3 ? "#a8a048" : "#6aa64a";
+        o.p(x, y-3, lf); o.p(x, y-2, season===3 ? "#7a8a3a" : "#4e8c40"); o.p(x, y-1, P.linen); o.p(x, y, P.linen0);
+        if(hash(x,y,99)<0.5) o.p(x+1, y-3, lf);
+      }
+    } else if(v===2){
+      if(season===3){                                        // courges dans leurs feuilles
+        for(x=2;x<14;x++) if(hash(x,y,100)<0.55) o.p(x, y-1, "#4a7a36");
+        for(x=3;x<13;x+=5){ o.r(x, y-2, 3, 2, "#d8782a"); o.p(x, y-2, "#f0a040"); o.p(x+1, y-3, "#4a7a36"); o.p(x+2, y-1, "#a85420"); }
+      } else {                                               // fanes de carottes, navets
+        for(x=3;x<13;x+=2){
+          o.p(x, y-2, "#8cc46a"); o.p(x-1, y-1, "#5a9140"); o.p(x+1, y-1, "#5a9140"); o.p(x, y-1, "#6aa64a");
+          if(hash(x,y,101)<0.35) o.p(x, y, "#d8782a");
+        }
+      }
+    } else {                                                 // herbes et fleurs (sauge, souci, bourrache)
+      for(x=2;x<14;x+=3){
+        o.p(x, y-1, "#4e8c40"); o.p(x+1, y-1, "#5a9140"); o.p(x, y-2, "#6aa64a"); o.p(x+1, y-2, "#4e8c40");
+        var fl = season===3 ? "#a87a3a" : ["#9a7ac8","#e8c040","#e6e6f0","#6a8ad0"][Math.floor(hash(x,y,102)*4)];
+        o.p(x + (hash(x,y,103)<0.5 ? 0 : 1), y-3, fl);
+      }
+    }
+  }
+  return o;
+}
+/* épouvantail : 9 × 15, pied à (4, 15) */
+function scarecrow(){
+  var o = S(9, 15, 4, 15);
+  o.r(4, 4, 1, 11, P.wood2); o.p(4, 14, P.wood1);
+  o.r(0, 6, 9, 1, P.wood2);
+  o.r(2, 6, 5, 5, P.red1); o.r(2, 6, 5, 1, P.red2); o.p(3, 9, P.red0); o.p(5, 8, P.linen0);   // chemise rapiécée
+  o.p(1, 7, P.th3); o.p(7, 7, P.th3); o.p(2, 11, P.th3); o.p(6, 11, P.th2);                    // la paille dépasse
+  o.r(3, 3, 3, 3, P.linen0); o.p(3, 4, P.ink); o.p(5, 4, P.ink);                                // tête en sac
+  o.r(1, 2, 7, 1, P.th2); o.r(3, 0, 3, 2, P.th3); o.p(4, 0, P.th4);                              // chapeau de paille
+  o.outline(C(P.ink));
+  return o;
+}
+/* rames de haricots en faisceau : 9 × 14, pied à (4, 14) */
+function beanPoles(season){
+  var o = S(9, 14, 4, 14);
+  o.ln(1, 13, 4, 1, P.wood2); o.ln(7, 13, 4, 1, P.wood1); o.ln(4, 13, 4, 0, P.wood3);
+  if(season===0){ o.p(4, 0, P.sn3); o.p(3, 2, P.sn2); return o; }
+  var n = season===1 ? 0.25 : 0.7, leaf = season===3 ? ["#8a7a2a","#a8903a"] : ["#3f7238","#5a9140"];
+  for(var y=2;y<14;y++) for(var x=0;x<9;x++){
+    if(!o.g(x, y) && !o.g(x-1, y) && !o.g(x+1, y)) continue;
+    if(hash(x, y, 110) < n) o.p(x, y, leaf[(x+y)&1]);
+  }
+  if(season===2){ var pods = [[2,9],[6,8],[3,5],[5,11]]; for(var k=0;k<pods.length;k++) o.p(pods[k][0], pods[k][1], k&1 ? "#e6e6f0" : "#c84a3a"); }
+  return o;
+}
+/* arbre fruitier adulte : 14 × 18, pied à (7, 18) ; v = 0 pommier, 1 poirier */
+function fruitTreeBig(season, v){
+  var o = S(14, 18, 7, 18);
+  trunk(o, 6, 10, 17, 2);
+  if(season===0){
+    o.ln(6, 11, 2, 6, P.wood1); o.ln(7, 11, 11, 5, P.wood1); o.ln(7, 10, 7, 3, P.wood2); o.ln(3, 7, 1, 5, P.wood1); o.ln(10, 6, 12, 4, P.wood1);
+    o.p(2, 5, P.sn3); o.p(11, 4, P.sn3); o.p(7, 2, P.sn3); o.p(1, 4, P.sn2);
+    o.outline(C(P.ink));
+    return o;
+  }
+  var ramp = LEAF.oak[season===3 ? 2 : season];   // à l'automne, le feuillage tient encore : les fruits se voient
+  canopy(o, 7, 6.5, 5.5, 4.8, ramp, 720+v*13+season, 0.3);
+  o.outline(C(mix(ramp[0], P.ink, 0.45)));
+  var spots = [[4,5],[9,4],[7,8],[3,8],[10,8],[6,3],[11,6],[5,10],[8,10]];
+  var fruit = v ? ["#c8c040","#e0d860"] : ["#c8302a","#e8503a"];
+  for(var i=0;i<spots.length;i++){
+    var sx = spots[i][0], sy = spots[i][1];
+    if(!o.g(sx, sy)) continue;
+    if(season===1){ o.p(sx, sy, i&1 ? "#f6e6ee" : "#f0c8d8"); if(i<5) o.p(sx+1, sy, "#ffffff"); }
+    else if(season===2 && i<5) o.p(sx, sy, v ? "#9ab040" : "#8aa040");                // fruits encore verts
+    else if(season===3){ o.p(sx, sy, fruit[1]); o.p(sx, sy+1, fruit[0]); }
+  }
+  return o;
+}
+/* sol du verger : herbe plus haute, pétales au printemps, fruits tombés à l'automne */
+function orchardGround(season, v){
+  var o = new Px(16, 16);
+  for(var k=0;k<14;k++){
+    var x = 1+Math.floor(hash(k,v,120)*14), y = 1+Math.floor(hash(k,v,121)*14);
+    if(season===0){ if(k<4) o.p(x, y, "#8a9a7c"); continue; }
+    o.p(x, y, season===3 ? "#7a6a2a" : "#3f7238"); o.p(x, y-1, season===3 ? "#9a8a3a" : "#5a9140");
+  }
+  for(var j=0;j<6;j++){
+    var fx = 2+Math.floor(hash(j,v,122)*12), fy = 9+Math.floor(hash(j,v,123)*6);
+    if(season===1) o.p(fx, fy, "#f6e6ee");
+    else if(season===3){ o.p(fx, fy, v&1 ? "#c8c040" : "#c8302a"); if(j<3) o.p(fx+1, fy-1, "#d8902c"); }
+  }
+  return o;
+}
+/* poulailler sur pilotis, avec sa rampe : 16 × 14, pied à (6, 14) */
+function coop(){
+  var o = S(16, 14, 6, 14);
+  o.r(2, 10, 1, 4, P.wood1); o.r(10, 10, 1, 4, P.wood1);                    // pilotis
+  wall(o, 2, 5, 9, 5, "plank", 0);
+  o.r(5, 7, 2, 3, P.ink);                                                  // trappe
+  roofHip(o, 0, 12, 1, 5, 2, "thatch", { seed:5 });
+  o.ln(7, 10, 12, 13, P.wood3); o.ln(7, 11, 12, 14, P.wood1);              // rampe
+  o.p(9, 12, P.wood2); o.p(11, 13, P.wood2);
+  o.outline(C(P.ink));
+  return o;
+}
+/* terre grattée par les poules : paille, plumes, grain */
+function peckedGround(v){
+  var o = new Px(16, 16);
+  o.el(8, 9, 6.5, 5, function(nx, ny, x, y){
+    var e = nx*nx + ny*ny, n = hash(x, y, 130+v);
+    if(e > 0.75 + (n-0.5)*0.6) return 0;
+    return n<0.15 ? P.dt3 : n<0.75 ? P.dt2 : P.dt1;
+  });
+  for(var k=0;k<7;k++){
+    var x = 2+Math.floor(hash(k,v,131)*12), y = 4+Math.floor(hash(k,v,132)*10);
+    if(!o.g(x, y)) continue;
+    o.p(x, y, k<3 ? P.th3 : k<5 ? "#d8b860" : "#f0ece0");
+    if(k<3) o.p(x+1, y, P.th2);
+  }
+  return o;
+}
+/* auge à grain : 8 × 4, pied à (4, 4) */
+function trough(){
+  var o = S(8, 4, 4, 4);
+  o.r(0, 1, 8, 3, P.wood2); o.r(1, 1, 6, 1, "#d8b860"); o.r(0, 3, 8, 1, P.wood1);
+  o.outline(C(P.ink));
+  return o;
+}
+/* trois ruches de paille sur un banc : 16 × 9, pied à (8, 9) */
+function skepBench(){
+  var o = S(16, 9, 8, 9);
+  o.r(1, 6, 14, 1, P.wood3); o.r(1, 7, 14, 1, P.wood1); o.r(2, 8, 1, 1, P.wood1); o.r(13, 8, 1, 1, P.wood1);
+  for(var k=0;k<3;k++){
+    var cx = 3 + k*5;
+    o.el(cx, 3.5, 2.3, 2.6, function(nx, ny, x, y){ return ny>0.75 ? 0 : (y%2 ? P.th2 : (nx<0 ? P.th4 : P.th3)); });
+    o.p(cx, 5, P.ink);
+  }
+  o.outline(C(P.ink));
+  return o;
+}
+/* parterre fleuri pour les abeilles : lavande, bourrache, souci, coquelicots */
+function flowerBed(season, v){
+  var o = new Px(16, 16);
+  var cols = ["#9a7ac8","#8a6ab8","#6a8ad0","#e8c040","#d84a3a","#f0ece0"];
+  for(var k=0;k<18;k++){
+    var x = 1+Math.floor(hash(k,v,140)*14), y = 2+Math.floor(hash(k,v,141)*13);
+    if(season===0){ if(k<5) o.p(x, y, "#8a7a5a"); continue; }
+    o.p(x, y, season===3 ? "#7a6a2a" : "#3f7238"); o.p(x, y-1, season===3 ? "#9a8a3a" : "#5a9140");
+    if(season===2 || (season===1 && k%3===0)) o.p(x, y-2, cols[Math.floor(hash(k,v,142)*cols.length)]);
+    else if(season===3 && k%4===0) o.p(x, y-2, "#a87a3a");
+  }
+  return o;
+}
+/* perche à houblon, la liane enroulée tout du long : 7 × 20, pied à (3, 20) */
+function hopPole(season, v){
+  var o = S(7, 20, 3, 20);
+  o.r(3, 0, 1, 20, P.wood2); o.p(3, 0, P.wood3);
+  if(season===0){ o.p(3, 0, P.sn3); o.p(2, 19, P.wood1); o.p(4, 19, P.wood1); return o; }
+  var top = season===1 ? 10 : 1, leaf = season===3 ? ["#6a6a26","#8a8a32","#a8a040"] : ["#2e5a2c","#3f7238","#5a9140"];
+  for(var y=top; y<20; y++){
+    var w = y<top+2 ? 1 : 2 + ((hash(0, y, 150+v) < 0.5) ? 1 : 0);
+    for(var x=3-w; x<=3+w; x++){
+      if(Math.abs(x-3)===w && hash(x, y, 151+v) < 0.4) continue;
+      var sh = x<3 ? 2 : x>3 ? 0 : 1;
+      o.p(x, y, leaf[Math.max(0, Math.min(2, sh + (hash(x, y, 152+v) < 0.3 ? -1 : 0)))]);
+    }
+    if((season===2 || season===3) && y>top+1 && hash(y, v, 153) < 0.35){        // cônes de houblon
+      var cx = hash(y, v, 154) < 0.5 ? 1 : 5;
+      o.p(cx, y, season===3 ? "#d8c060" : "#c8dc8a"); o.p(cx, y+1, season===3 ? "#b8a040" : "#a8c070");
+    }
+  }
+  o.outline(C(mix(leaf[0], P.ink, 0.5)));
+  return o;
+}
+/* tonneaux empilés : 11 × 11, pied à (5, 11) */
+function barrelStack(){
+  var o = S(11, 11, 5, 11);
+  function bar(x, y){ o.r(x, y, 5, 5, P.wood3); o.r(x, y, 5, 1, P.wood2); o.r(x, y+1, 5, 1, P.st2); o.r(x, y+3, 5, 1, P.st2); o.r(x+4, y, 1, 5, P.wood1); o.p(x+1, y+2, P.wood4); }
+  bar(0, 6); bar(6, 6); bar(3, 1);
+  o.outline(C(P.ink));
+  return o;
+}
+/* cuve de teinturier : 8 × 6, pied à (4, 6) */
+function dyeVat(col){
+  var o = S(8, 6, 4, 6);
+  o.r(0, 1, 8, 5, P.wood2); o.r(0, 3, 8, 1, P.st2); o.r(7, 1, 1, 5, P.wood1);
+  o.r(1, 1, 6, 1, col); o.p(2, 1, mix(col, "#ffffff", 0.3));
+  o.p(5, 0, P.wood3); o.p(6, -1, P.wood3);
+  o.outline(C(P.ink));
+  return o;
+}
+/* gerbes de lin qui sèchent, en faisceau : 6 × 9, pied à (3, 9) */
+function flaxStook(){
+  var o = S(6, 9, 3, 9);
+  o.ln(1, 8, 3, 0, P.th2); o.ln(5, 8, 3, 0, P.th1); o.ln(3, 8, 3, 0, P.th3);
+  o.ln(2, 8, 3, 1, P.th3); o.ln(4, 8, 3, 1, P.th2); o.r(1, 4, 5, 1, P.wood1);
+  o.outline(C(P.ink));
+  return o;
+}
+/* terre battue derrière la maison (allée, coin de travail) */
+function yardDirt(v){
+  var o = new Px(16, 16);
+  o.el(8, 8, 6.5, 6, function(nx, ny, x, y){
+    var e = nx*nx + ny*ny, n = hash(x, y, 160+v);
+    if(e > 0.7 + (n-0.5)*0.7) return 0;
+    return n<0.2 ? P.dt3 : n<0.8 ? P.dt2 : P.dt1;
+  });
+  return o;
+}
+
+/* ======================================================
    CHAMPS (tuiles 16 × 16 posées au sol)
    stage : 0 labouré, 1 semé, 2 pousses, 3 jeune, 4 haut, 5 mûrissant, 6 mûr
    ====================================================== */
@@ -1800,6 +2044,15 @@ function build(){
   addLR("ox_0", ox(0)); addLR("ox_1", ox(1));
   for(k=0;k<2;k++){ addLR("chick_0_"+k, chicken(k,false)); addLR("chick_1_"+k, chicken(k,true)); }
   add("skep", skep()); add("barrel", barrel()); add("cloth", clothLine());
+  /* cours habillées */
+  for(s=0;s<4;s++){
+    for(v=0;v<4;v++) add("bed_"+s+"_"+v, gardenBed(s, v));
+    for(v=0;v<2;v++){ add("bean_"+s+"_"+v, beanPoles(s)); add("ftree_"+s+"_"+v, fruitTreeBig(s, v)); add("orch_"+s+"_"+v, orchardGround(s, v)); add("flowers_"+s+"_"+v, flowerBed(s, v)); add("hop_"+s+"_"+v, hopPole(s, v)); }
+  }
+  add("scarecrow", scarecrow()); addW("coop", coop()); add("trough", trough()); add("skepbench", skepBench());
+  add("barrels", barrelStack()); add("vat_0", dyeVat("#3a5a9a")); add("vat_1", dyeVat("#a83a3a")); add("flax", flaxStook());
+  for(v=0;v<2;v++){ add("pecked_"+v, peckedGround(v)); add("yarddirt_"+v, yardDirt(v)); }
+  add("sh_ftree", shadowEll(13, 4, 4, 2)); add("sh_small", shadowEll(9, 3, 3, 2));
   /* effets */
   for(k=0;k<3;k++){ add("fire_"+k, fire(k)); add("flag_"+k, flag(k)); add("flagb_"+k, flag(k, P.blue1)); }
   add("smoke_0", smoke(0)); add("smoke_1", smoke(1));
@@ -1864,7 +2117,7 @@ var api = { P:P, C:C, mix:mix, hash:hash, rng:rng, bayer:bayer, Px:Px, LEAF:LEAF
     farm:farm, windmillBody:windmillBody, bakery:bakery, dairy:dairy, smokehouse:smokehouse, windmillSails:windmillSails, market:market, trade:trade,
     church:church, manor:manor, scaffold:scaffold, materials:materials,
     person:person, toolSprite:toolSprite, carrySprite:carrySprite, soldier:soldier, deer:deer, ox:ox, chicken:chicken,
-    skep:skep, vegPatch:vegPatch, barrel:barrel, clothLine:clothLine, fruitTree:fruitTree,
+    skep:skep, vegPatch:vegPatch, gardenBed:gardenBed, fruitTreeBig:fruitTreeBig, coop:coop, skepBench:skepBench, hopPole:hopPole, scarecrow:scarecrow, beanPoles:beanPoles, barrel:barrel, clothLine:clothLine, fruitTree:fruitTree,
     fieldTile:fieldTile, stubbleTile:stubbleTile, sheaf:sheaf, banditCamp:banditCamp, fire:fire, flag:flag,
     cropTile:cropTile, meadowTile:meadowTile, dungTile:dungTile, haycock:haycock, sheepSprite:sheepSprite, cowSprite:cowSprite,
     pigSprite:pigSprite, shelter:shelter,

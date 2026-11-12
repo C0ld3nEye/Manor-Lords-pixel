@@ -230,7 +230,9 @@ function paintTerrain(g, tx0, ty0, tx1, ty1){
         if(!inMap){
           var dx = Math.max(0, -px, px-(W*TS-1)), dy = Math.max(0, -py, py-(H*TS-1));
           var dist = Math.sqrt(dx*dx + dy*dy);
-          col = mixU(shadeU(col, 0.8, 0.3), BGU, Math.min(0.92, 0.38 + dist/(M*TS*0.75)));
+          var fo = Math.min(0.92, 0.38 + dist/(M*TS*0.75)), fe = (dist - (M*TS - 32))/32;
+          if(fe > 0) fo += (1 - fo)*Math.min(1, fe);          // les deux dernières cases se fondent dans le noir
+          col = mixU(shadeU(col, 0.8, 0.3), BGU, fo);
         }
         d[ci] = col;
       }
@@ -303,7 +305,8 @@ function paintMarginTrees(tx0, ty0, tx1, ty1, x0, y0, x1, y1){
     var bx = tx*TS + 3 + Math.floor(hash(tx,ty,125)*10) - spr.ax;
     var by = ty*TS + 10 + Math.floor(hash(tx,ty,126)*6) - spr.ay;
     var ddx = Math.max(0, -tx, tx-(W-1)), ddy = Math.max(0, -ty, ty-(H-1));
-    var dark = Math.min(0.9, 0.42 + Math.sqrt(ddx*ddx+ddy*ddy)/(M*0.75));
+    var dd = Math.sqrt(ddx*ddx+ddy*ddy), dark = Math.min(0.9, 0.42 + dd/(M*0.75));
+    if(dd > M-3) dark += (1 - dark)*Math.min(1, (dd - (M-3))/2.5);
     for(var y=0;y<spr.h;y++) for(var x=0;x<spr.w;x++){
       var c = spr.d[y*spr.w+x]; if(!c) continue;
       var X = bx+x, Y = by+y;
@@ -387,10 +390,22 @@ function newChunk(ci, cj){
   var c = document.createElement("canvas"); c.width = CPX; c.height = CPX;
   return { ci:ci, cj:cj, c:c, cx:c.getContext("2d"), season:-1, rk:"", water:[], used:0, ready:false };
 }
+/* Les morceaux du bord droit et du bas dépassent la marge (la carte + marges ne fait pas un nombre
+   entier de morceaux) : la partie qui n'est pas peinte est remplie du fond, sinon le tampon partagé
+   y laisserait les pixels du morceau peint juste avant (la bande d'herbe verte au bord de la carte). */
+function clearBeyond(d, r){
+  var pw = (r.tx1 - r.tx0 + 1)*TS, ph = (r.ty1 - r.ty0 + 1)*TS;
+  if(pw >= CPX && ph >= CPX) return;
+  for(var y=0; y<CPX; y++){
+    if(y >= ph){ d.fill(BGU, y*CPX, (y+1)*CPX); continue; }
+    if(pw < CPX) d.fill(BGU, y*CPX + pw, (y+1)*CPX);
+  }
+}
 /* peint un morceau entier tout de suite (il entre dans la vue et n'a jamais été peint) */
 function paintChunkNow(g, ch){
   var t0 = performance.now(), r = chunkTiles(ch.ci, ch.cj), ox = r.tx0*TS, oy = r.ty0*TS;
   ch.water = [];
+  clearBeyond(T.sd, r);
   target(T.sd, CPX, ox, oy, ch.water);
   paintTerrain(g, r.tx0, r.ty0, r.tx1, r.ty1);
   paintMarginTrees(r.tx0, r.ty0, r.tx1, r.ty1, ox, oy, ox+CPX, oy+CPX);
@@ -405,7 +420,7 @@ function paintChunkNow(g, ch){
 function stepJob(g, budget){
   var J = T.job; if(!J) return;
   var ch = J.ch, r = chunkTiles(ch.ci, ch.cj), ox = r.tx0*TS, oy = r.ty0*TS, t0 = performance.now();
-  if(J.row===r.ty0){ J.water = []; }
+  if(J.row===r.ty0){ J.water = []; clearBeyond(T.jd, r); }
   target(T.jd, CPX, ox, oy, J.water);
   while(J.row <= r.ty1 && performance.now() - t0 < budget){ paintTerrain(g, r.tx0, J.row, r.tx1, J.row); J.row++; }
   if(J.row > r.ty1){
@@ -860,42 +875,116 @@ function drawPolyFence(g, poly, dir, a, rail, post){
   bx.globalAlpha = 1;
 }
 function drawPlotGround(g, b, season, winter){
-  var cells = b.plot.cells, garden = b.done && b.exts && b.exts[0]==="garden" ? yardSpots(b) : [], k;
-  if(b.plot.poly){
-    fillPoly(b.plot.poly, winter ? "rgba(255,255,255,0.10)" : "rgba(70,96,34,0.18)");
-    for(k=0; k<garden.length; k++) spr("veg_"+season, cellX(garden[k])+8, cellY(garden[k])+12);
-    drawPolyFence(g, b.plot.poly, b.plot.dir, b.done ? 1 : 0.4, WOOD_A, WOOD_B);
-    return;
+  var cells = b.plot.cells, k;
+  if(b.plot.poly) fillPoly(b.plot.poly, winter ? "rgba(255,255,255,0.10)" : "rgba(70,96,34,0.18)");
+  else {
+    bx.fillStyle = winter ? "rgba(255,255,255,0.10)" : "rgba(70,96,34,0.18)";
+    for(k=1; k<cells.length; k++) bx.fillRect(cellX(cells[k])-OX, cellY(cells[k])-OY, TS, TS);
   }
-  bx.fillStyle = winter ? "rgba(255,255,255,0.10)" : "rgba(70,96,34,0.18)";
-  for(var k=1; k<cells.length; k++) bx.fillRect(cellX(cells[k])-OX, cellY(cells[k])-OY, TS, TS);
-  for(k=0; k<garden.length; k++) spr("veg_"+season, cellX(garden[k])+8, cellY(garden[k])+12);
-  drawFences(g.plotFences(b), b.done ? 1 : 0.4, WOOD_A, WOOD_B);
+  if(b.done) drawYardGround(b, season);
+  if(b.plot.poly) drawPolyFence(g, b.plot.poly, b.plot.dir, b.done ? 1 : 0.4, WOOD_A, WOOD_B);
+  else drawFences(g.plotFences(b), b.done ? 1 : 0.4, WOOD_A, WOOD_B);
 }
-/* étape 3 : l'unique agrandissement remplit l'arrière-cour, à la mesure de sa taille
-   (un élément pour ~2 cases, 5 au plus, répartis sur toute la cour) */
+/* ---- arrière-cour d'un bourgage tracé ----
+   L'agrandissement occupe toute la cour : le sol de chaque case (planches du potager, herbe du verger,
+   terre grattée de la basse-cour, fleurs du rucher…) puis, posés dessus, les objets (arbres, ruches,
+   poulailler, épouvantail, perches à houblon). Derrière la maison, un coin de terre battue et du bois. */
+var DIR_TO_ROAD = [[0,-1],[1,0],[0,1],[-1,0]];
+function yardCells(b){ return b.plot.cells.slice(1).sort(function(a, c){ return a-c; }); }
+/* la case juste derrière la maison (à l'opposé de la rue), sinon la première de la cour */
+function backCell(b){
+  var c = b.plot.cells, d = DIR_TO_ROAD[b.plot.dir], h = c[0];
+  if(d){ var bk = h - d[1]*W - d[0]; if(c.indexOf(bk) > 0) return bk; }
+  return c.length > 1 ? c[1] : -1;
+}
+/* quelques cases réparties sur toute la cour (un élément pour ~2 cases, 5 au plus) */
 function yardSpots(b){
-  var y = b.plot.cells.slice(1).sort(function(a, c){ return a-c; }), n = y.length, out = [];
+  var y = yardCells(b), n = y.length, out = [];
   var k = Math.min(5, Math.max(1, Math.round(n/2)));
   for(var j=0; j<k && n>0; j++) out.push(y[Math.floor((j+0.5)*n/k)]);
   return out;
 }
+function cellHash(i, s){ return hash(i%W, (i/W)|0, s); }
+function drawYardGround(b, season){
+  var e = b.exts && b.exts[0], cs = yardCells(b), bk = backCell(b), k, i, v;
+  for(k=0; k<cs.length; k++){
+    i = cs[k]; v = cellHash(i, 7) < 0.5 ? 0 : 1;
+    var x = cellX(i), y = cellY(i) + TS;
+    if(e==="garden"){ if(i!==bk) spr("bed_"+season+"_"+Math.floor(cellHash(i, 3)*4), x, y); }
+    else if(e==="orchard") spr("orch_"+season+"_"+v, x, y);
+    else if(e==="chicken") spr("pecked_"+v, x, y);
+    else if(e==="beehive") spr("flowers_"+season+"_"+v, x, y);
+    else if((e==="tailor" || e==="brewer") && (cellHash(i, 5) < 0.45)) spr("yarddirt_"+v, x, y);
+  }
+  if(bk>=0 && season!==0) spr("yarddirt_"+(b.id&1), cellX(bk), cellY(bk)+TS);
+}
+/* un objet de cour : son ombre puis le sprite, trié en profondeur avec le reste */
+function yardObj(name, x, y, shadow){ if(shadow) sh(shadow, x, y); obj(y, drawSprite, name, x, y); }
 function drawYard(B, season, winter, t, now){
-  var e = B.exts && B.exts[0]; if(!e || e==="garden") return;
-  var sp = yardSpots(B), x, y;
-  for(var j=0; j<sp.length; j++){
-    var i = sp[j];
-    if(e==="orchard"){ x = cellX(i)+8; y = cellY(i)+13; sh("sh_sap", x, y); obj(y, drawSprite, "fruit_"+season, x, y); }
-    else if(e==="beehive"){ x = cellX(i)+6; y = cellY(i)+12; obj(y, drawSprite, "skep", x, y); }
-    else if(e==="brewer"){ x = cellX(i)+5; y = cellY(i)+12; obj(y, drawSprite, "barrel", x, y); }
-    else if(e==="tailor"){ x = cellX(i)+3; y = cellY(i)+11; obj(y, drawSprite, "cloth", x, y); }
-    else if(e==="chicken" && !winter){
-      for(var c=0; c<(sp.length<3 ? 2 : 1); c++){
-        var ph = t*0.7 + B.id + j*1.7 + c*2;
-        var cx2 = cellX(i) + 4 + c*5 + Math.round(Math.sin(ph)*2), cy2 = cellY(i) + 9 + c*3;
-        var pk = (Math.floor(now/400) + c + j + B.id) % 3 === 0 ? 1 : 0;
-        obj(cy2, drawSprite, "chick_"+((c+j)&1)+"_"+pk+((Math.sin(ph+0.2) - Math.sin(ph))<0 ? "_l" : ""), cx2, cy2);
-      }
+  var e = B.exts && B.exts[0], cs = yardCells(B), bk = backCell(B), j, i, x, y;
+  // derrière la maison : le bois de chauffe, et un tonneau d'eau de pluie
+  if(bk>=0){
+    yardObj("pile_timber_"+(1 + (B.id % 3)), cellX(bk)+2, cellY(bk)+14);
+    if(e==="garden" || !e) yardObj("barrel", cellX(bk)+13, cellY(bk)+9);
+  }
+  if(!e) return;
+  var sp = yardSpots(B);
+  if(e==="garden"){
+    // un épouvantail au milieu des planches, des rames de haricots ici et là
+    var mid = sp[Math.floor(sp.length/2)];
+    for(j=0; j<cs.length; j++){
+      i = cs[j]; if(i===bk) continue;
+      x = cellX(i); y = cellY(i);
+      if(i===mid) yardObj("scarecrow", x+8, y+12, "sh_small");
+      else if(cellHash(i, 11) < 0.3) yardObj("bean_"+season+"_0", x+8, y+13, "sh_small");
+    }
+    return;
+  }
+  if(e==="orchard"){
+    // un arbre par case, en quinconce ; pommiers et poiriers
+    for(j=0; j<cs.length; j++){
+      i = cs[j]; if(i===bk) continue;
+      x = cellX(i) + 8 + Math.round((cellHash(i, 13)-0.5)*4); y = cellY(i) + 14 + Math.round(cellHash(i, 14)*2);
+      yardObj("ftree_"+season+"_"+(cellHash(i, 15) < 0.7 ? 0 : 1), x, y, "sh_ftree");
+    }
+    return;
+  }
+  if(e==="chicken"){
+    if(bk>=0) yardObj("coop"+(winter ? "_w" : ""), cellX(bk)+9, cellY(bk)+15, "sh_small");
+    if(sp.length) yardObj("trough", cellX(sp[0])+8, cellY(sp[0])+12);
+    if(winter) return;   // l'hiver, les poules restent au poulailler
+    var nC = Math.min(12, cs.length*2);
+    for(var c=0; c<nC; c++){
+      i = cs[c % cs.length];
+      var ph = t*0.7 + B.id + c*1.7;
+      var cx2 = cellX(i) + 4 + ((c*5) % 9) + Math.round(Math.sin(ph)*2), cy2 = cellY(i) + 6 + ((c*7) % 8);
+      var pk = (Math.floor(now/400) + c + B.id) % 3 === 0 ? 1 : 0;
+      obj(cy2, drawSprite, "chick_"+((c + B.id)&1)+"_"+pk+((Math.sin(ph+0.2) - Math.sin(ph))<0 ? "_l" : ""), cx2, cy2);
+    }
+    return;
+  }
+  if(e==="beehive"){
+    for(j=0; j<sp.length; j++){ i = sp[j]; yardObj("skepbench", cellX(i)+8, cellY(i)+12, "sh_small"); }
+    return;
+  }
+  if(e==="brewer"){
+    // houblonnière : des perches sur toute la cour, les tonneaux près de la maison
+    if(bk>=0) yardObj("barrels", cellX(bk)+7, cellY(bk)+9, "sh_small");
+    for(j=0; j<cs.length; j++){
+      i = cs[j]; if(i===bk) continue;
+      yardObj("hop_"+season+"_0", cellX(i)+4, cellY(i)+8);
+      yardObj("hop_"+season+"_1", cellX(i)+11, cellY(i)+15);
+    }
+    return;
+  }
+  if(e==="tailor"){
+    // le linge qui sèche, les cuves de teinture, le lin en gerbes
+    for(j=0; j<cs.length; j++){
+      i = cs[j]; if(i===bk) continue;
+      x = cellX(i); y = cellY(i); var r = j % 3;
+      if(r===0) yardObj("cloth", x+8, y+12);
+      else if(r===1){ yardObj("vat_"+(j&1), x+5, y+12); yardObj("vat_"+((j+1)&1), x+12, y+15); }
+      else { yardObj("flax", x+5, y+12); yardObj("flax", x+11, y+14); }
     }
   }
 }
