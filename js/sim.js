@@ -260,6 +260,8 @@ function isWinterMonth(m){ return m===11 || m===0 || m===1; }
 const PASTURE_MIN = 4, PASTURE_MAX = 90;
 const FIELD_MIN = 4, FIELD_MAX = 64;   // champ tracé librement (en cases)
 const PLOT_MIN = 3;                     // une maison et au moins deux cases de cour
+// habitants qu'une maison peut loger, selon son niveau (chaumière, maison à colombages, maison de pierre)
+const HOUSE_CAP = [0, 6, 8, 10];
 
 const REGION_DEFS = [
   { id:0, name:"Vallée du Cœur",   bonus:null,          desc:"Votre terre natale (au centre). Déjà à vous." },
@@ -613,6 +615,9 @@ class GameState {
   membersOf(fid){ return this.villagers.filter(v=>v.fam===fid); }
   villager(id){ return this.villagers.find(v=>v.id===id) || null; }
   fullName(v){ return v ? v.first+" "+this.surnameOf(this.famOf(v)) : "?"; }
+  houseCap(b){ return HOUSE_CAP[Math.max(1, Math.min(3, (b && b.lvl) || 1))]; }
+  houseFamily(b){ return this.families.find(f=>f.home===b.id) || null; }
+  houseCount(b){ const f = this.houseFamily(b); return f ? this.membersOf(f.id).length : 0; }
   homeOf(v){ const f=this.famOf(v); return f && f.home>0 ? this.buildings.find(b=>b.id===f.home) || null : null; }
   // peut tenir un poste : adulte ou ancien de moins de 65 ans, pas alité
   canWork(v){
@@ -1167,9 +1172,59 @@ class GameState {
   // culture proposée pour un nouveau champ : la prochaine qu'on pourra semer
   defaultCrop(){ const m = this.time.month; return (m>=4 && m<=9) ? "wheat" : "peas"; }
   // cases d'un champ (toujours une forme tracée ; les anciens rectangles sont convertis)
+  // Les cases sont rangées en serpentin (une rangée dans un sens, la suivante dans l'autre) : c'est l'ordre où
+  // le travail avance, case après case. L'affichage des cases labourées, semées ou moissonnées et la place du
+  // fermier suivent la même liste.
   fieldCells(b){
-    if(b.plot) return b.plot.cells;
-    const c = []; for(let yy=0;yy<b.h;yy++) for(let xx=0;xx<b.w;xx++) c.push((b.y+yy)*W+(b.x+xx)); return c;
+    let src = b.plot ? b.plot.cells : null;
+    if(!src){ src = []; for(let yy=0;yy<b.h;yy++) for(let xx=0;xx<b.w;xx++) src.push((b.y+yy)*W+(b.x+xx)); }
+    const c = b._snake;
+    if(c && c.n===src.length && c.a===src[0] && c.z===src[src.length-1]) return c.list;
+    const rows = new Map();
+    for(const i of src){ const y = (i/W)|0; if(!rows.has(y)) rows.set(y, []); rows.get(y).push(i); }
+    const list = []; let back = false;
+    for(const y of Array.from(rows.keys()).sort((p, q)=>p-q)){
+      const r = rows.get(y).sort((p, q)=>p-q); if(back) r.reverse(); back = !back;
+      for(const i of r) list.push(i);
+    }
+    try{ Object.defineProperty(b, "_snake", { value:{ n:src.length, a:src[0], z:src[src.length-1], list }, writable:true, enumerable:false, configurable:true }); }catch(e){}
+    return list;
+  }
+  // où le fermier se tient pour travailler : sur la case qu'il est en train de travailler (celle d'après si
+  // un collègue est déjà sur la première)
+  fieldAim(v, fd, t){
+    const f = fd.f, cells = this.fieldCells(fd), n = cells.length; if(!n) return;
+    const p = t.type==="plow" ? f.plow : t.type==="sow" ? f.sowP : t.type==="spread" ? f.dungP : f.harvestP;
+    let rank = 0;
+    for(const o of this.villagers) if(o!==v && o.id<v.id && o.state==="work" && o.task && o.task.bid===fd.id && o.task.type===t.type) rank++;
+    const c = cells[Math.min(n-1, Math.floor((p||0)*n + 1e-6) + rank)];
+    t.gx = (c%W) + 0.5 + ((v.id*7)%5-2)*0.06;
+    t.gy = ((c/W)|0) + 0.55 + ((v.id*3)%3-1)*0.05;
+  }
+  // un pas vers cette case, à chaque instant (le travail, lui, n'avance qu'un tick sur WORK_DIV)
+  fieldGlide(v){
+    const t = v.task, dx = t.gx - v.x, dy = t.gy - v.y, d = Math.hypot(dx, dy);
+    if(d<0.02) return;
+    const s = Math.min(d, 0.1);
+    v.x += dx/d*s; v.y += dy/d*s;
+  }
+  // un villageois resté sur une case occupée (au milieu d'un champ) en sort avant de repartir : le chemin
+  // ne traverse pas les bâtiments, il n'aurait aucune route depuis l'intérieur
+  unstick(f){
+    const sx = Math.floor(f.x), sy = Math.floor(f.y);
+    if(sx<0 || sy<0 || sx>=W || sy>=H || this.occupied[sy*W+sx]<0 || this.passable(sx, sy)) return false;
+    if(DIRS4.some(d=>this.passable(sx+d[0], sy+d[1]))) return false;   // une case libre à côté : le chemin sait déjà sortir
+    let best = null, bd = Infinity;
+    for(let r=1; r<=10 && !best; r++){
+      for(let dy=-r; dy<=r; dy++) for(let dx=-r; dx<=r; dx++){
+        if(Math.max(Math.abs(dx), Math.abs(dy))!==r || !this.passable(sx+dx, sy+dy)) continue;
+        const d = Math.hypot(dx + sx+0.5 - f.x, dy + sy+0.5 - f.y);
+        if(d<bd){ bd = d; best = { x:sx+dx, y:sy+dy }; }
+      }
+    }
+    if(!best) return false;
+    f.path = [{ x:best.x+0.5, y:best.y+0.5 }]; f.state = "wander"; f.task = null;
+    return true;
   }
   fieldN(b){ return b.plot ? b.plot.cells.length : b.w*b.h; }
   fieldCenter(b){
@@ -1364,6 +1419,7 @@ class GameState {
     const fd = t.bid!==undefined ? this.buildings.find(x=>x.id===t.bid) : null;
     const stop = (c)=>{ v.task=null; v.state="idle"; v.cool=c; };
     if(!fd || !fd.f){ stop(5); return; }
+    this.fieldAim(v, fd, t);
     const f = fd.f, m = this.time.month, cal = this.cropCal(this.liveCrop(f)), sk = this.skillMul(v, "farm");
     if(t.type==="harvest" || t.type==="mow"){
       if(!this.harvestable(fd)){ stop(10); return; }
@@ -2168,6 +2224,7 @@ class GameState {
   workGate(f){ return ((this.stepN|0) + f.id) % WORK_DIV === 0; }
   assignTask(f       ){
     if(f.cool>0){ if(this.workGate(f)) f.cool--; return; }
+    if(this.unstick(f)) return;
     // seuls les adultes valides (et les apprentis) travaillent
     if(!(this.canWork(f) || (f.appr && this.canApprentice(f)))){ this.idleNearHome(f); return; }
     const b = f.work>0 ? this.buildings.find(x=>x.id===f.work && x.done) : undefined;
@@ -2585,6 +2642,7 @@ class GameState {
         }
         break;
       case "work":
+        if(f.task && f.task.gx!==undefined && FIELD_TASKS[f.task.type]) this.fieldGlide(f);   // il avance de case en case
         if(this.workGate(f)) this.doWork(f);
         break;
       case "return":
@@ -2888,6 +2946,7 @@ class GameState {
       if(!home || home.def!=="burgage" || !home.done) continue;
       if((f.fed===undefined ? 1 : f.fed) < 0.999 || this.approval < 25) continue;
       const mem = this.membersOf(f.id);
+      if(mem.length >= this.houseCap(home)) continue;   // maison pleine : pas de place pour un enfant de plus
       if(mem.filter(v=>this.ageOf(v)<AGE_TEEN).length>=3) continue;
       for(const w of mem){
         if(w.sex!=="f" || w.spouse<0 || w.sick>0 || w.health<50) continue;
@@ -3931,6 +3990,6 @@ class GameState {
 }
 
 if(typeof module!=="undefined" && module.exports){
-  module.exports = { FOOD_DEFS, FOOD_GROUPS, FOOD_GROUP_ORDER, STORE_SPOIL, GRUEL, GRANARY_CAP, GRANARY_MUL, VARIETY_APPROVAL, RECIPES, SMOKE_KEEP, HOME_BAKE, MAT_RES, PORTER_LOAD, OX_LOAD, OX_SPEED, DRAG_SPEED, DEPOT_DEFS, TS, WORK_DIV, TICKS_PER_DAY, DAYS_PER_MONTH, FIELD_MIN, FIELD_MAX, PLOT_MIN, CROP_CAL, GROW_RATE, SHEAF_RES, LIVESTOCK, LIVESTOCK_ORDER, GRASS, PASTURE_MIN, PASTURE_MAX, monthsTxt, isWinterMonth, MONTHS_ABBR, SKILL_DEFS, SKILL_ORDER, SKILL_LEVELS, skillLevel, FOOD_NEED, AGE_TEEN, AGE_ADULT, AGE_ELDER, AGE_RETIRE, STAGE_NAMES, JOB_TITLES, NAMES_M, NAMES_F, SURNAMES, BUILD_STAGES, buildStage, DIRS4, PLOT_FRONT, polyArea, pointInPoly, GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
+  module.exports = { HOUSE_CAP, FOOD_DEFS, FOOD_GROUPS, FOOD_GROUP_ORDER, STORE_SPOIL, GRUEL, GRANARY_CAP, GRANARY_MUL, VARIETY_APPROVAL, RECIPES, SMOKE_KEEP, HOME_BAKE, MAT_RES, PORTER_LOAD, OX_LOAD, OX_SPEED, DRAG_SPEED, DEPOT_DEFS, TS, WORK_DIV, TICKS_PER_DAY, DAYS_PER_MONTH, FIELD_MIN, FIELD_MAX, PLOT_MIN, CROP_CAL, GROW_RATE, SHEAF_RES, LIVESTOCK, LIVESTOCK_ORDER, GRASS, PASTURE_MIN, PASTURE_MAX, monthsTxt, isWinterMonth, MONTHS_ABBR, SKILL_DEFS, SKILL_ORDER, SKILL_LEVELS, skillLevel, FOOD_NEED, AGE_TEEN, AGE_ADULT, AGE_ELDER, AGE_RETIRE, STAGE_NAMES, JOB_TITLES, NAMES_M, NAMES_F, SURNAMES, BUILD_STAGES, buildStage, DIRS4, PLOT_FRONT, polyArea, pointInPoly, GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
     T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf, REGION_DEFS, REGION_COST, POLICY_DEFS, POLICY_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, MODE_BY_ID, DIFFICULTIES, DIFF_BY_ID };
 }

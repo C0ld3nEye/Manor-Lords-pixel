@@ -912,6 +912,11 @@ function sheetSelection(g){
     var fam = g.families.filter(function(f){ return f.home===sel.id; })[0];
     h += "<div class='kv'><span class='k'>"+ic("family","s")+(fam ? esc(fam.name) : "Logement vacant")+"</span>"
        + (sel.monthsGood>0 ? "<span class='v good'>Bien loti : "+sel.monthsGood+" mois</span>" : "")+"</div>";
+    var hn = g.houseCount(sel), hc = g.houseCap(sel);
+    h += "<div class='kv'><span class='k'>Habitants</span>"+bar(hn/hc, hn>hc ? "red" : hn===hc ? "gold" : "")+"<span class='v "+(hn>hc ? "bad" : hn===hc ? "gold" : "")+"'>"+hn+" / "+hc+"</span></div>";
+    if(hn>hc) h += "<div class='bad' style='font-size:11px;margin:-2px 0 4px'>Surpeuplée : des familles s'entassent faute d'autre maison.</div>";
+    else if(fam && hn===hc) h += "<div class='gold' style='font-size:11px;margin:-2px 0 4px'>Maison pleine : plus de naissances ici"+(sel.lvl<3 ? " tant qu'elle n'a pas gagné un niveau ("+g.houseCap({ lvl:sel.lvl+1 })+" places)" : "")+".</div>";
+    else if(fam && sel.lvl<3) h += "<div class='dim' style='font-size:11px;margin:-2px 0 4px'>Niveau "+sel.lvl+" : "+hc+" places ; "+g.houseCap({ lvl:sel.lvl+1 })+" au niveau suivant.</div>";
     if(fam && fam.menu) h += "<div class='kv'><span class='k dim' style='font-size:11px'>Au menu le mois dernier</span><span class='v' style='font-size:11px'>"
        + (fam.menu.length ? fam.menu.map(function(gk){ return esc(FOOD_GROUPS[gk] ? FOOD_GROUPS[gk].name.toLowerCase() : gk); }).join(", ") : "rien")
        + (fam.gruel ? " <span class='bad'>(bouillie de disette)</span>" : "")+"</span></div>";

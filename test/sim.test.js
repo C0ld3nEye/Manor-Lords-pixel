@@ -2231,4 +2231,71 @@ test("étape 6 : trois ans de chaînes de transformation — ni exception ni val
   }
 });
 
+
+/* ================= petits détails : fermier case par case, capacité des maisons ================= */
+const { HOUSE_CAP } = require("../js/sim.js");
+
+test("détail : le fermier avance de case en case, sur la case qu'il laboure", () => {
+  const g = fresh(); houses(g, 3);
+  const farm = doneBuilding(g, "farm"); g.assign(farm.id);
+  const fd = newField(g, "wheat");
+  toMonth(g, 8);   // septembre : on laboure le blé d'hiver
+  const v = g.workersOf(farm)[0];
+  const cells = g.fieldCells(fd), n = cells.length;
+  assert.strictEqual(n, 9);
+  // le serpentin : une rangée dans un sens, la suivante dans l'autre, jamais de saut
+  for(let k=1;k<n;k++){ const a = cells[k-1], b = cells[k]; assert.ok(Math.abs((a%W)-(b%W)) + Math.abs(((a/W)|0)-((b/W)|0)) === 1, "cases voisines ("+k+")"); }
+  const seen = new Set(); let moved = 0, last = null;
+  for(let i=0;i<MONTH_TICKS*3 && fd.f.plow<1;i++){
+    g.step(); g.pendingEvent = null;
+    if(v.state==="work" && v.task && v.task.type==="plow"){
+      const ci = cells.indexOf(Math.floor(v.y)*W + Math.floor(v.x));
+      if(ci>=0){ seen.add(ci); const want = Math.min(n-1, Math.floor(fd.f.plow*n)); if(i%40===0) assert.ok(Math.abs(ci-want)<=2, "sur la case en cours : case "+ci+", labouré "+fd.f.plow.toFixed(2)); }
+      if(last && (last.x!==v.x || last.y!==v.y)) moved++;
+      last = { x:v.x, y:v.y };
+    }
+  }
+  assert.ok(fd.f.plow>=1, "labour fini");
+  assert.ok(seen.size>=n-3, "il est passé sur presque toutes les cases ("+seen.size+"/"+n+")");
+  assert.ok(moved>0);
+});
+
+test("détail : un fermier qui a fini au milieu d'un champ en ressort au lieu de rester coincé", () => {
+  const g = fresh(); houses(g, 3);
+  const farm = doneBuilding(g, "farm"); g.assign(farm.id);
+  const fd = newField(g, "wheat");
+  const v = g.workersOf(farm)[0];
+  const c = g.fieldCells(fd)[4];   // la case du milieu : aucun voisin libre
+  v.x = (c%W) + 0.5; v.y = ((c/W)|0) + 0.5; v.state = "idle"; v.cool = 0; v.task = null;
+  const inside = ()=>g.occupied[Math.floor(v.y)*W + Math.floor(v.x)]===fd.id;
+  assert.ok(inside());
+  for(let i=0;i<3000 && inside();i++){ g.step(); g.pendingEvent = null; }
+  assert.ok(!inside(), "il est sorti du champ");
+});
+
+test("détail : une maison indique ses habitants et sa capacité selon son niveau ; pleine, elle n'a plus de naissance", () => {
+  const g = fresh(); houses(g, 4);
+  const b = g.buildings.find(x=>x.def==="burgage");
+  assert.deepStrictEqual(HOUSE_CAP, [0, 6, 8, 10]);
+  assert.strictEqual(g.houseCap(b), 6);
+  b.lvl = 2; assert.strictEqual(g.houseCap(b), 8); b.lvl = 3; assert.strictEqual(g.houseCap(b), 10); b.lvl = 1;
+  const fam = g.houseFamily(b) || (()=>{ const f = g.makeFamily("Test"); f.home = b.id; return f; })();
+  const n0 = g.houseCount(b);
+  assert.strictEqual(n0, g.membersOf(fam.id).length);
+  // un couple fécond : sans la limite, la naissance a lieu (graine fixée) ; maison pleine, non
+  g.villagers = g.villagers.filter(v=>v.fam!==fam.id);
+  const m = g.makePerson(fam, "m", 25, { x:b.x, y:b.y }), w = g.makePerson(fam, "f", 24, { x:b.x, y:b.y });
+  g.marry(m, w);
+  for(let k=0;k<HOUSE_CAP[1]-2;k++){ const kid = g.makePerson(fam, "m", 2+k, { mother:w.id, father:m.id, x:b.x, y:b.y }); kid.bornAt = g.monthIdx() - 60; }
+  assert.strictEqual(g.houseCount(b), HOUSE_CAP[1]);
+  fam.fed = 1; g.approval = 80;
+  const before = g.membersOf(fam.id).length;
+  withRnd(g, 0, ()=>g.demography(false, 1));
+  assert.strictEqual(g.membersOf(fam.id).length, before, "maison pleine : aucune naissance");
+  // au niveau 2 elle a de la place : les enfants ont grandi (moins de 3 de moins de 12 ans) et une naissance est possible
+  b.lvl = 2; g.villagers.filter(v=>v.mother===w.id).forEach(v=>{ v.bornAt = g.monthIdx() - 200; });
+  withRnd(g, 0, ()=>g.demography(false, 1));
+  assert.ok(g.membersOf(fam.id).length>before, "au niveau 2, un enfant naît");
+});
+
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));

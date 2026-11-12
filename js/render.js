@@ -406,6 +406,7 @@ var TOOL_OF = { chop:"axe", mine:"pick", build:"hammer", plow:"hoe", harvest:"si
                 spread:"fork", sow:"seed", mow:"scythe", thresh:"flail", herd:"crook" };
 var JOBSET = {}; SPR.JOBS.forEach(function(j){ JOBSET[j] = true; });
 var WALKING = { walk:1, return:1, settle:1, wander:1 };
+var FIELD_T = { plow:1, spread:1, sow:1, harvest:1, mow:1 };   // le fermier avance de case en case : il marche entre deux coups de bêche
 
 /* ---- objets triés en profondeur ---- */
 var objs = [], nObj = 0;
@@ -797,11 +798,13 @@ function drawFamily(g, f, info){
   var m = info.m, now = info.now, dir = m.dir, sfx = dir<0 ? "_l" : "";
   var x = f.x*TS, y = f.y*TS;
   var herding = f.state==="work" && f.task && f.task.type==="herd";
-  var walking = (WALKING[f.state] || herding) && (now - m.mt) < 300;
+  var tilling = f.state==="work" && f.task && FIELD_T[f.task.type];
+  var walking = (WALKING[f.state] || herding || tilling) && (now - m.mt) < 300;
   var body = "idle", tool = null, up = false;
   if(walking){
     body = ["walkA","idle","walkB","idle"][(Math.floor(now/130) + f.id) % 4];
     if(herding) tool = "crook";
+    else if(tilling) tool = TOOL_OF[f.task.type];   // l'outil sur l'épaule
   } else if(herding){
     tool = "crook";
   } else if(f.state==="work" && f.task && TOOL_OF[f.task.type]){
