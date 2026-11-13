@@ -25,8 +25,10 @@ javac --release 8 -nowarn -d "$T/api" $(find "$ICI/api" -name "*.java")
 javac --release 8 -nowarn -cp "$T/api" -d "$T/classes" "$APP"/java/fr/seigneurie/jeu/*.java $(find "$T/gen" -name "*.java")
 java -cp "$T/outils/dx.jar" com.android.dx.command.Main --dex --min-sdk-version=24 --output="$T/classes.dex" "$T/classes"
 # 3) assemblage, alignement, signature
-python3 "$ICI/aligner.py" "$T/base.apk" "$T/classes.dex" "$T/non-signe.apk"
+python3 -I "$ICI/aligner.py" "$T/base.apk" "$T/classes.dex" "$T/non-signe.apk"
 javac -cp "$T/outils/apksig.jar" -d "$T/outils" "$ICI/SignerApk.java"
-java -cp "$T/outils/apksig.jar:$T/outils" SignerApk "$T/non-signe.apk" "$T/Seigneurie.apk" "$SEIGNEURIE_KEYSTORE" "${SEIGNEURIE_KS_ALIAS:-seigneurie}"
+# (apksig 2.3.0, le seul sur Maven Central, se sert de classes internes de Java : on les lui ouvre)
+JX="--add-exports=java.base/sun.security.x509=ALL-UNNAMED --add-exports=java.base/sun.security.pkcs=ALL-UNNAMED --add-exports=java.base/sun.security.util=ALL-UNNAMED"
+java $JX -cp "$T/outils/apksig.jar:$T/outils" SignerApk "$T/non-signe.apk" "$T/Seigneurie.apk" "$SEIGNEURIE_KEYSTORE" "${SEIGNEURIE_KS_ALIAS:-seigneurie}"
 "$AAPT2" dump badging "$T/Seigneurie.apk" | head -4
 echo "APK : $T/Seigneurie.apk"

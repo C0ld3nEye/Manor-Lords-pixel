@@ -31,7 +31,8 @@ Automatiquement : le flux `.github/workflows/apk.yml` construit et publie l'APK 
 
 Sans le SDK Android : `android/sans-sdk/construire.sh` télécharge sur Maven Central `apktool-lib` (qui contient aapt2
 et le framework Android de référence), `dalvik-dx` et `apksig`, puis assemble, aligne et signe l'APK. Les classes
-Android ne servent qu'à compiler : de simples déclarations, dans `sans-sdk/api/`.
+Android ne servent qu'à compiler : de simples déclarations, dans `sans-sdk/api/`. La signature y est au schéma v2
+seul (celui que vérifie Android 7 et plus ; le schéma v1 d'apksig 2.3.0 ne fonctionne plus avec Java 17+).
 
 ## La clé de signature
 
