@@ -9,7 +9,7 @@ const { GameState, BUILD_DEFS, W, H, T_GRASS, T_STONE, TICKS_PER_DAY, DAYS_PER_M
         CASE_DEFS, SKILLED, FOOD_TYPES, BOOK_CATS } = S;
 const YEARS = Number(process.argv[2]) || 8, SEEDS = Number(process.argv[3]) || 3;
 const ONLY = process.argv[4] || null;                 // une seule manière de gouverner
-if(process.argv.includes("--sans-ordres")) GameState.prototype.canHold = function(v){ return !this.isNoble(v); };
+if(process.argv.includes("--sans-ordres")) GameState.prototype.rankMul = function(){ return 1; };   // étape 8 : les serfs artisans à pleine vitesse
 const MONTH = TICKS_PER_DAY*DAYS_PER_MONTH;
 
 /* ---------- compteurs : on enveloppe les méthodes du jeu ---------- */
@@ -149,7 +149,7 @@ function check(g){
     if(v.seat && (!g.council[v.seat] || g.council[v.seat].vid!==v.id)) bad.push("siège incohérent "+v.id);
     const b = v.work>0 ? g.buildings.find(x=>x.id===v.work) : null;
     if(b && !v.appr && g.isNoble(v)) bad.push("un noble travaille : "+g.fullName(v));
-    if(b && !v.appr && b.done && SKILLED.includes(b.def) && g.ordOf(v)==="serf") bad.push("un serf tient un métier d'artisan : "+g.fullName(v)+" ("+b.def+")");
+    if(b && !(BUILD_DEFS[b.def] && BUILD_DEFS[b.def].fam>0)) bad.push("un villageois travaille dans un bâtiment sans poste : "+g.fullName(v)+" ("+b.def+")");
     if(v.seat && v.work>0) bad.push("un conseiller a un poste : "+g.fullName(v));
   }
   for(const id of SEAT_ORDER){ const c = g.council[id]; if(c.vid>0 && !vIds.has(c.vid)) bad.push("siège "+id+" tenu par un absent"); }

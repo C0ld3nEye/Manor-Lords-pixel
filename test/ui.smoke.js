@@ -29,7 +29,8 @@ const OUT = process.argv[2] || null;
       } };
     for(let k=0;k<8;k++) put("burgage");
     g.rehouseCamp();
-    ["woodcutter","forager","hunter","farm","field","windmill","bakery","market","granary","church","manor","trade"].forEach(put);
+    // (étape 8 : l'économie est plus serrée ; un village de quinze familles a besoin de plus de bras aux vivres et au bois)
+    ["woodcutter","woodcutter","woodcutter","forager","forager","forager","hunter","hunter","farm","field","field","windmill","bakery","market","granary","church","manor","trade"].forEach(put);
     for(const k of FOOD_TYPES) g.stock[k] = 40;
     g.stock.firewood = 120; g.stock.clothes = 60; g.treasury = 120; g.influence = 200;
     g.setTax(0.25); g.setTaxLevel("dime", 2); g.setTaxLevel("peage", 1); g.setTaxLevel("corvee", 1);

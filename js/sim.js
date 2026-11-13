@@ -73,7 +73,7 @@ const BUILD_DEFS                              = {
   camp:      { id:"camp",      name:"Campement",      icon:"⛺", w:2,h:1, cost:{}, fam:0, instant:true, desc:"Abri provisoire des survivants. Démonté quand toutes les familles ont une maison." },
   oxpost:    { id:"oxpost",    name:"Poteau du bœuf", icon:"🐂", w:1,h:1, cost:{timber:1}, fam:0, instant:true, desc:"Le bœuf y est attaché : il aide à porter les charges lourdes." },
   burgage:   { id:"burgage",   name:"Bourgage",       icon:"🏠", w:1,h:1, cost:{timber:1}, fam:0, instant:true, buildRate:2, desc:"Loge une famille. Évolue si ses besoins sont satisfaits." },
-  woodcutter:{ id:"woodcutter",name:"Camp de bûcherons",icon:"🪓", w:1,h:1, cost:{timber:2}, fam:2, skill:"wood", radius:6, instant:false, desc:"Abat les arbres à proximité : bois d'œuvre + bois de chauffe." },
+  woodcutter:{ id:"woodcutter",name:"Camp de bûcherons",icon:"🪓", w:1,h:1, cost:{}, fam:2, skill:"wood", radius:6, instant:false, desc:"Gratuit : une cabane de branches. Abat les arbres à proximité : bois d'œuvre et bois de chauffe." },
   forager:   { id:"forager",   name:"Cabane de cueilleuses", icon:"🍒", w:1,h:1, cost:{timber:2}, fam:2, skill:"gather", radius:6, instant:false, desc:"Cueille des baies (mars → novembre)." },
   hunter:    { id:"hunter",    name:"Camp de chasse",  icon:"🏹", w:1,h:1, cost:{timber:2}, fam:2, skill:"hunt", radius:10, instant:false, desc:"Chasse le gibier des forêts : viande, toute l'année." },
   quarry:    { id:"quarry",    name:"Carrière",        icon:"🪨", w:1,h:1, cost:{timber:2}, fam:1, skill:"stone", onStone:true, instant:false, desc:"À poser SUR un gisement de pierre. S'épuise avec le temps." },
@@ -86,15 +86,16 @@ const BUILD_DEFS                              = {
   smokehouse:{ id:"smokehouse",name:"Fumoir",          icon:"🥓", w:1,h:1, cost:{timber:2,stone:1}, fam:1, skill:"craft", instant:false, desc:"Fume la viande au feu de bois : elle se garde des mois au lieu de se gâter. Précieux après l'abattage de novembre." },
   granary:   { id:"granary",   name:"Grange",          icon:"🏚️", w:1,h:1, cost:{timber:2}, fam:0, instant:false, desc:"À l'abri des rats et de l'humidité, 200 denrées s'y gâtent trois fois moins vite. Les artisans viennent aussi y chercher grain, farine, lait et viande." },
   storehouse:{ id:"storehouse",name:"Entrepôt",        icon:"📦", w:1,h:1, cost:{timber:2}, fam:0, instant:false, desc:"+150 de capacité de stockage pour chaque ressource." },
-  market:    { id:"market",    name:"Marché",          icon:"⛺", w:2,h:2, cost:{timber:2}, fam:3, skill:"trade", instant:false, desc:"Sans marché actif, vos familles n'ont accès qu'à un seul type de nourriture." },
-  church:    { id:"church",    name:"Église",          icon:"⛪", w:2,h:2, cost:{timber:2,stone:2}, fam:0, instant:false, desc:"+6 d'approbation. Requise pour les bourgages de niveau 3." },
-  trade:     { id:"trade",     name:"Comptoir",       icon:"\u26fa", w:2,h:2, cost:{timber:3,stone:2}, fam:1, skill:"trade", instant:false, desc:"Vente automatique des surplus chaque mois (prix fluctuants). +richesse régionale." },
+  market:    { id:"market",    name:"Marché",          icon:"⛺", w:2,h:2, cost:{timber:2}, fam:0, instant:false, desc:"Les familles y échangent leurs vivres : sans marché, chacune n'a qu'une sorte d'aliment au menu. Il faut un marché pour que les maisons montent de niveau." },
+  church:    { id:"church",    name:"Église",          icon:"⛪", w:2,h:2, cost:{timber:2,stone:2}, fam:0, instant:false, desc:"+5 d'approbation, de l'influence chaque mois. Requise pour les maisons de niveau 3." },
+  trade:     { id:"trade",     name:"Comptoir",       icon:"\u26fa", w:2,h:2, cost:{timber:3,stone:2}, fam:1, skill:"trade", instant:false, desc:"Vend chaque mois les vrais surplus : il garde de quoi manger (davantage avant l'hiver) et se vêtir. Les prix varient, et baissent pour ce qu'on vend en masse. Fait monter la richesse régionale." },
   tower:     { id:"tower",     name:"Tour de guet",   icon:"\ud83d\udde1\ufe0f", w:1,h:1, cost:{timber:2,stone:3}, fam:0, instant:false, desc:"+4 approbation, repousse les raids (réduit le pillage de moitié)." },
   wall:      { id:"wall",      name:"Rempart",        icon:"⬛", w:1,h:1, cost:{stone:2}, fam:0, instant:false, wall:true, desc:"Mur défensif : les brigands ne passent pas dessus (case infranchissable)." },
   manor:     { id:"manor",     name:"Manoir",          icon:"🏰", w:2,h:2, cost:{timber:4,stone:3}, fam:0, instant:false, desc:"Siège de l'administration : taille, péages, corvée, décrets et changeur se règlent dans son panneau." },
   // étape 5 : enclos tracé librement (coût selon la longueur de clôture), un abri et un gardien
   pasture:   { id:"pasture",   name:"Pâturage",        icon:"🐑", w:1,h:1, cost:{timber:1}, fam:1, skill:"herd", instant:false, buildRate:3, zone:true, desc:"Enclos tracé librement : l'herbe nourrit un troupeau (moutons, vaches ou porcs) du printemps à l'automne ; l'hiver, il faut du foin. Un gardien soigne les bêtes, trait, tond." },
 };
+const BUILD_FEM = ["forager","quarry","farm","bakery","dairy","granary","church","tower"];   // noms féminins (accords des messages)
 const BUILD_ORDER = ["woodcutter","forager","hunter","quarry","farm","field","windmill","bakery","dairy","smokehouse","granary","storehouse","market","trade","church","tower","wall","manor"];
 
 /* ---------- étape 6 : nourriture, transformation et conservation ----------
@@ -130,7 +131,7 @@ const GRUEL = ["flour","grain","barley"];   // en disette, on mange le grain en 
 const GRANARY_CAP = 200;                    // denrées qu'une grange met à l'abri
 const GRANARY_MUL = 1/3;                    // ce qui est à l'abri se gâte trois fois moins vite
 // approbation selon le nombre moyen de familles d'aliments au menu des foyers (0 à 5)
-const VARIETY_APPROVAL = [-8, -2, 6, 12, 15, 18];
+const VARIETY_APPROVAL = [-8, -2, 5, 10, 13, 15];   // étape 8 : un peu moins (avant, jusqu'à +18 : l'approbation plafonnait vers 90 %)
 // ateliers : l'artisan va chercher « inp » (load à la fois) dans l'un des lieux « from », puis
 // transforme « per » unités en « give » unités de « out », en « time » temps de travail ; fuel : bois de chauffe par fournée
 const RECIPES = {
@@ -139,15 +140,18 @@ const RECIPES = {
   dairy:      { inp:"milk",  per:3, out:"cheese", give:2,   time:12, load:3, fuel:0,    from:["pasture","granary"], verb:"Fromages" },
   smokehouse: { inp:"meat",  per:1, out:"smoked", give:1,   time:10, load:3, fuel:0.5,  from:["hunter","pasture","granary","storehouse","camp"], verb:"Fumage" },
 };
-const SMOKE_KEEP = 4;        // le fumoir laisse un peu de viande fraîche à manger tout de suite
+const SMOKE_KEEP = 4;
+const CLOTH_EVERY = 3;       // étape 8 : un vêtement tous les trois mois par famille (deux mois, c'était un tailleur pour trois maisons)        // le fumoir laisse un peu de viande fraîche à manger tout de suite
 const HOME_BAKE = 1;         // farine qu'un foyer logé cuit lui-même dans le mois, faute de boulangerie
 
+// étape 8 : vivres d'une cour par mois (une petite cour ; une grande cour rapporte jusqu'à deux fois et demie plus)
+const EXT_FOOD = { garden:0.25, chicken:0.25, orchard:0.8, beehive:0.3 };
 const EXT_DEFS = {
-  garden:  { id:"garden",  name:"Potager",            cost:{timber:1},           lvl:1, desc:"+0,5 légume par mois." },
-  chicken: { id:"chicken", name:"Basse-cour",         cost:{timber:1},           lvl:1, desc:"+0,5 œuf par mois." },
-  orchard: { id:"orchard", name:"Verger",             cost:{timber:2},           lvl:1, desc:"+1 pomme par mois (août → octobre). Nourrit aussi la famille." },
-  beehive: { id:"beehive", name:"Rucher",             cost:{timber:2},           lvl:1, desc:"+0,5 miel par mois (avril → septembre)." },
-  tailor:  { id:"tailor",  name:"Atelier du tailleur",cost:{timber:2},           lvl:2, desc:"1 vêtement par mois avec de la laine ou du lin, moitié moins sans fibre. Requiert le niveau 2." },
+  garden:  { id:"garden",  name:"Potager",            cost:{timber:1},           lvl:1, desc:"Des légumes toute l'année (un quart de mesure par mois pour une petite cour)." },
+  chicken: { id:"chicken", name:"Basse-cour",         cost:{timber:1},           lvl:1, desc:"Des œufs toute l'année (un quart de mesure par mois pour une petite cour)." },
+  orchard: { id:"orchard", name:"Verger",             cost:{timber:2},           lvl:1, desc:"Des pommes d'août à octobre, plus abondantes que les légumes d'un potager." },
+  beehive: { id:"beehive", name:"Rucher",             cost:{timber:2},           lvl:1, desc:"Du miel d'avril à septembre, qui ne se gâte pas." },
+  tailor:  { id:"tailor",  name:"Atelier du tailleur",cost:{timber:2},           lvl:1, desc:"Un vêtement par mois avec de la laine ou du lin (moitié moins sans fibre). Sans vêtements, aucune maison ne monte au niveau 2." },
   brewer:  { id:"brewer",  name:"Brasserie",          cost:{timber:2,stone:1},   lvl:2, desc:"Produit 1 chope d'ale par mois. Requiert le niveau 2." },
 };
 const EXT_ORDER = ["garden","chicken","orchard","beehive","tailor","brewer"];
@@ -287,6 +291,7 @@ const FIELD_MIN = 4, FIELD_MAX = 64;   // champ tracé librement (en cases)
 const PLOT_MIN = 3;                     // une maison et au moins deux cases de cour
 // habitants qu'une maison peut loger, selon son niveau (chaumière, maison à colombages, maison de pierre)
 const HOUSE_CAP = [0, 6, 8, 10];
+const LEVEL_MONTHS = 3;   // mois d'affilée « bien lotie » pour qu'une maison monte d'un niveau
 
 // régions : découpées à la génération de la carte (formes organiques) ; on commence avec celle du centre.
 // Les noms sont tirés de cette liste ; le bonus dépend de ce que la région contient.
@@ -324,6 +329,9 @@ const TAILLE_MONTHS = [3, 8];
 const TAILLE_LVL = [0, 1, 1.5, 2];  // ce qu'une maison paie selon son niveau (une maison de niveau 3 paie le double)       // Pâques (avril) et Saint-Michel (septembre)
 const DIME_MONTH = 9;               // octobre, une fois la moisson rentrée
 const KING_MONTH = 10;              // novembre : l'impôt du roi
+const KING_HOUSE = [0, 1, 1.5, 2];  // étape 8 : ce que pèse une maison habitée dans l'impôt du roi, selon son niveau
+const KING_TRADE = 0.15;            // étape 8 : part des ventes du comptoir de l'année que le roi réclame
+const KING_KIND = 2;                // étape 8 : mesures de vivres pour chaque denier qui manque à l'impôt du roi
 const LOAN_RATE = 0.02;             // intérêt par mois (environ un quart par an)
 const LOAN_STEP = 50;               // on emprunte et on rembourse par 50 deniers
 const LOAN_MISS_MAX = 3;            // trois échéances manquées : le changeur saisit des biens
@@ -396,11 +404,12 @@ const REP_GEN = 25, REP_SEV = 30;  // seuils des réputations (généreux / avar
    peut être anoblie : elle ne travaille plus, sert à la cour, au clergé ou comme lettrée, et ne paie pas la taille. */
 const ORDER_DEFS = {
   serf:  { id:"serf",  name:"Serfs",       one:["Serf","Serve"],          desc:"Tâches de base, chantiers et corvée." },
-  bourg: { id:"bourg", name:"Bourgeois",   one:["Bourgeois","Bourgeoise"], desc:"Maison de niveau 2 : métiers d'artisan (moulin, boulangerie, laiterie, fumoir, marché, comptoir). Exempts de corvée." },
+  bourg: { id:"bourg", name:"Bourgeois",   one:["Bourgeois","Bourgeoise"], desc:"Maison de niveau 2 : artisans accomplis (moulin, boulangerie, laiterie, fumoir, comptoir), deux fois plus efficaces qu'un serf. Exempts de corvée." },
   noble: { id:"noble", name:"Nobles",      one:["Noble","Noble"],         desc:"Maison de niveau 3, anoblie : cour, clergé, lettres. Ne travaillent pas, ne paient pas la taille, mènent grand train." },
 };
 const ORDER_RANK = { serf:0, bourg:1, noble:2 };
-const SKILLED = ["windmill","bakery","dairy","smokehouse","market","trade"];   // métiers d'artisan : bourgeois seulement
+const SKILLED = ["windmill","bakery","dairy","smokehouse","trade"];   // métiers d'artisan : un bourgeois y excelle
+const SERF_CRAFT = 0.5;   // étape 8 : un serf peut tenir un atelier, mais en simple manœuvre (deux fois moins vite)
 const ENNOBLE_COST = 50;          // influence pour anoblir une famille
 const NOBLE_OFFICES = {
   court:  { id:"court",   name:"Courtisan", fem:"Courtisane", desc:"Tient votre cour : +1 influence par mois." },
@@ -489,25 +498,57 @@ const SECRET_ORDER = ["theft","poach","hoard"];
 const BOOK_ORDER = ["taille","peage","rights","fines","justice","trade","sales","loot","loan","recovered","wages","alms","king","tribute","livestock","food","mercs","regions","interest","repay","other"];
 
 const CHURCH_UPGRADES = {
-  altar:  { id:"altar",  name:"Autel",   cost:{stone:3},           bonus:{approval:3, influence:2}, desc:"+3 approbation, +2 influence/mois." },
-  bell:   { id:"bell",   name:"Clocher", cost:{timber:3,stone:2}, bonus:{approval:5, influence:3}, desc:"+5 approbation, +3 influence/mois." },
+  altar:  { id:"altar",  name:"Autel",   cost:{stone:3},           bonus:{approval:2, influence:2}, desc:"+2 approbation, +2 influence/mois." },
+  bell:   { id:"bell",   name:"Clocher", cost:{timber:3,stone:2}, bonus:{approval:3, influence:3}, desc:"+3 approbation, +3 influence/mois." },
 };
 const CHURCH_UP_ORDER = ["altar","bell"];
 const MODES = [
   { id:"prosperity", name:"Prospérité",       desc:"Sans combat : faites prospérer la seigneurie (objectifs classiques).", combat:false },
-  { id:"peace",       name:"Restaurer la paix", desc:"Brigands fréquents : protégez vos réserves et détruisez leurs camps.", combat:true, bandits:1.8 },
-  { id:"edge",        name:"Au bord du gouffre", desc:"Ressources de départ réduites. Survivez 3 ans.", combat:true, bandits:1.4, harsh:true },
-  { id:"duel",        name:"Duel",             desc:"Le Baron est puissant et agressif : survivez à ses raids et réclamez les terres voisines.", combat:true, baron:1.8 },
-  { id:"fractured",   name:"Royaume fracturé", desc:"Tout à la fois : brigands, Baron, hiver. Le défi ultime.", combat:true, bandits:2.0, baron:2.0, harsh:true },
+  { id:"peace",       name:"Restaurer la paix", desc:"Brigands fréquents : détruisez leurs camps et tenez quatre régions (en 1179 au plus tôt).", combat:true, bandits:1.8, regions:4 },
+  { id:"edge",        name:"Au bord du gouffre", desc:"Ressources de départ réduites. Survivez trois ans.", combat:true, bandits:1.4, harsh:true },
+  { id:"duel",        name:"Duel",             desc:"Le Baron est puissant et agressif : tenez cinq régions, sans lui laisser aucune terre voisine (en 1179 au plus tôt).", combat:true, baron:1.8, regions:5 },
+  { id:"fractured",   name:"Royaume fracturé", desc:"Tout à la fois : brigands, Baron, départ maigre. Cinq régions, aucune terre voisine au Baron, plus aucun camp (en 1180). Le défi ultime.", combat:true, bandits:2.0, baron:2.0, harsh:true, regions:5 },
 ];
 const MODE_BY_ID = Object.fromEntries(MODES.map(m=>[m.id,m]));
+// étape 8 : le comptoir. Prix de base (deniers) autour desquels les prix varient chaque mois, lot vendu par mois,
+// mois de vivres que le comptoir garde pour le village (davantage avant l'hiver)
+const TRADE_BASE = { bread:2, clothes:3, ale:2, apples:1, honey:4, meat:1, berries:1, wool:2, cheese:3, smoked:2 };
+const TRADE_LOT = 3;
+const TRADE_KEEP = 3, TRADE_KEEP_WINTER = 5;
+/* étape 8 : trois difficultés vraiment différentes. Chaque réglage multiplie un levier du jeu :
+   yield = récoltes, cueillette, chasse et cours ; spoil = denrées gâtées ; fuel = bois de chauffe brûlé ;
+   sick = maladies ; migr = colons qui arrivent ; ap = approbation de base ; start = réserves de départ ;
+   tax = impôt du roi ; raid / bandits = Baron et brigands. */
 const DIFFICULTIES = [
-  { id:"easy",   name:"Paisible",  tax:0.8, raid:0.6, bandits:0.6 },
-  { id:"normal", name:"Normal",    tax:1.0, raid:1.0, bandits:1.0 },
-  { id:"hard",   name:"Difficile", tax:1.3, raid:1.5, bandits:1.5 },
+  { id:"easy",   name:"Paisible",  tax:0.7, raid:0.6, bandits:0.6, yield:1.25, spoil:0.85, fuel:0.85, sick:0.75, migr:1.25, ap:5,  start:1.5,
+    desc:"Récoltes généreuses, hivers doux, impôt du roi léger, colons nombreux. Pour découvrir le jeu sans pression." },
+  { id:"normal", name:"Normal",    tax:1.0, raid:1.0, bandits:1.0, yield:1.0,  spoil:1.0,  fuel:1.0,  sick:1.0,  migr:1.0,  ap:0,  start:1.0,
+    desc:"L'équilibre voulu : il faut préparer l'hiver, varier les repas et ménager ses familles." },
+  { id:"hard",   name:"Difficile", tax:1.3, raid:1.5, bandits:1.5, yield:0.8,  spoil:1.2,  fuel:1.2,  sick:1.4,  migr:0.8,  ap:-4, start:0.7,
+    desc:"Récoltes maigres, hivers rudes, maladies, impôts lourds, brigands et Baron plus agressifs. Chaque erreur se paie." },
 ];
 const DIFF_BY_ID = Object.fromEntries(DIFFICULTIES.map(d=>[d.id,d]));
 
+/* ---------- étape 8 : les objectifs, dans l'ordre où l'on découvre le jeu ----------
+   Un tutoriel qui ne bloque rien : chaque objectif dit ce qu'il faut faire et où le trouver. En Prospérité,
+   les remplir tous, c'est la victoire ; dans les autres modes, ils servent de guide. */
+const GOALS = [
+  { id:"house",   name:"Loger les familles",          hint:"Tiroir Maisons → Tracer une zone le long de la route. Les adultes sans poste bâtissent les maisons." },
+  { id:"wood",    name:"Des bûcherons au travail",     hint:"Tiroir Récolte → Camp de bûcherons, près d'une forêt. Bois d'œuvre pour bâtir, bois de chauffe pour l'hiver." },
+  { id:"food",    name:"Des vivres frais",             hint:"Tiroir Récolte → Cabane de cueilleuses près des baies (mars → novembre) ou Camp de chasse près des bois." },
+  { id:"market",  name:"Un marché",                    hint:"Tiroir Vivres → Marché. Sans lui, chaque famille n'a qu'une sorte d'aliment au menu, et les maisons ne montent pas de niveau." },
+  { id:"field",   name:"Un champ et sa ferme",         hint:"Tiroir Terres → Ferme, puis tracez un Champ. Le blé d'hiver se sème en septembre-octobre et se moissonne l'été suivant." },
+  { id:"village", name:"8 familles : un village",      hint:"Gardez des maisons libres et l'approbation au-dessus de 40 % : de nouvelles familles viendront." },
+  { id:"tailor",  name:"Des vêtements",                hint:"Touchez une maison → agrandissement Atelier du tailleur. Avec la laine des moutons ou du lin, il en fait deux fois plus." },
+  { id:"manor",   name:"Un manoir",                    hint:"Tiroir Domaine → Manoir (bois et pierre : posez une carrière sur un gisement). Il lève la taille et ouvre le conseil." },
+  { id:"bourg",   name:"Une famille bourgeoise",       hint:"Une maison monte au niveau 2 après trois mois nourrie, chauffée, vêtue, avec deux sortes d'aliments et un marché." },
+  { id:"church",  name:"Une église",                   hint:"Tiroir Domaine → Église : de l'approbation, de l'influence, et le niveau 3 des maisons." },
+  { id:"bread",   name:"Du pain au four",              hint:"Un moulin moud le grain de la ferme ; une boulangerie en fait du pain (un bourgeois y travaille deux fois mieux)." },
+  { id:"town",    name:"20 familles : un bourg",       hint:"Agrandissez le village : des maisons, de quoi les nourrir et les chauffer." },
+  { id:"lvl3",    name:"Une maison de niveau 3",       hint:"Une maison de niveau 2 bien pourvue trois mois de plus, avec une église et 65 % d'approbation, devient une maison de pierre." },
+  { id:"city",    name:"40 familles : une ville",      hint:"La dernière marche : une ville prospère couronne votre règne." },
+];
+const GOAL_BY_ID = Object.fromEntries(GOALS.map(x=>[x.id, x]));
 const SETTLEMENT_LEVELS = [
   { name:"Hameau", minPop:0 },
   { name:"Village", minPop:8 },
@@ -577,7 +618,9 @@ const JOB_TITLES = {
                                                                  
                                                                                                                                
 
-const WORK_TIME                        = { chop:14, gather:14, hunt:12, mine:20 };
+const WORK_TIME                        = { chop:24, gather:30, hunt:12, mine:20 };   // étape 8 : on cueille et on abat plus posément
+// étape 8 : ce que rapporte un voyage (avant la difficulté) ; avant, la cueillette nourrissait seule tout un village
+const CHOP_TIMBER = 2, CHOP_FUEL = 3, GATHER_LOAD = 1.25, HUNT_MEAT = 4;
 const FIELD_TASKS = { plow:1, spread:1, sow:1, harvest:1, mow:1 };   // étape 5 : travaux des champs
 
 class GameState {
@@ -634,7 +677,7 @@ class GameState {
     // étape 7c : le coutumier (option en vigueur, proclamations en attente, dernier changement)
     this.laws = {}; for(const id of LAW_ORDER) this.laws[id] = 0;
     this.lawPending = {}; this.lawChanged = {};
-    this.prices = { bread:2, clothes:3, ale:2, apples:1, honey:4, meat:1, berries:1, wool:2, cheese:3 };
+    this.prices = Object.assign({}, TRADE_BASE);
     this.occupied = new Int32Array(W*H).fill(-1);
     this.buildings = []; this.nextB = 1;
     this.families = []; this.nextF = 1;      // foyers (une maison, une marmite)
@@ -643,7 +686,7 @@ class GameState {
     this.deer = []; this.nextD = 1; this.deerTimer = 0;
     this.camps = []; this.nextC = 1;
     this.units = []; this.nextU = 1;
-    this.stock = { timber:15, firewood:12, stone:0, grain:0, bread:6, berries:40, meat:25, eggs:0, veg:0, apples:0, honey:0, clothes:2, ale:0, barley:0, ox:0,
+    this.stock = { timber:15, firewood:12, stone:0, grain:0, bread:6, berries:40, meat:25, eggs:0, veg:0, apples:0, honey:0, clothes:3, ale:0, barley:0, ox:0,
                    oats:0, flax:0, pulses:0, milk:0, wool:0, hay:6, manure:0, sh_grain:0, sh_barley:0, sh_oats:0,   // une petite meule de foin pour le bœuf
                    flour:0, cheese:0, smoked:0 };
     this.spoiled = {};                        // étape 6 : ce qui s'est gâté le mois dernier
@@ -658,15 +701,19 @@ class GameState {
     this.pendingEvent = null;
     this.speed = 1; this.toasts = []; this.toastId = 1; this.log = [];
     this.uiVersion = 0;
-    this.objectives = { wood:false, happy:false, pop:false, manor:false, happyStreak:0 };
+    this.objectives = { wood:false, happy:false, pop:false, manor:false, happyStreak:0 };   // (anciens objectifs, gardés pour les sauvegardes)
+    this.goals = { done:{} };   // étape 8 : objectifs atteints (mois où ils l'ont été)
     this.victory = false; this.winterWarned = false;
     this.defeat = false; this.endReason = null;
     this.lowApprovalStreak = 0;
     this.weather = "clear"; // clear | rain | snow | fog
     this.weatherT = 0;
     if(MODE_BY_ID[this.modeId] && MODE_BY_ID[this.modeId].harsh){
-      this.stock.timber = 8; this.stock.berries = 10; this.stock.meat = 6; this.stock.firewood = 4;
+      this.stock.timber = 10; this.stock.berries = 16; this.stock.meat = 10; this.stock.firewood = 6; this.stock.bread = 3;
     }
+    // étape 8 : les réserves de départ selon la difficulté (vivres, bois d'œuvre, bois de chauffe)
+    const st0 = this.diff().start;
+    if(st0!==1) for(const k of ["timber","firewood","berries","meat","bread"]) this.stock[k] = Math.round(this.stock[k]*st0);
     this.mmRect = null;
     this.genMap();
     this.placeStart();
@@ -1145,6 +1192,7 @@ class GameState {
     }
     if(d.instant || d.id==="field"){ b.done = true; b.progress = 1; }
     else this.initMat(b, d.cost);
+    this.enclosedCheck();   // étape 8 : prévenir tout de suite si la pose enferme un bâtiment
     this.uiVersion++;
     return null;
   }
@@ -1319,6 +1367,7 @@ class GameState {
     const nb = plan.plots.length;
     this.toast(nb+" parcelle"+(nb>1?"s":"")+" tracée"+(nb>1?"s":"")+" : les journaliers bâtissent les maisons."
       +(plan.limited?" (bois insuffisant pour toute la zone)":""), "good");
+    this.enclosedCheck();
     this.uiVersion++;
     return null;
   }
@@ -1376,8 +1425,10 @@ class GameState {
       let have = this.workersOf(b).length;
       while(have<want){
         const free = this.freeAdults().filter(v=>this.canHold(v, b)); if(!free.length) break;   // étape 7c : artisans bourgeois
-        const sk = d.skill || "build";
-        free.sort((a, c)=>this.jobScore(c, sk) - this.jobScore(a, sk) || a.id - c.id);
+        const sk = d.skill || "build", sk2 = this.isSkilled(b);
+        // étape 8 : pour un atelier, un bourgeois d'abord (il y travaille deux fois mieux)
+        const rk = (v)=>sk2 && this.ordOf(v)==="bourg" ? 1000 : 0;
+        free.sort((a, c)=>(rk(c) + this.jobScore(c, sk)) - (rk(a) + this.jobScore(a, sk)) || a.id - c.id);
         const v = free[0];
         v.work = b.id; this.resetWorker(v); have++; n++;
       }
@@ -1394,7 +1445,8 @@ class GameState {
     if(have>=d.fam) return false;
     b.want = Math.min(d.fam, Math.max(Number(b.want)||0, have) + 1);
     const n = this.fillJobs(b);
-    if(!n) this.toast(this.isSkilled(b) && this.freeAdults().length ? "Aucun bourgeois libre : il faut un artisan d'une famille bourgeoise (maison de niveau 2)." : "Aucun adulte libre : le poste sera pourvu dès que quelqu'un se libère.");
+    if(!n) this.toast("Aucun adulte libre : le poste sera pourvu dès que quelqu'un se libère.");
+    else if(this.isSkilled(b) && this.workersOf(b).some(v=>this.ordOf(v)==="serf")) this.toast("Un serf tient l'atelier en simple manœuvre (deux fois moins vite) : un bourgeois ferait mieux.");
     this.uiVersion++;
     return n>0;
   }
@@ -1584,6 +1636,21 @@ class GameState {
     }
     return n;
   }
+  // étape 8 : ce que le comptoir garde pour le village : quelques mois de vivres (pris dans chaque denrée au prorata),
+  // les vêtements de la prochaine tournée, l'ale de l'hiver, la laine des tailleurs, la bonne table des nobles
+  tradeReserve(){
+    const m = this.time.month, fam = this.families.length;
+    const months = (m>=7 && m<=10) ? TRADE_KEEP_WINTER : TRADE_KEEP;
+    const need = this.foodNeed()*months, tot = this.foodStock(), keep = {};
+    for(const k of FOOD_TYPES) keep[k] = tot>0 ? Math.min(this.stock[k]||0, need*(this.stock[k]||0)/tot) : 0;
+    const nobles = this.nobleCount();
+    for(const k of ["cheese","honey","smoked"]) keep[k] = Math.max(keep[k]||0, Math.min(this.stock[k]||0, nobles*3));
+    keep.clothes = Math.ceil(fam*2/CLOTH_EVERY) + nobles*3 + 2;
+    keep.ale = (m>=8 || m<=1) ? fam*2 : Math.ceil(fam/2);
+    const tailors = this.buildings.filter(b=>b.def==="burgage" && b.exts.includes("tailor")).length;
+    keep.wool = tailors*3;
+    return keep;
+  }
   // ce que les marchands font passer au marché et au comptoir ce mois-ci, sur quoi se lèvent les péages
   marketTraffic(){ return this.marketActive() && !this.policies.freeMarket ? 3 + 1.5*this.families.length : 0; }
   // emprunts : le changeur du bourg prête selon l'étendue de vos terres
@@ -1610,7 +1677,14 @@ class GameState {
     return null;
   }
   interestDue(){ return this.fisc.debt>0 ? Math.max(1, Math.ceil(this.fisc.debt*LOAN_RATE)) : 0; }
-  kingTaxEstimate(year){ return Math.round(8+this.families.length*1.2+(year-1177)*2); }
+  // étape 8 : l'impôt du roi suit les maisons habitées (une belle maison paie plus), les années de règne et une part
+  // des ventes du comptoir de l'année ; la difficulté l'alourdit ou l'allège
+  kingTaxEstimate(year){
+    let h = 0;
+    for(const b of this.buildings) if(b.def==="burgage" && b.done && this.houseFamily(b)) h += KING_HOUSE[b.lvl] || 1;
+    const trade = this.bookYear().trade || 0;
+    return Math.round((8 + h*1.2 + Math.max(0, year-1177)*2 + KING_TRADE*trade)*this.diff().tax);
+  }
   // le bilan fiscal du mois (appelé par onMonth, après le comptoir)
   fiscMonth(m, tradeSold){
     const F = this.fisc;
@@ -1715,7 +1789,7 @@ class GameState {
       const mm = (m+k)%12, yy = this.time.year + Math.floor((m+k)/12);
       acc += tm;
       if(TAILLE_MONTHS.includes(mm) && this.hasManor()){ taille += acc*rate; acc = 0; }
-      if(mm===KING_MONTH && yy>=1177) king += this.kingTaxEstimate(yy);
+      if(mm===KING_MONTH && yy>=1177 && this.hasManor()) king += this.kingTaxEstimate(yy);
       interest += this.interestDue();
     }
     add("Taille", taille);
@@ -1941,16 +2015,18 @@ class GameState {
   isNoble(v){ return this.ordOf(v)==="noble"; }
   orderName(v){ const o = ORDER_DEFS[this.ordOf(v)]; return o.one[v && v.sex==="f" ? 1 : 0]; }
   isSkilled(b){ return !!b && SKILLED.includes(b.def); }
-  // qui peut tenir ce poste : pas un noble ; un métier d'artisan demande un bourgeois
-  canHold(v, b){
-    const o = this.ordOf(v);
-    if(o==="noble") return false;
-    return !this.isSkilled(b) || o==="bourg";
-  }
+  // qui peut tenir ce poste : tout le monde sauf un noble. Étape 8 : un serf peut tenir un métier d'artisan,
+  // mais en simple manœuvre (deux fois moins vite qu'un bourgeois) ; avant, il ne le pouvait pas du tout, et
+  // sans bourgeoisie le moulin, la boulangerie et le comptoir restaient fermés des années.
+  canHold(v, b){ return this.ordOf(v)!=="noble"; }
   holdErr(v, b){
     if(this.isNoble(v)) return "Un noble ne prend pas de poste";
-    if(this.isSkilled(b) && this.ordOf(v)!=="bourg") return BUILD_DEFS[b.def].name+" : il faut un artisan bourgeois (famille d'une maison de niveau 2)";
     return null;
+  }
+  // efficacité d'un artisan selon son ordre (1 pour un bourgeois ou hors des ateliers)
+  rankMul(v, b){
+    b = b || (v && v.work>0 ? this.buildings.find(x=>x.id===v.work) : null);
+    return this.isSkilled(b) && this.ordOf(v)==="serf" ? SERF_CRAFT : 1;
   }
   // une famille monte dans la bourgeoisie (maison de niveau 2) ; renvoie vrai si elle change d'ordre
   promote(f, ord){
@@ -2509,6 +2585,7 @@ class GameState {
     for(const i of plan.cells) this.occupied[i] = b.id;
     b.done = true; b.progress = 1;
     this.toast("Champ tracé ("+plan.n+" cases, fertilité "+Math.round(plan.fert*100)+" %).", "good");
+    this.enclosedCheck();
     this.uiVersion++;
     return null;
   }
@@ -2588,8 +2665,10 @@ class GameState {
     if(!cd.yield) return { qty:0, parts:[], unit:null };
     const n = this.fieldN(b), fe = this.fertEff(f, cd), rot = this.rotationMul(f, cd);
     const cond = f.sown ? f.cond : 1, gr = final ? Math.min(1, f.growth) : 1;
-    const qty = Math.max(0, Math.round(n*4*cd.mul*fe*rot[0]*cond*gr));
+    const dy = this.diff().yield;
+    const qty = Math.max(0, Math.round(n*4*cd.mul*fe*rot[0]*cond*gr*dy));
     const parts = [["Fertilité", fe]];
+    if(dy!==1) parts.push(["Difficulté", dy]);
     if(rot[0]!==1) parts.push([rot[1], rot[0]]);
     if(f.sown && Math.abs(cond-1)>0.005) parts.push(["État de la culture", cond]);
     if(final && gr<0.999) parts.push(["Pas tout à fait mûr", gr]);
@@ -2863,6 +2942,7 @@ class GameState {
     for(const i of plan.cells) this.occupied[i] = b.id;
     this.markPastures();
     this.toast("Pâturage tracé ("+(plan.cells.length-1)+" cases d'herbe) : les journaliers posent la clôture et l'abri.", "good");
+    this.enclosedCheck();
     this.uiVersion++;
     return null;
   }
@@ -3157,6 +3237,13 @@ class GameState {
     const ev = this.pendingEvent; if(!ev) return;
     const c = ev.choices[choiceIndex];
     if(c.act==="pay"){ this.money("king", -(c.amount||0)); this.toast("Le roi a reçu son dû. La paix est préservée.","good"); }
+    else if(c.act==="payKind"){
+      // les deniers qu'on a, et des vivres pour le reste, pris dans chaque denrée au prorata
+      this.money("king", -Math.min(c.amount||0, Math.max(0, Math.floor(this.treasury))));
+      const tot = this.foodStock(), k = Math.min(c.kind||0, tot);
+      if(tot>0) for(const f of FOOD_TYPES) this.stock[f] = Math.max(0, (this.stock[f]||0) - k*(this.stock[f]||0)/tot);
+      this.toast("Le roi accepte d'être payé en partie en nature : "+Math.round(k)+" mesures de vivres partent pour la couronne.");
+    }
     else if(c.act==="refuseTax"){ this.approval -= 12; const lost=this.stock.berries+this.stock.meat+this.stock.bread+this.stock.eggs+this.stock.veg;
       for(const k of FOOD_TYPES) this.stock[k]=Math.floor(this.stock[k]*0.75); this.toast("Le bailli confisque une partie des récoltes !","bad"); }
     else if(c.act==="payRaid"){ this.money("tribute", -(c.amount||0)); this.toast("Le tribut est versé au Baron. Il se retire… pour l'instant.","good"); }
@@ -3219,15 +3306,31 @@ class GameState {
   regionOwned(x, y){ const r = this.regions[this.regionAt(x, y)]; return r ? r.owned : false; }
   ownedRegions(){ return this.regions.filter(r=>r.owned); }
   // une région se réclame si elle touche vos terres ; chaque région de plus coûte un peu plus cher
-  regionCost(){ const k = Math.max(0, this.ownedRegions().length - 1); return { treasury:REGION_COST.treasury + 15*k, wealth:REGION_COST.wealth + 5*k }; }
-  regionClaimable(r){ return !!r && !r.owned && !this.baron.regions.includes(r.id) && r.nb.some(k=>this.regions[k] && this.regions[k].owned); }
+  // étape 8 : reprendre une région au Baron coûte moitié plus cher (avant, c'était impossible : une région voisine
+  // prise par le Baron rendait la victoire inaccessible)
+  regionCost(r){
+    const k = Math.max(0, this.ownedRegions().length - 1), c = { treasury:REGION_COST.treasury + 15*k, wealth:REGION_COST.wealth + 5*k };
+    if(r && this.baron.regions.includes(r.id)) c.treasury = Math.round(c.treasury*1.5);
+    return c;
+  }
+  regionTouches(r){ return !!r && r.nb.some(k=>this.regions[k] && this.regions[k].owned); }
+  regionClaimable(r){ return !!r && !r.owned && !this.baron.regions.includes(r.id) && this.regionTouches(r); }
+  regionRetakable(r){ return !!r && !r.owned && this.baron.regions.includes(r.id) && this.regionTouches(r); }
   // les terres voisines du départ : ce que les modes de conquête demandent de réunir
   goalRegions(){ const s = this.regions[this.startRegion]; return s ? [s].concat(s.nb.map(k=>this.regions[k])) : []; }
+  // étape 8 : ce que demandent les modes de conquête — quelques régions à soi (pas toutes les voisines : il y en a
+  // jusqu'à huit, et le Baron en prend une tous les six mois), et aucune terre voisine du départ aux mains du Baron
+  conquest(){
+    const need = MODE_BY_ID[this.modeId] && MODE_BY_ID[this.modeId].regions || 0;
+    const near = this.goalRegions().slice(1).filter(r=>this.baron.regions.includes(r.id)).length;
+    const have = this.ownedRegions().length;
+    return { need, have, baronNear:near, ok: have>=need && near===0 };
+  }
   claimRegion(rid       ){
     const r=this.regions[rid]; if(!r || r.owned) return false;
-    if(this.baron.regions.includes(rid)){ this.toast("Le "+this.baron.name+" tient cette région.","bad"); return false; }
-    if(!this.regionClaimable(r)){ this.toast("On ne réclame qu'une région qui touche vos terres.","bad"); return false; }
-    const c = this.regionCost();
+    const baron = this.baron.regions.includes(rid);
+    if(!this.regionTouches(r)){ this.toast("On ne réclame qu'une région qui touche vos terres.","bad"); return false; }
+    const c = this.regionCost(r);
     if(this.treasury < c.treasury || this.wealth < c.wealth){
       this.toast("Réclamation impossible : il faut "+c.treasury+" deniers et "+c.wealth+" de richesse régionale.","bad");
       return false;
@@ -3235,10 +3338,95 @@ class GameState {
     this.money("regions", -c.treasury); this.wealth -= c.wealth;
     r.owned = true;
     this.influence += 10;
-    this.toast("🗺️ "+r.name+" est désormais vôtre !","good");
-    this.chron(r.name+" rejoint le domaine.","good");
+    if(baron){
+      this.baron.regions = this.baron.regions.filter(k=>k!==rid);
+      this.baron.power = Math.max(0, (this.baron.power||0) - 1);
+      this.baron.nextClaim = Math.max(this.baron.nextClaim||0, 6);
+      this.toast("🗺️ Vous rachetez les droits de "+r.name+" : le "+this.baron.name+" s'en retire.","good");
+      this.chron(r.name+" est reprise au Baron.","good");
+    } else {
+      this.toast("🗺️ "+r.name+" est désormais vôtre !","good");
+      this.chron(r.name+" rejoint le domaine.","good");
+    }
     this.uiVersion++;
     return true;
+  }
+
+  // « Le moulin est achevé ! », « La boulangerie est achevée ! » (avant : « Moulin est achevé(e) ! »)
+  doneText(def){
+    if(def==="burgage") return "Une maison est prête.";
+    const d = BUILD_DEFS[def]; if(!d) return "Chantier achevé !";
+    const fem = BUILD_FEM.includes(def), n = d.name.charAt(0).toLowerCase() + d.name.slice(1);
+    const art = /^[aeiouyéèêàâîôû]/i.test(n) ? "L'" : fem ? "La " : "Le ";
+    return art+n+" est achevé"+(fem ? "e" : "")+" !";
+  }
+
+  /* ---------- étape 8 : ce qu'il faut à une maison pour monter d'un niveau ---------- */
+  // liste [condition, remplie ?] ; null pour une maison vide ou déjà au niveau 3
+  levelNeeds(b, fuelOk){
+    const f = b && this.houseFamily(b);
+    if(!f || !b.done || b.lvl>=3) return null;
+    const fuel = fuelOk!==undefined ? fuelOk : !(this.lastFuel<1);
+    const v = b.lvl===1 ? 2 : 3;
+    const n = [
+      ["Nourrie à sa faim, sans bouillie", (f.fed!==undefined ? f.fed>=0.999 : f.lastAte>=1) && !f.gruel],
+      ["Chauffée", fuel],
+      ["Vêtue", f.clothed!==false],
+      ["Un marché", this.marketActive()],
+      [v+" sortes d'aliments au menu", (f.variety||0)>=v],
+    ];
+    if(b.lvl===2){ n.push(["Une église", this.hasChurch()]); n.push(["Approbation d'au moins 65 %", this.approval>=65]); }
+    return n;
+  }
+  levelCost(b){ return !b || b.lvl>=3 ? null : b.lvl===1 ? { timber:2 } : { timber:3, stone:3 }; }
+
+  /* ---------- étape 8 : les objectifs ---------- */
+  loadGoals(d){
+    this.goals = { done:{} };
+    if(d && d.done && typeof d.done==="object") for(const id of Object.keys(d.done)) if(GOAL_BY_ID[id] && typeof d.done[id]==="number" && isFinite(d.done[id])) this.goals.done[id] = d.done[id];
+  }
+  goalMet(id){
+    const staffed = (def)=>this.buildings.some(b=>b.done && b.def===def && this.workersOf(b).length>0);
+    switch(id){
+      case "house":   return this.families.length>0 && !this.buildings.some(b=>b.def==="camp") && this.families.every(f=>f.home>0);
+      case "wood":    return staffed("woodcutter");
+      case "food":    return staffed("forager") || staffed("hunter");
+      case "market":  return this.marketActive();
+      case "field":   return this.fields().length>0 && staffed("farm");
+      case "village": return this.families.length>=8;
+      case "tailor":  return this.buildings.some(b=>b.def==="burgage" && b.done && b.exts.includes("tailor"));
+      case "manor":   return this.hasManor();
+      case "bourg":   return this.families.some(f=>f.ord==="bourg" || f.ord==="noble");
+      case "church":  return this.hasChurch();
+      case "bread":   return this.buildings.some(b=>b.def==="bakery" && b.done && ((b.made||0)>0 || (b.lastMade||0)>0));
+      case "town":    return this.families.length>=20;
+      case "lvl3":    return this.buildings.some(b=>b.def==="burgage" && b.done && b.lvl>=3);
+      case "city":    return this.families.length>=40;
+    }
+    return false;
+  }
+  goalsDone(){ return GOALS.filter(x=>this.goals.done[x.id]!==undefined).length; }
+  nextGoals(n){ return GOALS.filter(x=>this.goals.done[x.id]===undefined).slice(0, n); }
+  // vérifié chaque jour : un objectif atteint le reste
+  goalsCheck(){
+    if(!this.goals || !this.goals.done) this.goals = { done:{} };
+    let fresh = null;
+    for(const x of GOALS) if(this.goals.done[x.id]===undefined && this.goalMet(x.id)){ this.goals.done[x.id] = this.monthIdx(); fresh = x; }
+    if(fresh){
+      const nx = this.nextGoals(1)[0];
+      this.toast("Objectif atteint : "+fresh.name.toLowerCase()+"."+(nx ? " Prochain : "+nx.name.toLowerCase()+"." : ""), "good");
+    }
+    return fresh;
+  }
+  // ce que le mode de jeu demande pour gagner (affiché au-dessus des objectifs)
+  modeGoal(){
+    switch(this.modeId){
+      case "edge":      return "Tenir jusqu'en mars 1179";
+      case "peace":     return "Plus aucun camp de brigands et quatre régions à vous, en 1179 au plus tôt";
+      case "duel":      return "Cinq régions à vous et aucune terre voisine au Baron (reprenez-les), en 1179 au plus tôt";
+      case "fractured": return "Cinq régions, aucune terre voisine au Baron, plus aucun camp de brigands, en 1180";
+      default:          return "Remplir tous les objectifs";
+    }
   }
 
   /* ---------- église améliorable & niveaux de bourg ---------- */
@@ -3364,15 +3552,83 @@ class GameState {
     return null;
   }
   // trouve une case praticable adjacente au bâtiment (pour y travailler)
+  /* étape 8 : quelles cases franchissables sont reliées entre elles (composantes), recalculé seulement quand un
+     bâtiment est posé ou démoli, ou une région réclamée. Avant, un villageois visait la case libre la plus proche
+     d'un bâtiment même enfermée (par exemple entre un chantier, une grange et le manoir) : il n'y arrivait jamais,
+     attendait, recommençait, et des chantiers restaient bloqués des années avec des journaliers désœuvrés. */
+  reachMap(){
+    const sig = this.nextB+"|"+this.buildings.length+"|"+this.regions.filter(r=>r.owned).length;
+    let R = this._reach;
+    if(R && R.sig===sig) return R.comp;
+    const comp = (R && R.comp.length===W*H) ? R.comp : new Int32Array(W*H);
+    comp.fill(-1);
+    const q = new Int32Array(W*H);
+    let label = 0;
+    for(let i0=0;i0<W*H;i0++){
+      if(comp[i0]>=0 || !this.passable(i0%W, (i0/W)|0)) continue;
+      let h = 0, t = 0; q[t++] = i0; comp[i0] = label;
+      while(h<t){
+        const i = q[h++], x = i%W, y = (i/W)|0;
+        for(let k=0;k<4;k++){
+          const nx = x+DIRS4[k][0], ny = y+DIRS4[k][1];
+          if(nx<0||ny<0||nx>=W||ny>=H) continue;
+          const n = ny*W+nx;
+          if(comp[n]<0 && this.passable(nx, ny)){ comp[n] = label; q[t++] = n; }
+        }
+      }
+      label++;
+    }
+    try{ Object.defineProperty(this, "_reach", { value:{ sig, comp }, writable:true, enumerable:false, configurable:true }); }catch(e){ this._reach = { sig, comp }; }
+    return comp;
+  }
+  // composante de la case où se tient quelqu'un (ou d'une case voisine s'il est dans un bâtiment) ; -1 : inconnue
+  compAt(fx, fy){
+    const comp = this.reachMap(), x = Math.floor(fx), y = Math.floor(fy);
+    if(x>=0 && y>=0 && x<W && y<H && comp[y*W+x]>=0) return comp[y*W+x];
+    for(const d of DIRS4){ const nx = x+d[0], ny = y+d[1]; if(nx>=0 && ny>=0 && nx<W && ny<H && comp[ny*W+nx]>=0) return comp[ny*W+nx]; }
+    return -1;
+  }
+  // étape 8 : chaque mois, un bâtiment que plus personne ne peut atteindre (enfermé par des maisons, des champs, des
+  // remparts posés ensuite) est signalé — dans son panneau, et d'un message la première fois. Avant, ses ouvriers
+  // allaient et venaient sans jamais rien rapporter, sans que rien ne l'explique.
+  enclosedCheck(){
+    const cnt = new Map();
+    for(const v of this.villagers){ const c = this.compAt(v.x, v.y); if(c>=0) cnt.set(c, (cnt.get(c)||0) + 1); }
+    let main = -1, mc = 0;
+    cnt.forEach((n, c)=>{ if(n>mc){ mc = n; main = c; } });
+    if(main<0) return 0;
+    const comp = this.reachMap();
+    let n = 0;
+    for(const b of this.buildings){
+      const d = BUILD_DEFS[b.def];
+      if(!b.done || !d || b.def==="field" || b.def==="wall" || b.def==="pasture") continue;
+      const needed = d.fam>0 || b.def==="storehouse" || b.def==="granary" || (b.def==="burgage" && this.houseFamily(b));
+      if(!needed){ delete b.enclosed; continue; }
+      let ok = false;
+      for(let r=1; r<=3 && !ok; r++) for(let yy=b.y-r; yy<=b.y+b.h-1+r && !ok; yy++) for(let xx=b.x-r; xx<=b.x+b.w-1+r && !ok; xx++){
+        if(xx<0||yy<0||xx>=W||yy>=H) continue;
+        if(comp[yy*W+xx]===main) ok = true;
+      }
+      if(ok){ delete b.enclosed; continue; }
+      n++;
+      if(!b.enclosed){
+        b.enclosed = true;
+        this.toast((b.def==="burgage" ? "Une maison" : d.name)+" n'a plus aucun accès : personne ne peut l'atteindre. Dégagez un passage (une route, une case libre).", "bad");
+      }
+    }
+    return n;
+  }
+  // une case libre au bord du bâtiment, la plus proche, ET qu'on peut atteindre depuis (fx, fy)
   spotFor(b         , fx       , fy       )         {
     if(!isFinite(b.x)||!isFinite(b.y)||!isFinite(b.w)||!isFinite(b.h)||b.w>W||b.h>H) return null;
     let best         =null, bd=Infinity;
+    const cmap = this.reachMap(), cf = this.compAt(fx, fy);
     for(let r=1;r<=3;r++){
       for(let yy=Math.max(0,b.y-r); yy<=Math.min(H-1,b.y+b.h-1+r); yy++){
         for(let xx=Math.max(0,b.x-r); xx<=Math.min(W-1,b.x+b.w-1+r); xx++){
           const edge = (xx===Math.max(0,b.x-r)||xx===Math.min(W-1,b.x+b.w-1+r)||yy===Math.max(0,b.y-r)||yy===Math.min(H-1,b.y+b.h-1+r));
           if(!edge) continue;
-          if(this.passable(xx,yy)){
+          if(this.passable(xx,yy) && (cf<0 || cmap[yy*W+xx]===cf)){
             const d=Math.hypot(xx-fx,yy-fy);
             if(d<bd){ bd=d; best={x:xx,y:yy}; }
           }
@@ -3442,6 +3698,20 @@ class GameState {
       }
     }
     return best;
+  }
+  // un cerf de plus en lisière de bois, à portée du camp de chasse, s'il y en a moins de quatre
+  restockDeer(b){
+    const R = BUILD_DEFS.hunter.radius||9, cx = b.x+0.5, cy = b.y+0.5;
+    if(this.deer.filter(d=>Math.hypot(d.x-cx, d.y-cy)<=R).length >= 4) return false;
+    for(let tries=0; tries<30; tries++){
+      const a = this.rnd()*Math.PI*2, r = 3 + this.rnd()*(R-3);
+      const x = Math.floor(cx + Math.cos(a)*r), y = Math.floor(cy + Math.sin(a)*r);
+      if(x<1 || y<1 || x>=W-1 || y>=H-1 || !this.walkable(x, y) || this.tiles[y*W+x]===T_FORD) continue;
+      if(!DIRS4.some(q=>this.tiles[(y+q[1])*W+x+q[0]]===T_FOREST)) continue;
+      this.deer.push({ id:this.nextD++, x:x+0.5, y:y+0.5, path:null, frozen:false });
+      return true;
+    }
+    return false;
   }
   findDeerNear(b         )          {
     let best          =null, bd=Infinity;
@@ -3652,6 +3922,7 @@ class GameState {
     let best = null, bd = Infinity;
     const sx = site.x+site.w/2, sy = site.y+site.h/2;
     for(const d of this.depotsFor(r)){
+      if(!this.spotFor(d, x, y)) continue;   // étape 8 : un dépôt qu'on ne peut pas atteindre ne sert à rien
       const cx = d.x+d.w/2, cy = d.y+d.h/2;
       const k = Math.hypot(cx-x, cy-y) + Math.hypot(sx-cx, sy-cy);
       if(k<bd){ bd = k; best = d; }
@@ -3719,6 +3990,11 @@ class GameState {
   siteJob(f, sites){
     const plow = this.plowing();
     for(const s of this.sitesByOrder(sites, f.x, f.y)){
+      // étape 8 : un chantier enfermé (aucune case libre reliée autour) est passé, et signalé une fois
+      if(!this.spotFor(s, f.x, f.y)){
+        if(!s.unreach && this.compAt(f.x, f.y)>=0){ s.unreach = true; this.toast("Le chantier ("+(BUILD_DEFS[s.def] ? BUILD_DEFS[s.def].name.toLowerCase() : s.def)+") est enfermé : personne ne peut l'atteindre. Dégagez un passage ou démolissez-le.", "bad"); }
+        continue;
+      }
       if(s.mat) for(const r of MAT_RES){
         const left = this.matLeft(s, r);
         if(left<=0) continue;
@@ -3851,6 +4127,7 @@ class GameState {
     for(const d of this.buildings){
       if(!d.done || d===b || rc.from.indexOf(d.def)<0) continue;
       if(d.def==="pasture" && !(d.herd && d.herd.an.length && (r!=="milk" || d.herd.sp==="cattle"))) continue;
+      if(!this.spotFor(d, x, y)) continue;   // étape 8 : un dépôt enfermé ne sert à rien
       const k = Math.hypot(d.x+d.w/2-x, d.y+d.h/2-y) + Math.hypot(b.x+b.w/2-(d.x+d.w/2), b.y+b.h/2-(d.y+d.h/2));
       if(k<bd){ bd = k; best = d; }
     }
@@ -3966,7 +4243,12 @@ class GameState {
         site.progress = Math.min(cap, site.progress + 0.0045 * (BUILD_DEFS[site.def].buildRate || 1) * this.skillMul(f, "build"));
         if(site.progress>=1){
           site.done=true; site.progress=1;
-          this.toast(BUILD_DEFS[site.def].name+" est achevé(e) !","good");
+          // étape 8 : un bâtiment qui emploie des ouvriers en reçoit un tout de suite (avant, il restait vide tant
+          // qu'on n'avait pas touché « + » : beaucoup de joueurs ne comprenaient pas pourquoi rien ne se passait)
+          const sd = BUILD_DEFS[site.def];
+          let hired = 0;
+          if(sd.fam>0 && site.def!=="pasture" && !(Number(site.want)>0)){ site.want = 1; hired = this.fillJobs(site); }
+          this.toast(this.doneText(site.def)+(sd.fam>0 && site.def!=="pasture" ? (hired ? " Un ouvrier s'y met ; touchez-le pour en ajouter." : " Le poste attend un adulte libre.") : ""),"good");
           if(site.def==="burgage") this.rehouseCamp();
           if(site.def==="manor") this.toast("Le manoir est debout : la taille sera levée à Pâques et à la Saint-Michel. Réglez les redevances dans son panneau.","good");
           f.task=null; f.state="idle"; f.cool=5;
@@ -4001,7 +4283,7 @@ class GameState {
         if(!ws){ f.task=null; f.state="idle"; f.cool=20; break; }
         const rc = RECIPES[ws.def];
         f.timer++;
-        if(f.timer>=Math.round(rc.time/this.skillMul(f, "craft"))){
+        if(f.timer>=Math.round(rc.time/(this.skillMul(f, "craft")*this.rankMul(f, ws)))){
           f.timer=0;
           if(this.craftBlock(ws)===null) this.craftOne(ws);
           else { f.task=null; f.state="idle"; f.cool=0; }
@@ -4035,15 +4317,15 @@ class GameState {
       const i=t.ty*W+t.tx;
       this.treeWood[i]-=2;
       if(this.treeWood[i]<=0){ this.treeWood[i]=0; this.tiles[i]=T_GRASS; }
-      f.carry={ timber:3, firewood:3 };
+      f.carry={ timber:CHOP_TIMBER, firewood:CHOP_FUEL };
     } else if(t.type==="gather" && t.tx!==undefined && t.ty!==undefined){
       const i=t.ty*W+t.tx;
       this.berryY[i]=Math.max(0,this.berryY[i]-3);
-      f.carry={ berries:3 };
+      f.carry={ berries:GATHER_LOAD*this.diff().yield };
     } else if(t.type==="hunt" && t.deer!==undefined){
       const di=this.deer.findIndex(d=>d.id===t.deer);
       if(di>=0){ this.deer.splice(di,1); this.deerTimer=Math.max(this.deerTimer, Math.round(30*TS)); }
-      f.carry={ meat:3 };
+      f.carry={ meat:HUNT_MEAT*this.diff().yield };
     } else if(t.type==="mine"){
       const b=f.work>0?this.buildings.find(x=>x.id===f.work):null;
       if(b){ const i=b.y*W+b.x; this.stoneAmt[i]=Math.max(0,this.stoneAmt[i]-2);
@@ -4234,7 +4516,7 @@ class GameState {
       if(!f || f.home<0) dh -= 3;
       if(v.sick>0){ dh -= 12*frag; v.sick--; if(!v.cause) v.cause = "de maladie"; }
       else {
-        const p = 0.006 + (winter ? 0.008 : 0) + (fed<0.999 ? 0.01 : 0) + (winter && fuelRatio<1 ? 0.01 : 0) + (st==="elder" ? 0.006 : 0);
+        const p = (0.006 + (winter ? 0.008 : 0) + (fed<0.999 ? 0.01 : 0) + (winter && fuelRatio<1 ? 0.01 : 0) + (st==="elder" ? 0.006 : 0))*this.diff().sick;
         if(r()<p){ v.sick = 1 + Math.floor(r()*3); dh -= 8; if(!v.cause) v.cause = "de maladie"; }
       }
       if(dh===0) dh = 6;
@@ -4528,6 +4810,7 @@ class GameState {
         this.onMonth();
       }
       this.corveeMuster();
+      this.goalsCheck();
     }
   }
 
@@ -4558,11 +4841,12 @@ class GameState {
     for(const b of this.buildings){
       if(!b.done || b.def!=="burgage") continue;
       const yf = this.yardFactor(b); // parcelle tracée : production à la mesure de l'arrière-cour
+      const fy = yf*this.diff().yield; // étape 8 : les vivres de la cour suivent la difficulté
       for(const e of b.exts){
-        if(e==="garden")  this.stock.veg=Math.min(this.capFor("veg"), this.stock.veg+0.5*yf);
-        if(e==="chicken") this.stock.eggs=Math.min(this.capFor("eggs"), this.stock.eggs+0.5*yf);
-        if(e==="orchard" && summer) this.stock.apples=Math.min(this.capFor("apples"), this.stock.apples+1*yf);
-        if(e==="beehive" && beeSeason) this.stock.honey=Math.min(this.capFor("honey"), this.stock.honey+0.5*yf);
+        if(e==="garden")  this.stock.veg=Math.min(this.capFor("veg"), this.stock.veg+EXT_FOOD.garden*fy);
+        if(e==="chicken") this.stock.eggs=Math.min(this.capFor("eggs"), this.stock.eggs+EXT_FOOD.chicken*fy);
+        if(e==="orchard" && summer) this.stock.apples=Math.min(this.capFor("apples"), this.stock.apples+EXT_FOOD.orchard*fy);
+        if(e==="beehive" && beeSeason) this.stock.honey=Math.min(this.capFor("honey"), this.stock.honey+EXT_FOOD.beehive*fy);
         if(e==="tailor"){
           // étape 5 : le tailleur file la laine ou le lin ; sans fibre, il rapièce (moitié moins)
           const want=1*yf, w=Math.min(this.stock.wool||0, want), fl=Math.min(this.stock.flax||0, want-w);
@@ -4605,17 +4889,16 @@ class GameState {
     const meal = this.eatMonth(market);
     const starved = meal.starved, varietyAvg = meal.variety;
     // bois de chauffe (neige = +1 par famille en plus)
-    const fuelNeed=(this.families.length*(winter?2:1)+(this.weather==="snow"?this.families.length:0))*(this.law("deadwood")===1 ? 0.75 : 1);
+    const fuelNeed=(this.families.length*(winter?2:1)+(this.weather==="snow"?this.families.length:0))*(this.law("deadwood")===1 ? 0.75 : 1)*this.diff().fuel;
     const fuelGot=Math.min(this.stock.firewood, fuelNeed);
     this.stock.firewood-=fuelGot;
     const fuelRatio=fuelNeed>0?fuelGot/fuelNeed:1;
-    // v\u00eatements (1 tous les 2 mois par famille)
+    // vêtements : une famille en use un tous les CLOTH_EVERY mois ; elle reste vêtue jusqu'au tour suivant
+    // (avant, seules les familles servies ce mois-ci comptaient : la moitié du village semblait en haillons)
     let clothed=0;
     for(const f of this.families){
-      // une famille reçoit des vêtements tous les deux mois ; elle reste vêtue jusqu'au tour suivant
-      // (avant, seules les familles servies ce mois-ci comptaient : la moitié du village semblait en haillons)
       f.clothCool=(f.clothCool||0)+1;
-      if(f.clothCool>=2){ f.clothCool=0; f.clothed = this.stock.clothes>0; if(f.clothed) this.stock.clothes-=1; }
+      if(f.clothCool>=CLOTH_EVERY){ f.clothCool=0; f.clothed = this.stock.clothes>=1; if(f.clothed) this.stock.clothes-=1; }
       if(f.clothed!==false) clothed++;
     }
     const clothRatio=this.families.length>0?clothed/this.families.length:1;
@@ -4654,6 +4937,7 @@ class GameState {
     this.influence += Math.round(4*this.taskPower("chaplain", "registers"));
     // approbation : chaque cause est gardée pour être expliquée au joueur
     const why = [["Base", 50]];
+    if(this.diff().ap) why.push(["Difficulté : "+this.diff().name.toLowerCase(), this.diff().ap]);
     const add = (label, v)=>{ if(v) why.push([label, v]); };
     if(this.families.length){
       const vt = (Math.round(varietyAvg*10)/10).toString().replace(".", ",");
@@ -4663,7 +4947,7 @@ class GameState {
     add(fuelRatio>=1 ? "Bois de chauffe suffisant" : "Manque de bois de chauffe", fuelRatio>=1 ? 4 : fuelRatio>=0.5 ? -5 : -15);
     add(clothRatio>=1 ? "Vêtements pour tous" : "Manque de vêtements", clothRatio>=1 ? 4 : clothRatio>=0.5 ? -3 : -8);
     if(winter) add(aleRatio>=1 ? "Ale pour l'hiver" : "Pas d'ale cet hiver", aleRatio>=1 ? 3 : aleRatio<0.5 ? -6 : 0);
-    if(this.hasChurch()) add("Église", 6 + this.churchBonus().approval);
+    if(this.hasChurch()) add("Église", 5 + this.churchBonus().approval);
     if(this.buildings.some(b=>b.done&&b.def==="tower")) add("Tour de guet", 4);
     add(this.buildings.some(b=>b.done&&b.def==="market") ? "Marché" : "Pas de marché", this.buildings.some(b=>b.done&&b.def==="market") ? 4 : -4);
     const homeless=this.families.filter(f=>f.home<0).length;
@@ -4713,23 +4997,30 @@ class GameState {
     let tradeSold = 0;
     const tradeActive = this.buildings.some(b=>b.done && b.def==="trade" && this.workersOf(b).length>0);
     if(tradeActive){
+      // étape 8 : le comptoir ne vend que le vrai surplus (il garde de quoi manger et se vêtir), les prix
+      // reviennent vers leur prix de base, et une marchandise vendue en masse se vend moins cher
       let earned = 0;
-      for(const k of Object.keys(this.prices)){
-        const p = this.prices[k];
-        const surplus = Math.floor(this.stock[k]||0);
+      const keep = this.tradeReserve();
+      this.tradeLast = {};
+      if(!this.tradeSat) this.tradeSat = {};
+      for(const k of Object.keys(TRADE_BASE)){
+        const p = this.prices[k] || TRADE_BASE[k];
+        const surplus = Math.floor((this.stock[k]||0) - (keep[k]||0));
+        let sold = 0;
         if(surplus >= 3){
-          const sold = Math.min(surplus, 4 + Math.floor(this.rnd()*3));
+          sold = Math.min(surplus, TRADE_LOT + Math.floor(this.rnd()*3));
           this.stock[k] -= sold;
           earned += sold * p;
+          this.tradeLast[k] = sold;
         }
-        // fluctuation des prix +-20%
-        this.prices[k] = Math.max(1, Math.round(p * (0.8 + this.rnd()*0.4)));
+        const sat = this.tradeSat[k] = Math.round(((this.tradeSat[k]||0)*0.5 + sold)*10)/10;
+        this.prices[k] = Math.max(0.5, Math.round(TRADE_BASE[k] * (0.8 + this.rnd()*0.4) / (1 + sat/25) * 10)/10);
       }
-      // un négociant habile vend mieux (de −10 % pour un novice à +10 % pour un maître)
-      let ts = 0;
-      for(const tb of this.buildings) if(tb.done && tb.def==="trade") for(const v of this.workersOf(tb)) ts = Math.max(ts, v.skills.trade||0);
+      // un négociant habile vend mieux (de −10 % pour un novice à +10 % pour un maître) ; un serf, en simple commis, vend moins bien
+      let ts = 0, rk = SERF_CRAFT;
+      for(const tb of this.buildings) if(tb.done && tb.def==="trade") for(const v of this.workersOf(tb)){ ts = Math.max(ts, v.skills.trade||0); rk = Math.max(rk, this.rankMul(v, tb)); }
       tradeSold = earned;
-      earned = Math.round(earned * (0.9 + 0.2*ts/100) * (1 - toll*0.5) * (1 + 0.15*this.taskPower("steward", "market")));
+      earned = Math.round(earned * (0.9 + 0.2*ts/100) * (0.4 + 0.6*rk) * (1 - toll*0.5) * (1 + 0.15*this.taskPower("steward", "market")));
       this.money("trade", earned);
       this.wealth += earned * 0.6 * (1 - toll); // la richesse régionale reflète l'activité commerciale
       if(earned>0) this.toast("Comptoir : +"+earned+" deniers de ventes.","good");
@@ -4749,13 +5040,16 @@ class GameState {
       for(let i=0;i<W*H;i++) if(this.tiles[i]===T_BERRY && this.berryY[i]>2){ anyBerry=true; break; }
       for(const b of this.buildings){
         if(b.done && b.def==="forager" && (this.findBerryNear(b)>=0 || anyBerry))
-          this.stock.berries=Math.min(this.capFor("berries"), this.stock.berries+1.0);
+          this.stock.berries=Math.min(this.capFor("berries"), this.stock.berries+0.5*this.diff().yield);
       }
     }
+    // étape 8 : le gibier se repeuple autour de chaque camp de chasse (sur la grande carte, les cerfs errants
+    // passaient trop rarement près des chasseurs : la chasse ne rapportait presque rien)
+    for(const b of this.buildings) if(b.done && b.def==="hunter") this.restockDeer(b);
     // chasseurs : un peu de viande passive si gibier proche
     for(const b of this.buildings){
       if(b.done && b.def==="hunter" && this.deer.length>0)
-        this.stock.meat=Math.min(this.capFor("meat"), this.stock.meat+0.5);
+        this.stock.meat=Math.min(this.capFor("meat"), this.stock.meat+0.5*this.diff().yield);
     }
     // production passive de bois de chauffe par les camps de bûcherons (même sans ouvrier assigné)
     for(const b of this.buildings){
@@ -4774,30 +5068,36 @@ class GameState {
       if(!bd) continue;
       for(const k of Object.keys(bd)) this.stock[k]=Math.min(this.capFor(k), (this.stock[k]||0)+bd[k]);
     }
-    // évolution des bourgages
+    // évolution des bourgages (étape 8 : les conditions sont dans levelNeeds, que le panneau de la maison affiche)
+    this.lastFuel = fuelRatio;
     for(const b of this.buildings){
       if(b.def!=="burgage"||!b.done) continue;
       const res=this.families.find(f=>f.home===b.id);
       if(!res) continue;
-      const ok=(res.fed!==undefined ? res.fed>=0.999 : res.lastAte>=1) && fuelRatio>=1 && market && (res.variety||0)>=2 && !res.gruel && res.clothed!==false;
-      if(ok) b.monthsGood++; else b.monthsGood=0;
-      if(b.lvl===1 && b.monthsGood>=3 && this.freeStock("timber")>=2){ this.stock.timber-=2; b.lvl=2;
-        this.toast("Un bourgage évolue : niveau 2 !"+(this.promote(res, "bourg") ? " La "+this.famLow(res)+" entre dans la bourgeoisie : ses adultes peuvent tenir un métier d'artisan." : ""),"good"); }
-      else if(b.lvl===2 && b.monthsGood>=3 && this.approval>=65 && this.hasChurch() && this.freeStock("timber")>=2 && this.freeStock("stone")>=2){
-        this.stock.timber-=2; this.stock.stone-=2; b.lvl=3; this.promote(res, "bourg");
-        this.toast("Un bourgage évolue : niveau 3 ! Impôts accrus."+(res.ord!=="noble" ? " La "+this.famLow(res)+" pourrait être anoblie ("+this.ennobleCost()+" d'influence)." : ""),"good");
-      }
+      const need=this.levelNeeds(b, fuelRatio>=1);
+      if(need && need.every(x=>x[1])) b.monthsGood++; else b.monthsGood=0;
+      const cost=this.levelCost(b), can=cost && Object.keys(cost).every(k=>this.freeStock(k)>=cost[k]);
+      if(!need || b.monthsGood<LEVEL_MONTHS || !can) continue;
+      for(const k of Object.keys(cost)) this.stock[k]-=cost[k];
+      b.lvl++;
+      if(b.lvl===2) this.toast("Une maison passe au niveau 2 !"+(this.promote(res, "bourg") ? " La "+this.famLow(res)+" entre dans la bourgeoisie : ses artisans travaillent deux fois mieux." : ""),"good");
+      else { this.promote(res, "bourg");
+        this.toast("Une maison passe au niveau 3 : une maison de pierre, qui paie davantage."+(res.ord!=="noble" ? " La "+this.famLow(res)+" pourrait être anoblie ("+this.ennobleCost()+" d'influence)." : ""),"good"); }
     }
     this.rehouseCamp();
     // les jeunes couples qui vivent chez leurs parents prennent les maisons libres avant les nouveaux venus
     this.rehouseCouples();
     // migration (personne ne s'installe dans un village au bord de la famine)
+    // étape 8 : les colons arrivent au fil des mois, d'autant plus que l'approbation est haute (environ une famille par
+    // mois à 75 %, une sur deux mois à 55 %) ; avant, deux familles par mois dès 75 % : le village explosait
     if(this.approval>=40){
       const free=this.freeBurgages();
       const foodTotal=FOOD_TYPES.reduce((s,k)=>s+this.stock[k],0);
-      const n=(this.approval>=75)?2:1;
+      // (un grand village attire un peu moins : la ville se mérite, et le téléphone suit)
+      const e=Math.max(0, Math.min(1.2, (this.approval-40)/35))*this.diff().migr*Math.min(1, 50/(30+this.families.length));
+      const n=Math.floor(e)+(this.rnd()<e-Math.floor(e) ? 1 : 0);
       for(let i=0;i<n && i<free;i++){
-        if(foodTotal < (this.foodNeed()+i+1)*0.8) break;
+        if(foodTotal < this.foodNeed()*2 + 3) break;   // personne ne s'installe dans un village au bord de la disette
         const freeH = this.buildings.filter(bd=>bd.done&&bd.def==="burgage"&&!this.families.some(f=>f.home===bd.id));
         const fb = (this.charterOn() && freeH.find(bd=>bd.lvl>=2)) || freeH[0];
         if(!fb) break;
@@ -4836,6 +5136,7 @@ class GameState {
     }
     // postes voulus : on y place les adultes devenus libres
     this.fillJobs();
+    this.enclosedCheck();   // étape 8
     // objectifs
     this.objectives.wood=this.objectives.wood||this.buildings.some(b=>b.done&&b.def==="woodcutter");
     this.objectives.pop=this.objectives.pop||this.families.length>=8;
@@ -4844,13 +5145,13 @@ class GameState {
       const mode=this.mode();
       let win=false;
       if(mode.id==="prosperity"){
-        win = this.objectives.wood&&this.objectives.happy&&this.objectives.pop&&this.objectives.manor;
+        win = this.goalsDone()===GOALS.length;   // étape 8 : toute la chaîne des objectifs
       } else if(mode.id==="edge"){
         win = this.time.year>=1179;
       } else if(mode.id==="peace" || mode.id==="duel"){
-        win = this.camps.length===0 && this.goalRegions().every(r=>r.owned) && this.time.year>=1179;
+        win = this.camps.length===0 && this.conquest().ok && this.time.year>=1179;
       } else if(mode.id==="fractured"){
-        win = this.goalRegions().every(r=>r.owned) && this.baron.power===0 && this.time.year>=1180;
+        win = this.camps.length===0 && this.conquest().ok && this.time.year>=1180;   // étape 8 : les terres voisines reprises au Baron
       }
       if(win){ this.victory=true; this.endReason="victoire"; this.toast("🏆 Victoire ! "+mode.name+" accomplie !","good"); this.chron("Victoire : "+mode.name+" accomplie.","good"); }
 
@@ -4864,17 +5165,22 @@ class GameState {
     // étape 6 : soudure, disette et marchand de grain
     this.dearthMonth(m, starved, meal);
     // événements
-    if(m===KING_MONTH && this.time.year>=1177){
+    // étape 8 : le roi ne réclame rien à une seigneurie qui n'a pas encore de manoir (avant, l'impôt tombait dès
+    // 1177, souvent sans aucun revenu : il fallait refuser et perdre un quart des vivres juste avant l'hiver) ;
+    // faute de deniers, on peut compléter en nature
+    if(m===KING_MONTH && this.time.year>=1177 && !this.hasManor()) this.toast("Le héraut du roi passe : sans manoir, votre seigneurie ne lui doit encore rien cette année.");
+    if(m===KING_MONTH && this.time.year>=1177 && this.hasManor()){
       const amount=this.kingTaxEstimate(this.time.year);
+      const have=Math.max(0, Math.floor(this.treasury)), kind=Math.ceil(Math.max(0, amount-have)*KING_KIND);
+      const choices=[ { label:"Payer "+amount+" 💰", act:"pay", amount, disabled:this.treasury<amount } ];
+      if(have<amount) choices.push({ label:"Payer "+have+" 💰 et le reste en nature ("+kind+" mesures de vivres)", act:"payKind", amount:have, kind, disabled:this.foodStock()<kind });
+      choices.push({ label:"Refuser (approbation −12, récoltes confisquées)", act:"refuseTax" });
       this.pendingEvent={ title:"L'impôt du roi",
         text:"Un héraut du roi exige "+amount+" deniers pour la couronne. Le refroidissement de sa gratitude serait… regrettable.",
-        choices:[
-          { label:"Payer "+amount+" 💰", act:"pay", amount, disabled:this.treasury<amount },
-          { label:"Refuser (approbation −12, récoltes confisquées)", act:"refuseTax" },
-        ]};
+        choices };
     }
     if(m===3) this.livestockFair();
-    if(m===4 && this.time.year>=1177 && this.rnd()<0.55){
+    if(m===4 && this.time.year>=1177 && this.rnd()<0.55*this.diff().bandits*(this.mode().combat ? 1 : 0.5)){   // étape 8 : plus rares sans combat
       const amount=Math.max(8, Math.round(6+this.families.length*1.5));
       this.pendingEvent={ title:"Des brigands en vue !",
         text:"Une bande de brigands rôde autour de la seigneurie. Ils exigent "+amount+" deniers pour passer leur chemin.",
@@ -4999,7 +5305,7 @@ class GameState {
   spoilRate(k, m){
     const base = this.spoilBase(k); if(!base) return 0;
     const p = k==="milk" ? 0 : this.granaryShare();
-    return Math.min(1, base*this.seasonSpoil(m===undefined ? this.time.month : m)*(1 - p + p*GRANARY_MUL)*(1 - 0.25*this.taskPower("steward", "granary")));
+    return Math.min(1, base*this.seasonSpoil(m===undefined ? this.time.month : m)*(1 - p + p*GRANARY_MUL)*(1 - 0.25*this.taskPower("steward", "granary"))*this.diff().spoil);
   }
   spoilMonth(){
     const lost = {}, m = this.time.month;
@@ -5108,6 +5414,7 @@ class GameState {
     if(b.def==="pasture") return this.pastureStatus(b);
     if(b.def==="field") return this.fieldStatus(b);
     if(!b.done) return this.siteStatus(b);
+    if(b.enclosed) return "Enfermé : plus aucun accès ! Dégagez un passage.";   // étape 8
     const nw = d.fam>0 ? this.workersOf(b).length : 0;
     if(d.fam>0 && nw===0) return (Number(b.want)||0)>0 ? "En attente d'un adulte libre" : "Aucun ouvrier";
     switch(b.def){
@@ -5190,6 +5497,11 @@ class GameState {
       const d = BUILD_DEFS[b.def];
       b.want = Math.max(0, Math.min(d ? d.fam : 0, b.want));
     }
+    // étape 8 : le marché n'emploie plus personne ; ses anciens marchands redeviennent journaliers
+    for(const v of this.villagers){
+      const b = v.work>0 ? this.buildings.find(x=>x.id===v.work) : null;
+      if(b && !(BUILD_DEFS[b.def] && BUILD_DEFS[b.def].fam>0)){ v.work = -1; v.appr = false; this.resetWorker(v); }
+    }
     this.cleanFamilies();
     this.nextV = Math.max(0, ...this.villagers.map(v=>v.id)) + 1;
     if(Array.isArray(data.approvalWhy)) this.approvalWhy = data.approvalWhy.filter(w=>Array.isArray(w) && w.length===2 && typeof w[0]==="string" && num(w[1]));
@@ -5254,6 +5566,9 @@ class GameState {
       nextCase:this.nextCase,
       faction:this.faction,
       chronicle:this.chronicle,
+      tradeSat:this.tradeSat || {},
+      tradeLast:this.tradeLast || {},
+      goals:this.goals,
     };
   }
   static load(data    )          {
@@ -5341,7 +5656,8 @@ class GameState {
     if(Array.isArray(data.regions)) for(const r of g.regions){ const d = data.regions.find(x=>x && x.id===r.id); r.owned = r.id===g.startRegion || !!(d && d.owned); }
     g.wealth = typeof data.wealth==="number" ? data.wealth : 0;
     if(data.prices && typeof data.prices==="object"){
-      for(const k of Object.keys(data.prices)) if(num(data.prices[k])) g.prices[k] = Math.max(1, data.prices[k]);
+      // étape 8 : les prix d'une ancienne partie avaient pu dériver très loin ; ils repartent du prix de base
+      for(const k of Object.keys(data.prices)) if(num(data.prices[k]) && TRADE_BASE[k]) g.prices[k] = Math.max(0.5, Math.min(TRADE_BASE[k]*1.5, data.prices[k]));
     }
     g.victory = !!data.victory;
     g.defeat = !!data.defeat;
@@ -5383,6 +5699,10 @@ class GameState {
     if(data.prec && typeof data.prec==="object") for(const k of Object.keys(data.prec)) if(CASE_DEFS[k] && num(data.prec[k])) g.prec[k] = data.prec[k];
     g.nextCase = Math.max(num(data.nextCase) ? data.nextCase : 1, 1 + Math.max(0, ...g.cases.map(c=>c.id), ...g.petitions.map(p=>p.id)));
     g.feastY = num(data.feastY) ? data.feastY : 0;
+    // étape 8 : la mémoire du comptoir (ce qu'il vient de vendre) et les objectifs
+    g.tradeSat = {}; g.tradeLast = {};
+    for(const k of ["tradeSat","tradeLast"]) if(data[k] && typeof data[k]==="object") for(const r of Object.keys(data[k])) if(TRADE_BASE[r] && num(data[k][r])) g[k][r] = Math.max(0, data[k][r]);
+    g.loadGoals(data.goals);
     // étape 7c : coutumier ; l'ordre de chaque famille (une partie d'avant : bourgeoise si sa maison est de niveau 2
     // ou si l'un des siens tient déjà un métier d'artisan, pour ne renvoyer personne)
     if(data.laws && typeof data.laws==="object") for(const id of LAW_ORDER) if(num(data.laws[id])) g.laws[id] = Math.max(0, Math.min(LAW_DEFS[id].opts.length-1, Math.round(data.laws[id])));
@@ -5469,5 +5789,6 @@ if(typeof module!=="undefined" && module.exports){
     FACTION_DEMANDS, FACTION_STRIKE, FACTION_ULTIMATUM, FACTION_REVOLT, SECRET_DEFS, SECRET_ORDER,
     PLAID_MONTHS, CASE_DEFS, CASE_ORDER, PETITION_DEFS, FREEDOM_PRICE, FINE, LORD_DEBT,
     ORDER_DEFS, ORDER_RANK, SKILLED, ENNOBLE_COST, NOBLE_OFFICES, NOBLE_OFFICE_ORDER, LAW_CHAPTERS, LAW_DEFS, LAW_ORDER, LAW_COST, LAW_COOLDOWN, MAINMORTE,
-    TAILLE_LVL, TRAIT_DEFS, SEAT_DEFS, SEAT_ORDER, COUNCIL_WAGE, EMBEZZLE, AUDIT_COST, ALMS_COST, FEAST_COST, REP_GEN, REP_SEV, TAX_DEFS, TAX_ORDER, TAILLE_MONTHS, DIME_MONTH, KING_MONTH, LOAN_RATE, LOAN_STEP, LOAN_MISS_MAX, BOOK_CATS, BOOK_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, MODE_BY_ID, DIFFICULTIES, DIFF_BY_ID };
+    TAILLE_LVL, TRAIT_DEFS, SEAT_DEFS, SEAT_ORDER, COUNCIL_WAGE, EMBEZZLE, AUDIT_COST, ALMS_COST, FEAST_COST, REP_GEN, REP_SEV, TAX_DEFS, TAX_ORDER, TAILLE_MONTHS, DIME_MONTH, KING_MONTH, LOAN_RATE, LOAN_STEP, LOAN_MISS_MAX, BOOK_CATS, BOOK_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, MODE_BY_ID, DIFFICULTIES, DIFF_BY_ID,
+    GOALS, GOAL_BY_ID, TRADE_BASE, TRADE_LOT, TRADE_KEEP, TRADE_KEEP_WINTER, CLOTH_EVERY, SERF_CRAFT, EXT_FOOD, CHOP_TIMBER, CHOP_FUEL, GATHER_LOAD, HUNT_MEAT, KING_HOUSE, KING_TRADE, KING_KIND };
 }

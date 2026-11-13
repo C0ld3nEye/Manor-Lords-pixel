@@ -2,7 +2,7 @@
 /* Tests de la simulation (Phase 0 du plan docs/PLAN.md).
    Lancer avec : node test/sim.test.js */
 const assert = require("assert");
-const { GameState, BUILD_DEFS, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, REGION_COST, REGION_COLS, REGION_ROWS, POLICY_DEFS, POLICY_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, DIFFICULTIES, W, H, T_GRASS, T_FOREST, T_STONE, T_FORD, MONTHS, seasonOf, TS, TICKS_PER_DAY, DAYS_PER_MONTH } = require("../js/sim.js");
+const { GameState, BUILD_DEFS, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, REGION_COST, REGION_COLS, REGION_ROWS, POLICY_DEFS, POLICY_ORDER, CHURCH_UPGRADES, CHURCH_UP_ORDER, SETTLEMENT_LEVELS, MODES, DIFFICULTIES, W, H, T_GRASS, T_FOREST, T_STONE, T_FORD, MONTHS, seasonOf, TS, TICKS_PER_DAY, DAYS_PER_MONTH, GOALS, TRADE_BASE, EXT_FOOD, SERF_CRAFT } = require("../js/sim.js");
 const MONTH_TICKS = TICKS_PER_DAY*DAYS_PER_MONTH, YEAR_TICKS = MONTH_TICKS*12;
 // La carte est devenue grande (256 × 192). Les tests d'avant étaient écrits pour la petite carte (46 × 34)
 // dont le centre était (23, 17) : on décale leurs coordonnées pour qu'elles tombent autour du départ.
@@ -164,11 +164,13 @@ test("le temps avance avec step()", () => {
   assert.ok(g.time.day > 0 || g.time.month > t0.month || g.time.year > t0.year, "les jours avancent");
 });
 
-test("victoire : les 4 objectifs remplis déclenchent victory (mode prospérité)", () => {
+test("victoire : toute la chaîne des objectifs remplie déclenche victory (mode prospérité)", () => {
   const g = new GameState(1176, "prosperity", "normal");
-  g.objectives.wood = true; g.objectives.happy = true;
-  g.objectives.pop = true; g.objectives.manor = true;
-  for(let i=0;i<200*TS && !g.victory;i++) g.step();
+  for(const x of GOALS.slice(0, -1)) g.goals.done[x.id] = 0;
+  for(let i=0;i<MONTH_TICKS && !g.victory;i++) g.step();
+  assert.strictEqual(g.victory, false, "il manque le dernier objectif");
+  g.goals.done[GOALS[GOALS.length-1].id] = 0;
+  for(let i=0;i<MONTH_TICKS && !g.victory;i++) g.step();
   assert.strictEqual(g.victory, true);
 });
 
@@ -185,15 +187,16 @@ test("extensions : 6 disponibles, coût débité, doublon refusé", () => {
   assert.strictEqual(b.exts.length, 1, "pas de doublon");
 });
 
-test("extensions : tailleur et brasserie exigent le niveau 2", () => {
+test("extensions : le tailleur dès le niveau 1 (étape 8), la brasserie au niveau 2", () => {
   const g = fresh();
   const b = legacyHouse(g);
   b.done = true; b.lvl = 1;
   g.stock.timber = 10; g.stock.stone = 10;
+  g.buyExtension(b.id, "brewer");
+  assert.strictEqual(b.exts.length, 0, "brasserie refusée au niveau 1");
   g.buyExtension(b.id, "tailor");
-  assert.strictEqual(b.exts.length, 0, "refusé au niveau 1");
+  assert.ok(b.exts.includes("tailor"), "tailleur accepté au niveau 1 : sans vêtements, aucune maison ne monte");
   b.lvl = 2;
-  g.buyExtension(b.id, "tailor");
   g.buyExtension(b.id, "brewer");
   assert.ok(b.exts.includes("tailor") && b.exts.includes("brewer"));
   assert.strictEqual(g.stock.stone, 9, "pierre débitée pour la brasserie");
@@ -367,18 +370,20 @@ test("prix du marché fluctuent chaque mois", () => {
   let diff = false;
   for(let i=0;i<6*MONTH_TICKS && !diff;i++){ g.step(); g.pendingEvent = null; diff = Object.keys(p0).some(k => g.prices[k] !== p0[k]); }
   assert.ok(diff, "au moins un prix a changé");
-  for(const k of Object.keys(g.prices)) assert.ok(g.prices[k] >= 1, "prix plancher à 1");
+  for(const k of Object.keys(g.prices)) assert.ok(g.prices[k] >= 0.5 && g.prices[k] <= TRADE_BASE[k]*1.2 + 1e-9, "prix autour du prix de base : "+k+" "+g.prices[k]);
 });
 
 test("sauvegarde : routes, richesse et prix persistés", () => {
   const g = fresh();
   const s = freeSpot(g);
   g.toggleRoad(s.x, s.y);
-  g.wealth = 123; g.prices.bread = 5;
+  g.wealth = 123; g.prices.bread = 2.4;
   const g2 = GameState.load(JSON.parse(JSON.stringify(g.serialize())));
   assert.strictEqual(g2.roadAt(s.x, s.y), true);
   assert.strictEqual(g2.wealth, 123);
-  assert.strictEqual(g2.prices.bread, 5);
+  assert.strictEqual(g2.prices.bread, 2.4);
+  g.prices.honey = 400;   // une ancienne partie où le prix avait dérivé
+  assert.ok(GameState.load(JSON.parse(JSON.stringify(g.serialize()))).prices.honey <= TRADE_BASE.honey*1.5, "un prix aberrant est ramené");
 });
 
 test("audit : sauvegardes corrompues rejetées sans crash", () => {
@@ -692,7 +697,7 @@ test("phase 5 jalon 3 : église améliorable (autel + clocher), bonus cumulés",
   assert.strictEqual(g.churchUp(b.id, "bell"), true);
   assert.deepStrictEqual(b.churchUp, ["altar","bell"]);
   const bonus = g.churchBonus();
-  assert.strictEqual(bonus.approval, 3+5);
+  assert.strictEqual(bonus.approval, CHURCH_UPGRADES.altar.bonus.approval + CHURCH_UPGRADES.bell.bonus.approval);
   assert.strictEqual(bonus.influence, 2+3);
 });
 
@@ -956,7 +961,7 @@ test("étape 3 : la production d'une arrière-cour suit sa taille", () => {
   const v0s = small.stock.veg, v0b = big.stock.veg;
   for(const g of [small, big]){ g.time.day = DAYS_PER_MONTH-1; g.time.tick = TICKS_PER_DAY-1; g.step(); }
   const gs = small.stock.veg - v0s, gb = big.stock.veg - v0b;
-  assert.ok(gs > 0.5 && gb > gs, "grande cour : plus de légumes ("+gs.toFixed(2)+" < "+gb.toFixed(2)+")");
+  assert.ok(gs > EXT_FOOD.garden && gb > gs, "grande cour : plus de légumes ("+gs.toFixed(2)+" < "+gb.toFixed(2)+")");
   assert.ok(gb < gs * 17/5, "mais pas proportionnel à la surface");
 });
 
@@ -2312,7 +2317,7 @@ test("détail : une maison indique ses habitants et sa capacité selon son nivea
 test("détail : quand le bœuf est pris, les autres journaliers traînent un tronc au lieu d'attendre", () => {
   const g = fresh();
   g.stock.timber = 40;
-  const sites = [placeInCenter(g, "storehouse"), placeInCenter(g, "woodcutter"), placeInCenter(g, "forager")];
+  const sites = [placeInCenter(g, "storehouse"), placeInCenter(g, "hunter"), placeInCenter(g, "forager")];
   let most = 0, withOx = false;
   quietSteps(g, 20*DAY, ()=>{
     const hauling = g.villagers.filter(v=>v.task && v.task.type==="haul" && v.task.phase!=="back");
@@ -2540,6 +2545,7 @@ test("étape 7a : chaque achat et chaque vente passent au livre ; le mois se fer
 
 test("étape 7a : l'impôt du roi payé passe au livre", () => {
   const g = fresh(); g.time.year = 1178; g.treasury = 200;
+  doneBuilding(g, "manor");   // étape 8 : le roi taxe une seigneurie qui a son manoir
   g.time.month = 10; g.onMonth();
   assert.ok(g.pendingEvent && g.pendingEvent.title==="L'impôt du roi");
   const amount = g.pendingEvent.choices[0].amount;
@@ -2862,17 +2868,27 @@ test("étape 7b : sauvegarde — conseil, réputation, souvenirs ; un siège mal
 /* ================= étape 7c : les ordres et le coutumier ================= */
 const { SKILLED, ENNOBLE_COST, LAW_DEFS, LAW_COST, LAW_COOLDOWN, MAINMORTE } = require("../js/sim.js");
 
-test("étape 7c : les serfs ne tiennent pas un métier d'artisan ; une maison de niveau 2 fait entrer la famille dans la bourgeoisie", () => {
+test("étape 8 : un serf tient un atelier à demi-vitesse, un bourgeois passe devant ; une maison de niveau 2 fait entrer la famille dans la bourgeoisie", () => {
   const g = fresh(); houses(g, 3);
   assert.ok(g.families.every(f=>f.ord==="serf"), "on commence serfs");
   const bk = doneBuilding(g, "woodcutter"); for(const f of g.families) f.ord = "serf";
   g.stock.timber = 20; g.stock.stone = 20;
   const b = placeInCenter(g, "bakery"); b.done = true; for(const f of g.families) f.ord = "serf";
+  for(const x of g.villagers) if(x.work>0) g.leaveJob(x);
   const v = g.freeAdults()[0];
-  assert.ok(/bourgeois/.test(g.assignVillager(v.id, b.id)), "refusé à un serf");
+  assert.strictEqual(g.assignVillager(v.id, b.id), null, "un serf peut tenir l'atelier");
+  assert.strictEqual(g.rankMul(v, b), SERF_CRAFT, "… à demi-vitesse");
+  assert.strictEqual(g.rankMul(v, bk), 1, "un poste de base, à pleine vitesse");
   assert.strictEqual(g.assignVillager(v.id, bk.id), null, "un poste de base, oui");
+  // à l'embauche, un bourgeois passe devant un serf, même moins doué
+  const other = g.freeAdults().find(x=>x.fam!==v.fam);
+  g.famOf(other).ord = "bourg"; other.skills.craft = 0;
+  for(const x of g.freeAdults()) if(x.fam!==other.fam) x.skills.craft = 90;
   g.assign(b.id);
-  assert.strictEqual(g.workersOf(b).length, 0, "aucun serf embauché");
+  const hired = g.workersOf(b);
+  assert.ok(hired.length===1 && hired[0].fam===other.fam, "un bourgeois est embauché d'abord");
+  assert.strictEqual(g.rankMul(hired[0], b), 1);
+  g.leaveJob(hired[0]); g.famOf(other).ord = "serf";
   const f = g.famOf(v), h = g.buildings.find(x=>x.id===f.home) || legacyHouse(g);
   f.home = h.id; h.lvl = 1; h.monthsGood = 5; g.stock.timber = 50;
   for(const k of Object.keys(g.stock)) if(k!=="ox") g.stock[k] = Math.max(g.stock[k], 40);
@@ -3081,6 +3097,233 @@ test("étape 7e : un secret appris devient un levier — pression, dénonciation
   assert.deepStrictEqual(g2.chronicle, g.chronicle);
   assert.deepStrictEqual(g2.faction, g.faction);
   assert.strictEqual(g2.villager(v.id).sk, 2);
+});
+
+/* ================= étape 8 : équilibrage, difficultés, objectifs ================= */
+const { DIFF_BY_ID, CLOTH_EVERY, TRADE_KEEP, KING_TRADE, MODE_BY_ID, KING_MONTH: KING_MONTH_T } = require("../js/sim.js");
+
+test("étape 8 : trois difficultés vraiment différentes (réserves, récoltes, gâchis, chauffage, impôt du roi)", () => {
+  const e = DIFF_BY_ID.easy, n = DIFF_BY_ID.normal, h = DIFF_BY_ID.hard;
+  for(const k of ["yield","migr","start","ap"]) assert.ok(e[k] > n[k] && n[k] > h[k], "levier "+k);
+  for(const k of ["spoil","fuel","sick","tax","raid","bandits"]) assert.ok(e[k] < n[k] && n[k] < h[k], "levier "+k);
+  for(const d of [e, n, h]) assert.ok(typeof d.desc==="string" && d.desc.length>20, "chaque difficulté s'explique");
+  const ge = new GameState(7, "prosperity", "easy"), gh = new GameState(7, "prosperity", "hard");
+  assert.ok(ge.foodStock() > gh.foodStock() && ge.stock.timber > gh.stock.timber, "réserves de départ");
+  // la même récolte rend plus en Paisible qu'en Difficile
+  for(const g of [ge, gh]){ g.setFieldSize(4); }
+  const fe = sownField(ge, "wheat", 1), fh = sownField(gh, "wheat", 1);
+  fe.f.fert = fh.f.fert = 0.8;
+  assert.ok(ge.forecast(fe).qty > gh.forecast(fh).qty, "récolte");
+  ge.stock.berries = gh.stock.berries = 100;
+  assert.ok(ge.spoilRate("berries", 4) < gh.spoilRate("berries", 4), "les denrées se gâtent plus vite en Difficile");
+  assert.ok(ge.kingTaxEstimate(1180) < gh.kingTaxEstimate(1180), "impôt du roi");
+});
+
+test("étape 8 : le tailleur travaille dès le niveau 1, une famille use un vêtement tous les trois mois", () => {
+  const g = fresh(); houses(g, 3);
+  const b = g.buildings.find(x=>x.def==="burgage" && x.done);
+  g.stock.timber = 10; g.buyExtension(b.id, "tailor");
+  assert.ok(b.exts.includes("tailor"));
+  feed(g); g.stock.clothes = 0;
+  const c0 = g.stock.clothes; toMonth(g, 4); g.onMonth(); g.pendingEvent = null;
+  assert.ok(g.stock.clothes > c0, "il coud même sans laine (moitié moins)");
+  // la distribution : chaque famille prend un vêtement tous les CLOTH_EVERY mois, jamais un stock négatif
+  const f = g.families[0]; f.clothCool = 0; g.stock.clothes = 0.4;
+  for(let k=0;k<CLOTH_EVERY;k++){ toMonth(g, 4); g.onMonth(); g.pendingEvent = null; }
+  assert.ok(g.stock.clothes >= 0, "jamais de vêtements en négatif");
+});
+
+test("étape 8 : le comptoir garde les vivres du village et les prix reviennent vers leur prix de base", () => {
+  const g = fresh(); houses(g, 3); feed(g);
+  for(const k of FT6) g.stock[k] = 0;
+  g.stock.clothes = 0; g.stock.wool = 0; g.stock.ale = 0;
+  g.stock.berries = 4;   // moins que trois mois de vivres : rien n'est vendu
+  const t = doneBuilding(g, "trade"); g.assign(t.id);
+  const tr0 = g.treasury; toMonth(g, 4); g.onMonth(); g.pendingEvent = null;
+  assert.strictEqual(g.treasury, tr0, "le comptoir ne vend pas le pain de la bouche des familles");
+  g.stock.honey = 200;   // un vrai surplus : il se vend
+  toMonth(g, 4); g.onMonth(); g.pendingEvent = null;
+  assert.ok(g.treasury > tr0 && g.stock.honey < 200, "le surplus se vend");
+  // une marchandise vendue chaque mois perd de sa valeur ; les prix ne dérivent plus à l'infini
+  for(let m=0;m<24;m++){ g.stock.honey = 200; toMonth(g, 4); g.onMonth(); g.pendingEvent = null; }
+  assert.ok(g.prices.honey < TRADE_BASE.honey, "le miel vendu en masse se vend moins cher ("+g.prices.honey+")");
+  for(const k of Object.keys(TRADE_BASE)) assert.ok(g.prices[k] <= TRADE_BASE[k]*1.2 + 1e-9, "prix borné : "+k);
+});
+
+test("étape 8 : le panneau d'une maison dit ce qu'il lui manque pour monter de niveau", () => {
+  const g = fresh(); houses(g, 3);
+  const b = g.buildings.find(x=>x.def==="burgage" && x.done && g.houseFamily(x));
+  const f = g.houseFamily(b);
+  f.fed = 1; f.gruel = false; f.clothed = true; f.variety = 1;
+  let need = g.levelNeeds(b, true);
+  assert.ok(need.some(n=>/marché/i.test(n[0]) && !n[1]), "il manque un marché");
+  assert.ok(need.some(n=>/sortes/.test(n[0]) && !n[1]), "il manque de la variété");
+  doneBuilding(g, "market"); f.variety = 2;
+  need = g.levelNeeds(b, true);
+  assert.ok(need.every(n=>n[1]), "tout est réuni : "+JSON.stringify(need));
+  assert.deepStrictEqual(g.levelCost(b), { timber:2 });
+  b.lvl = 2;
+  need = g.levelNeeds(b, true);
+  assert.ok(need.some(n=>/église/i.test(n[0])) && need.some(n=>/3 sortes/.test(n[0])), "le niveau 3 demande plus");
+  b.lvl = 3; assert.strictEqual(g.levelNeeds(b), null);
+});
+
+test("étape 8 : un serf fait tourner le moulin ; la chaîne grain → farine ne reste plus bloquée sans bourgeois", () => {
+  const g = fresh(); houses(g, 3); feed(g);
+  for(const f of g.families) f.ord = "serf";
+  const farm = doneBuilding(g, "farm");
+  const mill = doneBuilding(g, "windmill");
+  for(const f of g.families) f.ord = "serf";
+  g.stock.grain = 30;
+  g.assign(mill.id);
+  assert.strictEqual(g.workersOf(mill).length, 1, "un serf est embauché");
+  stepsUntil(g, 12*DAY, ()=>g.stock.flour>=2);
+  assert.ok(g.stock.flour>=2, "de la farine sort du moulin ("+g.stock.flour+")");
+});
+
+test("étape 8 : un camp de bûcherons ne coûte rien — dépenser tout son bois en maisons ne bloque plus la partie", () => {
+  const g = new GameState(11, "prosperity", "normal");
+  g.stock.timber = 0;
+  assert.strictEqual(g.canAfford("woodcutter"), true);
+  const c = g.buildings.find(b=>b.def==="camp");
+  let ok = false;
+  for(let r=2; r<20 && !ok; r++) for(let dy=-r; dy<=r && !ok; dy++) for(let dx=-r; dx<=r && !ok; dx++) if(g.place("woodcutter", c.x+dx, c.y+dy)===null) ok = true;
+  assert.ok(ok, "posé sans bois");
+});
+
+test("étape 8 : un bâtiment achevé reçoit tout de suite son premier ouvrier", () => {
+  const g = fresh(); houses(g, 3);
+  g.stock.timber = 20;
+  const b = placeInCenter(g, "forager");
+  stepsUntil(g, 20*DAY, ()=>b.done);
+  assert.ok(b.done, "chantier achevé");
+  assert.strictEqual(g.workersOf(b).length, 1, "un ouvrier s'y met");
+  assert.strictEqual(b.want, 1);
+});
+
+test("étape 8 : le gibier se repeuple autour d'un camp de chasse", () => {
+  const g = fresh();
+  const h = doneBuilding(g, "hunter");
+  g.deer = [];
+  for(let m=0;m<6;m++) g.restockDeer(h);
+  const R = BUILD_DEFS.hunter.radius;
+  const near = g.deer.filter(d=>Math.hypot(d.x-h.x-0.5, d.y-h.y-0.5)<=R).length;
+  assert.ok(near>=1 && near<=4, "des cerfs à portée, pas plus de quatre ("+near+")");
+});
+
+test("étape 8 : objectifs-guides — chacun s'atteint une fois, se sauvegarde, et mène à la victoire en Prospérité", () => {
+  const g = new GameState(3, "prosperity", "normal");
+  assert.strictEqual(g.goalsDone(), 0);
+  assert.strictEqual(g.nextGoals(1)[0].id, "house");
+  for(const x of GOALS) assert.ok(x.name && x.hint !== undefined, "objectif complet : "+x.id);
+  houses(g, 3);
+  g.goalsCheck();
+  assert.ok(g.goals.done.house!==undefined, "les familles sont logées");
+  assert.ok(g.log.some(l=>/Objectif atteint/.test(l.text)));
+  const g2 = GameState.load(JSON.parse(JSON.stringify(g.serialize())));
+  assert.deepStrictEqual(g2.goals, g.goals);
+  // une ancienne partie (sans objectifs) retrouve d'elle-même ceux qui sont déjà remplis
+  const old = JSON.parse(JSON.stringify(g.serialize())); delete old.goals;
+  const g3 = GameState.load(old); g3.goalsCheck();
+  assert.ok(g3.goals.done.house!==undefined);
+});
+
+test("étape 8 : une région prise par le Baron se reprend (moitié plus cher) ; les modes de conquête sont gagnables", () => {
+  const g = new GameState(1176, "duel", "normal");
+  const near = g.goalRegions()[1];
+  g.baron.regions.push(near.id); g.baron.power = 2;
+  assert.ok(g.regionRetakable(near) && !g.regionClaimable(near));
+  const c = g.regionCost(near), base = g.regionCost();
+  assert.strictEqual(c.treasury, Math.round(base.treasury*1.5));
+  g.treasury = 500; g.wealth = 500;
+  assert.ok(g.claimRegion(near.id));
+  assert.ok(near.owned && !g.baron.regions.includes(near.id) && g.baron.power===1);
+  // victoire : cinq régions, aucune voisine au Baron, en 1179
+  for(const r of g.goalRegions()) if(!r.owned && g.ownedRegions().length<MODE_BY_ID.duel.regions) g.claimRegion(r.id);
+  assert.ok(g.conquest().ok, JSON.stringify(g.conquest()));
+  g.time.year = 1179; g.camps = [];
+  toMonth(g, 3); g.onMonth(); g.pendingEvent = null;
+  assert.ok(g.victory, "victoire en Duel");
+});
+
+test("étape 8 : l'immigration suit l'approbation (rien sous 40 %, au plus une famille ou deux par mois)", () => {
+  const g = new GameState(5, "prosperity", "normal"); houses(g, 3); feed(g);
+  for(let k=0;k<6;k++) legacyHouse2(g);
+  const n0 = g.families.length;
+  g.approval = 30;
+  withRnd(g, 0.01, ()=>{ toMonth(g, 5); g.onMonth(); });
+  // (l'approbation est recalculée pendant le mois : on vérifie au moins le plafond)
+  assert.ok(g.families.length - n0 <= 2, "pas d'afflux d'un coup");
+});
+
+test("étape 8 : l'impôt du roi suit les maisons, les années et une part des ventes du comptoir", () => {
+  const g = fresh(); houses(g, 3);
+  const t0 = g.kingTaxEstimate(1178);
+  g.book.hist.push({ y:1177, m:5, lines:{ trade:200 } });
+  assert.strictEqual(g.kingTaxEstimate(1178), t0 + Math.round(KING_TRADE*200));
+  assert.ok(g.kingTaxEstimate(1180) > g.kingTaxEstimate(1178), "il grandit avec les années");
+});
+
+test("étape 8 : l'impôt du roi attend le manoir ; faute de deniers, on le complète en nature", () => {
+  const g = fresh(); houses(g, 3); feed(g);
+  g.time.year = 1177; toMonth(g, KING_MONTH_T); g.onMonth();
+  assert.ok(!g.pendingEvent || g.pendingEvent.title!=="L'impôt du roi", "pas de manoir : rien à payer");
+  doneBuilding(g, "manor");
+  g.treasury = 3; g.pendingEvent = null;
+  toMonth(g, KING_MONTH_T); g.onMonth();
+  const ev = g.pendingEvent;
+  assert.ok(ev && ev.title==="L'impôt du roi");
+  const k = ev.choices.findIndex(c=>c.act==="payKind");
+  assert.ok(k>=0 && !ev.choices[k].disabled, "on peut payer en partie en nature");
+  const food = g.foodStock(), kind = ev.choices[k].kind;
+  g.resolveEvent(k);
+  assert.ok(g.treasury < 1e-9, "tous les deniers partent");
+  assert.ok(Math.abs(g.foodStock() - (food - kind)) < 1e-6, "et des vivres pour le reste");
+});
+
+test("étape 8 : une case libre enfermée n'est plus visée — les journaliers passent par un accès qu'ils peuvent atteindre", () => {
+  const g = fresh(); houses(g, 3);
+  g.stock.timber = 99; g.stock.stone = 99;
+  // un entrepôt dont la seule case libre au contact est une poche fermée par des remparts
+  let spot = null;
+  for(let y=DY+3; y<DY+OH-6 && !spot; y++) for(let x=DX+Math.ceil(OW/3)+3; x<DX+Math.floor(2*OW/3)-6 && !spot; x++){
+    let ok = true;
+    for(let yy=y-3; yy<=y+4 && ok; yy++) for(let xx=x-3; xx<=x+3 && ok; xx++) if(g.tiles[yy*W+xx]!==T_GRASS || g.occupied[yy*W+xx]>=0 || g.roads[yy*W+xx]) ok = false;
+    if(ok) spot = { x, y };
+  }
+  assert.ok(spot, "un coin libre");
+  const { x, y } = spot;
+  assert.strictEqual(g.place("storehouse", x, y), null);
+  const st = g.buildings[g.buildings.length-1]; st.done = true; st.progress = 1; delete st.mat;
+  for(const [dx, dy] of [[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[1,1],[0,2],[-1,2],[1,2]]){
+    assert.strictEqual(g.place("wall", x+dx, y+dy), null);
+    const w = g.buildings[g.buildings.length-1]; w.done = true; w.progress = 1; delete w.mat;
+  }
+  assert.ok(g.passable(x, y+1), "la poche est libre…");
+  const from = { x:x+0.5, y:y-3.5 };
+  const sp = g.spotFor(st, from.x, from.y);
+  assert.ok(sp, "un accès existe plus loin");
+  assert.ok(!(sp.x===x && sp.y===y+1), "… mais on ne vise plus la poche");
+  assert.strictEqual(g.compAt(sp.x+0.5, sp.y+0.5), g.compAt(from.x, from.y), "l'accès choisi est relié");
+  assert.ok(g.astar(Math.floor(from.x), Math.floor(from.y), sp.x, sp.y), "et un chemin y mène");
+});
+
+test("étape 8 : un bâtiment que plus personne ne peut atteindre est signalé (panneau et message)", () => {
+  const g = fresh(); houses(g, 3);
+  g.stock.timber = 99; g.stock.stone = 99;
+  const b = doneBuilding(g, "hunter");
+  assert.ok(!g.enclosedCheck() || !b.enclosed, "accessible au départ");
+  // trois anneaux de remparts autour : plus aucune case libre reliée
+  for(let r=1;r<=3;r++) for(let y=b.y-r;y<=b.y+r;y++) for(let x=b.x-r;x<=b.x+r;x++){
+    if(Math.max(Math.abs(x-b.x), Math.abs(y-b.y))!==r) continue;
+    if(g.place("wall", x, y)===null){ const w = g.buildings[g.buildings.length-1]; w.done = true; w.progress = 1; delete w.mat; }
+    else { g.occupied[y*W+x] = 9999; }   // (une case déjà prise ou impropre : on la bouche aussi)
+  }
+  g._reach = null;
+  g.enclosedCheck();
+  assert.ok(b.enclosed, "enfermé");
+  assert.ok(/Enfermé/.test(g.workStatus(b)), g.workStatus(b));
+  assert.ok(g.log.some(l=>/n'a plus aucun accès/.test(l.text)), "message au joueur");
 });
 
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));

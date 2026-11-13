@@ -88,11 +88,11 @@ Le détail technique et l'historique (audit, anciennes phases 0 à 7) restent da
 | Logistique | ✅ Étape 5 bis : le bois et la pierre sont réservés à la pose et sortent du stock à la livraison ; un journalier mène le bœuf, qui traîne trois troncs (la pierre se porte une à une), depuis le campement, l'entrepôt, le camp de bûcherons ou la carrière ; le chantier ne progresse qu'avec ce qui est livré ; chantier prioritaire. |
 | Nourriture | ✅ Étape 6 : moulin (farine), boulangerie, laiterie (fromage), fumoir ; les artisans vont chercher leurs ingrédients à pied ; chaque denrée se gâte à son rythme (froid, chaleur, grange qui abrite 200 denrées) ; repas comptés en cinq sortes d'aliments, foyer par foyer, le plus périssable mangé d'abord ; disette, bouillie de grain, soudure annoncée, marchand de grain. |
 | Agriculture et élevage | ✅ Étape 5 : 8 cultures et leur calendrier, fumure, labour, semailles, moisson en gerbes, battage, rotation, météo, prévision de récolte ; pâturages tracés, moutons, vaches, porcs, foin d'hiver, maladies, bœufs de trait. |
-| Simulation | 20 bâtiments, 8 cultures, 3 espèces de bétail, 11 denrées en 5 sortes, routes, comptoir, une vingtaine de régions, un baron rival, brigands, milice, 5 modes, 3 difficultés. 207 tests, plus une campagne de parties automatiques et un test de l'interface. |
+| Simulation | 20 bâtiments, 8 cultures, 3 espèces de bétail, 11 denrées en 5 sortes, routes, comptoir, une vingtaine de régions, un baron rival, brigands, milice, 5 modes, 3 difficultés. 222 tests, une campagne de parties automatiques (administration), un joueur automatique qui part du vrai départ (équilibrage) et un test de l'interface. |
 | Administration | ✅ Étape 7a : taille levée à Pâques et à la Saint-Michel, dîme en nature, péages, corvée (les ouvriers rejoignent les chantiers), changeur et dettes, livre de comptes avec prévision jusqu'au printemps. Étape 7b : traits de caractère, mémoire et opinion de chaque famille, réputation du seigneur (généreux, avare, craint), aumône et fête, conseil facultatif de quatre sièges. Étape 7c : serfs, bourgeois et nobles ; coutumier de huit lois. Étape 7d : affaires à juger avant les plaids, enquête, peines et précédents, pétitions et faveurs dues. Étape 7e : factions de mécontents (grève, ultimatum, jacquerie), informateurs et secrets, chronique du domaine. |
 | Vassaux, dynastie | ❌ À construire. |
-| Équilibrage et fun | ❓ À vérifier en jouant sur téléphone. |
-| Distribution | Page web uniquement. |
+| Équilibrage et fun | ✅ Étape 8 : mesuré par un joueur automatique sur tous les modes et les trois difficultés ; blocages levés (vêtements, artisans, Baron), économie resserrée, objectifs-guides. À affiner en jouant sur téléphone. |
+| Distribution | Page web, et **APK Android** (vue web hors-ligne, sauvegardes en fichiers durables) construit et publié par GitHub Actions. |
 
 ---
 
@@ -142,8 +142,41 @@ Découpée en cinq livraisons jouables :
 
 Résultat sur huit ans : le seigneur doux et l'équilibré font prospérer un bourg de 60 à 90 familles (le doux sans aucune faction ; l'équilibré avec conseil, justice « juste » et quelques nobles) ; le tyran voit son village fondre à une poignée de familles, avec deux factions par an ; le négligent, qui ne juge rien, hérite d'une justice « inique ». Le trésor gonfle encore beaucoup dans les parties riches (surtout par le comptoir) : ce sera pour l'étape 8.
 
-**Étape 8 — Premier passage d'équilibrage et de fun**
-Pas de nouvelle mécanique. Parties tests sur téléphone, simulateur qui joue des centaines de parties, tutoriel par objectifs, info-bulles qui expliquent les causes, trois difficultés vraiment différentes.
+**Étape 8 — Premier passage d'équilibrage et de fun** ✅
+Pas de nouvelle mécanique : on règle, on débloque, on explique.
+
+- **Le simulateur** (`node test/joueur.js`) : un joueur automatique part du vrai départ (trois familles au campement) **sans aucune triche** — il trace ses rues et ses zones, pose les bâtiments près de leurs ressources, affecte les ouvriers, règle le fisc, juge, répond aux événements. Deux profils : « bon » (réactif, il surveille ses réserves) et « novice » (il passe une fois par mois, construit peu de vivres, oublie la grange et le fumoir, n'équipe qu'une cour sur deux, taxe à 30 %). L'ancienne campagne, qui trichait sur les vêtements et le stock de départ, cachait les blocages ci-dessous.
+- **Blocages levés** :
+  - *les vêtements* : l'atelier du tailleur n'existait qu'au niveau 2, or il fallait être vêtu pour atteindre le niveau 2 : **aucune maison ne montait jamais**, donc aucune bourgeoisie. Le tailleur est désormais accessible dès le niveau 1, une famille use un vêtement tous les trois mois (au lieu de deux), et le stock ne passe plus en négatif ;
+  - *les artisans* : un serf peut tenir le moulin, la boulangerie, la laiterie, le fumoir ou le comptoir, mais à **demi-vitesse** ; un bourgeois passe devant à l'embauche. L'esprit « Foundation » reste (la bourgeoisie double le rendement des ateliers) sans fermer la chaîne du pain pendant des années ;
+  - *le marché* n'emploie plus personne (ses trois postes ne servaient à rien) ;
+  - *le Baron* : une région voisine qu'il prenait rendait la victoire impossible. On peut la **reprendre** (moitié plus cher), et les modes de conquête demandent quatre ou cinq régions sans terre voisine aux mains du Baron, au lieu des neuf ;
+  - *le bois* : dépenser tout son bois en maisons empêchait de poser un camp de bûcherons ; il est **gratuit** ;
+  - *l'impôt du roi* tombait dès 1177, souvent sans aucun revenu : il attend le manoir, et l'on peut le compléter **en nature** ;
+  - *au bord du gouffre* et *royaume fracturé* en Difficile : tout le village mourait de faim la première année ; réserves de départ revues.
+- **Économie resserrée** : la cueillette nourrissait à elle seule tout le village (une cueilleuse pour six familles) et la moitié de la nourriture se gâtait en réserve. Cueillette, abattage, cours et bois recalibrés ; le gibier se repeuple autour des camps de chasse (sur la grande carte, la chasse ne rapportait presque rien). Le **comptoir** ne vend plus que le vrai surplus (il garde trois à cinq mois de vivres, les vêtements et l'ale), ses prix reviennent vers un prix de base (ils dérivaient sans fin) et baissent pour ce qu'on vend en masse ; le roi prend une part des ventes de l'année. L'**immigration** suit l'approbation pas à pas et ralentit dans une grande ville ; elle s'arrête quand les vivres manquent, si bien que le village ne grandit jamais plus vite qu'il ne peut se nourrir.
+- **Trois difficultés vraiment différentes** (avant, elles ne changeaient que les raids, et rien du tout en Prospérité) : récoltes, gâchis, bois de chauffe, maladies, colons, approbation de base, réserves de départ, impôt du roi, brigands et Baron. Chacune s'explique dans le menu.
+- **Objectifs-guides** : quatorze étapes, du logement des familles à la ville de 40 familles, chacune avec un conseil (« Tiroir Récolte → Cabane de cueilleuses… »). En Prospérité, les remplir tous fait la victoire (avant : quatre objectifs, remplis en un an). Les modes de conquête affichent leur avancée.
+- **Expliquer les causes** : le panneau d'une maison liste, case par case, ce qui lui manque pour monter de niveau ; le comptoir montre ses ventes ; un bâtiment achevé reçoit tout de suite un ouvrier (avant, rien ne se passait tant qu'on n'avait pas touché « + »).
+- **Finitions** : routes enneigées et gués sans le damier du tramage ; « Le moulin est achevé ! » au lieu de « Moulin est achevé(e) ! » ; prix à virgule ; un panneau ouvert replie les objectifs ; barre du haut sur 360 px ; 30 images par seconde quand on ne touche pas l'écran (batterie).
+- **APK Android** (en avance sur l'étape 15) : une vue web hors-ligne, sans permission ; chaque partie est aussi écrite dans un fichier de l'application (avec copie de secours), qui suit la sauvegarde automatique d'Android ; export par le menu de partage ; bouton Retour ; une seule clé de signature, pour que chaque version s'installe par-dessus l'ancienne. Construit et publié par GitHub Actions (`android/`, `.github/workflows/apk.yml`).
+
+Ce que mesure le joueur automatique, après l'étape 8 (72 parties de huit ans : Prospérité, Duel et Royaume fracturé pour le bon joueur, Prospérité et Royaume fracturé pour le novice, quatre graines chacune). Aucun plantage, aucune défaite, aucun mort de faim ; les vivres descendent jusqu'à deux ou trois mois au plus bas, ce qui oblige à préparer l'hiver sans tourner au drame (quand les vivres manquent, les colons cessent de venir).
+
+| | Paisible | Normal | Difficile |
+|---|---|---|---|
+| Bon joueur : familles au bout d'un an / de quatre ans | 14 / 53 | 10 / 42 | 6 / 31 |
+| Bon joueur : victoire en Prospérité | début 1179 (3 ans) | fin 1179 (3 ans ½) | 1180 à 1182 (5 à 6 ans) |
+| Bon joueur : modes de conquête gagnés | 8 / 8 | 8 / 8 | 8 / 8 (Duel : 1179 à 1182) |
+| Novice : familles au bout de quatre ans | 47 | 33 | 16 |
+| Novice : victoires | 8 / 8 | 8 / 8 | 5 / 8 (en 1181 à 1184) |
+| Approbation en fin de partie | 76 à 86 % | 67 à 78 % | 61 à 78 % |
+
+Avant l'étape 8, avec le même joueur : aucune maison au niveau 2 en huit ans, aucune famine non plus, 136 familles, un trésor de 900 à 2 700 deniers, la victoire en Prospérité dès la première année, des résultats identiques dans les trois difficultés, aucune victoire possible dans les modes de conquête, et tout le village mort de faim la première année au bord du gouffre en Difficile.
+
+En jouant, la même campagne a révélé deux défauts de longue date : des **chantiers bloqués pour toujours** (les journaliers visaient une case libre enfermée entre d'autres bâtiments et recommençaient sans fin) et des **ateliers enfermés** par des constructions posées ensuite (le meunier allait chercher le grain sans jamais pouvoir le rapporter). Les villageois ne visent plus qu'un accès qu'ils peuvent atteindre, et un bâtiment que plus personne n'atteint est signalé dans son panneau et par un message, dès la pose qui l'enferme.
+
+À surveiller en jouant : le trésor remonte dans les parties longues des modes de conquête une fois toutes les régions prises (le joueur automatique ne dépense plus rien) ; le niveau 3 des maisons devient courant au bout de quelques années.
 
 ### Bloc B — Le seigneur et son monde
 
@@ -166,7 +199,7 @@ Sur l'ensemble : rythme de l'ascension, difficulté des successions, fréquence 
 
 **Étape 14 — Rejouabilité** : cartes générées variées, dynasties de départ différentes, objectifs et succès, statistiques de fin de partie.
 
-**Étape 15 — Application installable** : PWA (installation depuis le navigateur, jeu hors-ligne), sauvegardes robustes (IndexedDB, export en fichier), puis **APK Android** (TWA ou Capacitor). Les outils de construction de l'APK servent uniquement à l'emballage : le jeu reste en HTML/JS pur.
+**Étape 15 — Application installable** : l'**APK Android** et ses sauvegardes durables sont arrivés à l'étape 8 (vue web native, sans Capacitor). Reste : PWA (installation depuis le navigateur avec un service worker), export en fichier, publication sur un magasin d'applications. Les outils de construction de l'APK servent uniquement à l'emballage : le jeu reste en HTML/JS pur.
 
 **Étape 16 — Finitions** : musique et ambiances par saison, animations supplémentaires, accessibilité, optimisation pour les téléphones modestes.
 

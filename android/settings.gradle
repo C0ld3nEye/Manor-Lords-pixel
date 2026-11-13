@@ -1,0 +1,18 @@
+// Seigneurie — l'application Android : une vue web hors-ligne qui emballe le jeu (index.html et js/).
+// Le jeu reste en HTML/JS pur ; ce projet ne sert qu'à l'emballage (voir android/LISEZMOI.md).
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+rootProject.name = "Seigneurie"
+include(":app")

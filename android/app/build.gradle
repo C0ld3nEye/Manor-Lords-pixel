@@ -1,0 +1,75 @@
+plugins {
+    id "com.android.application"
+}
+
+// Le numéro de version grandit avec le temps (minutes depuis 2026) : chaque nouvel APK s'installe par-dessus
+// l'ancien sans perdre les parties. On peut le forcer : gradle assembleRelease -PversionCode=1234
+def autoCode = (int) (System.currentTimeMillis().intdiv(60000L) - 29454000L)
+def vCode = project.hasProperty("versionCode") ? project.property("versionCode").toInteger() : autoCode
+
+// le jeu lui-même (index.html et js/), copié depuis la racine du dépôt à chaque construction, dans assets/www.
+// La copie se fait à la configuration : simple, et sans dépendance implicite entre tâches à déclarer.
+def webDir = new File(buildDir, "generated/web")
+project.delete(webDir)
+copy {
+    from(rootProject.file("..")) {
+        include "index.html"
+        include "js/*.js"
+    }
+    into new File(webDir, "www")
+}
+
+android {
+    namespace "fr.seigneurie.jeu"
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "fr.seigneurie.jeu"
+        minSdk 24
+        targetSdk 34
+        versionCode vCode
+        versionName "0.8 (étape 8)"
+    }
+
+    // Une seule clé pour toutes les versions : sans elle, Android refuse d'installer une mise à jour par-dessus
+    // l'ancienne (il faudrait désinstaller). La clé n'est PAS dans le dépôt : on donne son chemin et son mot de passe
+    // par SEIGNEURIE_KEYSTORE et SEIGNEURIE_KS_PASS (secrets GitHub dans le flux apk.yml). Sans clé, l'APK est signé
+    // avec une clé de débogage provisoire. Voir LISEZMOI.md.
+    def ksPath = System.getenv("SEIGNEURIE_KEYSTORE")
+    def ksPass = System.getenv("SEIGNEURIE_KS_PASS")
+    def hasKey = ksPath && ksPass && file(ksPath).exists()
+    signingConfigs {
+        if (hasKey) {
+            release {
+                storeFile file(ksPath)
+                storePassword ksPass
+                keyAlias System.getenv("SEIGNEURIE_KS_ALIAS") ?: "seigneurie"
+                keyPassword ksPass
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig hasKey ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    sourceSets {
+        main {
+            assets.srcDirs = [webDir]
+        }
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
