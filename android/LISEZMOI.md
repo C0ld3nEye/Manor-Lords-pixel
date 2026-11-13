@@ -14,13 +14,14 @@ dupliqué, les fichiers sont copiés dans l'APK à chaque construction.
 ## Les sauvegardes, sur le long terme
 
 - Le jeu sauvegarde toutes les 5 secondes, et aussitôt que l'application passe en arrière-plan.
-- Chaque emplacement est écrit **deux fois** : dans le stockage de la vue web, et dans un fichier de l'application
+- Chaque partie est écrite **deux fois** : dans le stockage de la vue web, et dans un fichier de l'application
   (`files/saves/`), écrit d'abord à côté puis mis à la place de l'ancien, qui est gardé en `.bak` (une coupure en
-  pleine écriture ne perd rien).
+  pleine écriture ne perd rien). Un index (`seigneurie-saves-index`) garde le nom et le résumé de chaque partie.
 - Ces fichiers ne disparaissent qu'à la **désinstallation** (ou « Effacer les données » dans les réglages).
 - Ils suivent la **sauvegarde automatique d'Android** (compte Google) et le **transfert vers un nouveau téléphone**.
-- Menu ☰ → **Exporter la partie** : le menu de partage d'Android envoie un code de sauvegarde où vous voulez (Drive,
-  mail, notes). **Importer une partie** reprend un code copié dans le presse-papiers.
+- Options → **Exporter cette partie dans un fichier** : le sélecteur de documents d'Android demande où l'enregistrer
+  (Téléchargements, Drive…), sans aucune permission. **Importer une partie depuis un fichier** la reprend, à côté des
+  autres.
 
 ## Construire
 

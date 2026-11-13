@@ -3326,4 +3326,73 @@ test("étape 8 : un bâtiment que plus personne ne peut atteindre est signalé (
   assert.ok(g.log.some(l=>/n'a plus aucun accès/.test(l.text)), "message au joueur");
 });
 
+/* ===== le bœuf polyvalent : tâches au choix, labour et charroi en même temps, poteau déplaçable ===== */
+test("bœuf : un fermier qui laboure attelle un bœuf (×2) ; le charroi n'est plus bloqué pour autant", () => {
+  const g = fresh();
+  const farm = doneBuilding(g, "farm"); g.assign(farm.id);
+  const v = g.workersOf(farm)[0];
+  const b = newField(g, "wheat"); toMonth(g, 8);
+  g.treasury = 99; g.buyOx();
+  assert.strictEqual(g.oxen.length, 2);
+  v.task = { type:"plow", bid:b.id }; v.state = "work";
+  g.fieldWork(v, v.task);
+  const yoked = g.oxen.find(o=>o.plow===v.id);
+  assert.ok(yoked, "un bœuf est attelé à la charrue");
+  assert.strictEqual(g.plowMul(v), 2);
+  assert.ok(/charrue/.test(g.oxActivity(yoked)));
+  // pendant ce temps, un chantier trouve l'autre bœuf
+  g.stock.timber = 40;
+  const s = placeInCenter(g, "storehouse");
+  const w = g.villagers.find(x=>g.canWork(x) && x!==v && x.work<0);
+  const job = g.siteJob(w, [s]);
+  assert.strictEqual(job.type, "haul"); assert.ok(job.ox && job.ox!==yoked.id, "l'autre bœuf part au charroi");
+  // le labour s'arrête : le bœuf (resté au champ) est dételé et rentre seul
+  yoked.x += 6; yoked.y += 3;
+  v.task = null; g.oxStep();
+  assert.ok(!(yoked.plow>0) && yoked.home, "dételé, il rentre au poteau");
+  for(let i=0;i<400 && yoked.home;i++) g.oxStep();
+  assert.ok(!g.oxAway(yoked), "il est revenu au poteau");
+});
+
+test("bœuf : ce qu'on lui demande (charroi seul, labour seul, repos) est respecté et sauvegardé", () => {
+  const g = fresh();
+  const o = g.oxen[0];
+  const farm = doneBuilding(g, "farm"); g.assign(farm.id);
+  const v = g.workersOf(farm)[0];
+  g.oxStep();
+  assert.strictEqual(g.oxJob(o), "all");
+  assert.strictEqual(g.setOxJob(o.id, "haul"), null);
+  assert.strictEqual(g.yokeOx(v), null, "au charroi seulement : pas de charrue");
+  assert.ok(g.freeOx(o.x, o.y), "mais libre pour les troncs");
+  g.setOxJob(o.id, "plow");
+  assert.strictEqual(g.freeOx(o.x, o.y), null, "au labour seulement : pas de charroi");
+  assert.ok(g.yokeOx(v), "mais attelé à la charrue");
+  g.setOxJob(o.id, "rest");
+  assert.ok(!(o.plow>0), "mis au repos : dételé");
+  assert.strictEqual(g.freeOx(o.x, o.y), null); assert.strictEqual(g.plowMul(), 1);
+  const g2 = GameState.load(JSON.parse(JSON.stringify(g.serialize())));
+  assert.strictEqual(g2.oxJob(g2.oxen[0]), "rest", "gardé dans la sauvegarde");
+  assert.strictEqual(g2.setOxJob(o.id, "n'importe quoi"), "Bœuf introuvable");
+});
+
+test("bœuf : le poteau se déplace gratuitement, les bœufs qui y attendaient le suivent", () => {
+  const g = fresh();
+  const post = g.buildings.find(b=>b.def==="oxpost"), o = g.oxen[0];
+  g.oxStep();
+  assert.ok(!g.oxAway(o));
+  const sp = freeSpot(g), t0 = g.stock.timber;
+  g.stock.timber = 0;
+  assert.strictEqual(g.canMoveOxPost(sp.x, sp.y), null, "pas besoin de bois pour le déplacer");
+  const ox0 = post.x, oy0 = post.y;
+  assert.strictEqual(g.moveOxPost(sp.x, sp.y), null);
+  assert.strictEqual(post.x, sp.x); assert.strictEqual(post.y, sp.y);
+  assert.strictEqual(g.occupied[oy0*W+ox0], -1, "l'ancienne case est libérée");
+  assert.strictEqual(g.occupied[sp.y*W+sp.x], post.id);
+  assert.strictEqual(g.stock.timber, 0);
+  for(let i=0;i<2000 && o.home;i++) g.oxStep();
+  assert.ok(!g.oxAway(o), "le bœuf a rejoint le nouveau poteau");
+  assert.ok(g.moveOxPost(-5, -5), "hors de la carte : refusé");
+  g.stock.timber = t0;
+});
+
 console.log("\n" + passed + " tests OK" + (process.exitCode ? " (avec échecs)" : ""));

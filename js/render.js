@@ -1008,10 +1008,11 @@ function drawStart(g, B, winter, now){
     return;
   }
   obj(byp - 1, function(){ rect(bxp+3, byp-12, 2, 11, WOOD_B); rect(bxp+2, byp-12, 4, 1, WOOD_A); rect(bxp+5, byp-8, 5, 1, "#c9b48a"); });
-  if(g.oxenHome() > 0){
-    var ox = bxp + 12, oy = byp - 1;
+  var nHome = g.oxHome && g.oxHome()===B ? Math.min(3, g.oxenHome()) : 0;
+  for(var k=0; k<nHome; k++){
+    var ox = bxp + 12 + (k&1)*3, oy = byp - 1 + k*5;
     sh("sh_ox", ox, oy);
-    obj(oy, drawSprite, "ox_"+(Math.floor(now/900) % 2)+"_l", ox, oy);
+    obj(oy, drawSprite, "ox_"+((Math.floor(now/900) + k) % 2)+"_l", ox, oy);
   }
 }
 
@@ -1216,7 +1217,10 @@ function dottedCircle(cx, cy, r, c){
 /* ======================================================
    IMAGE PRINCIPALE
    ====================================================== */
-function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
+function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now, uiNow){
+  /* now : l'horloge des animations (elle s'arrête quand le jeu est en pause : plus rien ne bouge) ;
+     uiNow : l'horloge réelle, pour les repères de l'interface (sélection, pose) qui continuent de clignoter */
+  if(uiNow==null) uiNow = now;
   SPR.build();
   var cw = canvas.width, ch = canvas.height;
   var dpr = cw/(canvas.clientWidth||1);
@@ -1321,7 +1325,7 @@ function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
         }
       }
     }
-    var oxIdle = g.oxenHome();
+    var oxIdle = B.def==="farm" && g.oxHome()===B ? g.oxenHome() : 0;   // sans poteau, les bœufs attendent à la ferme
     if(B.done && B.def==="farm" && oxIdle>0 && !winter){
       for(var o2=0; o2<Math.min(3, oxIdle); o2++){
         var oxx = bxp + 6 + o2*16 + Math.round(Math.sin(t*0.15 + o2*2.1)*4), oyy = byp + 10 + (o2&1)*4;
@@ -1457,15 +1461,15 @@ function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
     var sv = g.villager(SELV);
     if(sv){
       var kidS = g.stageOf && (g.stageOf(sv)==="child" || g.stageOf(sv)==="baby");
-      var bob = Math.round(Math.abs(Math.sin(now/220))*2);
-      spr("mark_"+(Math.floor(now/450)%2), sv.x*TS, sv.y*TS - (kidS ? 11 : 15) - bob);
+      var bob = Math.round(Math.abs(Math.sin(uiNow/220))*2);
+      spr("mark_"+(Math.floor(uiNow/450)%2), sv.x*TS, sv.y*TS - (kidS ? 11 : 15) - bob);
     }
   }
   /* sélection */
   if(selId!=null){
     var sb = byId[selId];
     if(sb){
-      var blink = Math.floor(now/450)%2 ? "#ffffff" : "#e8c35a";
+      var blink = Math.floor(uiNow/450)%2 ? "#ffffff" : "#e8c35a";
       corners(sb.x*TS-2, sb.y*TS-2, sb.w*TS+4, sb.h*TS+4, blink);
       var sd = BUILD_DEFS[sb.def];
       if(sd && sd.radius) dottedCircle((sb.x+sb.w/2)*TS, (sb.y+sb.h/2)*TS, sd.radius*TS, "rgba(232,195,90,0.85)");
@@ -1492,7 +1496,7 @@ function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
     if(bd.radius) dottedCircle(gx0 + bd.w*TS/2, gy0 + bd.h*TS/2, bd.radius*TS, "rgba(232,195,90,0.8)");
   }
 
-  if(OV) drawOverlay(g, now);
+  if(OV) drawOverlay(g, uiNow);
 
   /* météo et lumière de saison */
   weather(g, t, bw, bh);
@@ -1554,8 +1558,8 @@ return { drawGame:drawGame, setOverlay:function(o){ OV = o || null; }, setSelVil
 })();
 
 /* points d'entrée utilisés par app.js */
-function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now){
-  return RENDER.drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now);
+function drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now, uiNow){
+  return RENDER.drawGame(ctx, g, cam, canvas, hover, buildSel, selId, layers, now, uiNow);
 }
 function snapZoom(z){ return RENDER.snapZoom(z); }
 function stepZoom(z, dir){ return RENDER.stepZoom(z, dir); }

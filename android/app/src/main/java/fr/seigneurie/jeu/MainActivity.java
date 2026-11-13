@@ -5,6 +5,9 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 import android.view.Window;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -20,6 +23,9 @@ import android.webkit.WebViewClient;
  */
 public class MainActivity extends Activity {
     private WebView web;
+    private SaveBridge bridge;
+    private String pendingExport = null;
+    private static final int REQ_EXPORT = 41, REQ_IMPORT = 42;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -46,9 +52,73 @@ public class MainActivity extends Activity {
                 return true;
             }
         });
-        web.addJavascriptInterface(new SaveBridge(this), "SeigneurieAndroid");
+        bridge = new SaveBridge(this);
+        web.addJavascriptInterface(bridge, "SeigneurieAndroid");
         setContentView(web);
         web.loadUrl("file:///android_asset/www/index.html");
+    }
+
+    /** Exporter : le sélecteur de documents d'Android (aucune permission nécessaire). */
+    void askExport(String name, String content) {
+        pendingExport = content;
+        Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("application/json");
+        i.putExtra(Intent.EXTRA_TITLE, name);
+        try { startActivityForResult(i, REQ_EXPORT); } catch (Exception e) { pendingExport = null; notifyJs("export", false); }
+    }
+
+    void askImport() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("*/*");
+        try { startActivityForResult(i, REQ_IMPORT); } catch (Exception e) { notifyJs("import", false); }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        Uri uri = (resultCode == RESULT_OK && data != null) ? data.getData() : null;
+        if (requestCode == REQ_EXPORT) {
+            boolean ok = false;
+            if (uri != null && pendingExport != null) {
+                OutputStream out = null;
+                try {
+                    out = getContentResolver().openOutputStream(uri, "wt");
+                    if (out != null) { out.write(pendingExport.getBytes("UTF-8")); out.flush(); ok = true; }
+                } catch (Exception e) {
+                    ok = false;
+                } finally {
+                    if (out != null) try { out.close(); } catch (Exception e) { /* rien */ }
+                }
+            }
+            pendingExport = null;
+            notifyJs("export", ok);
+        } else if (requestCode == REQ_IMPORT) {
+            String text = null;
+            if (uri != null) {
+                InputStream in = null;
+                try {
+                    in = getContentResolver().openInputStream(uri);
+                    if (in != null) {
+                        ByteArrayOutputStream b = new ByteArrayOutputStream();
+                        byte[] buf = new byte[65536];
+                        int n;
+                        while ((n = in.read(buf)) > 0) b.write(buf, 0, n);
+                        text = b.toString("UTF-8");
+                    }
+                } catch (Exception e) {
+                    text = null;
+                } finally {
+                    if (in != null) try { in.close(); } catch (Exception e) { /* rien */ }
+                }
+            }
+            bridge.setImport(text);
+            notifyJs("import", text != null);
+        } else super.onActivityResult(requestCode, resultCode, data);
+    }
+
+    private void notifyJs(String kind, boolean ok) {
+        if (web != null) web.evaluateJavascript("window.seigneurieFileDone && window.seigneurieFileDone('" + kind + "', " + ok + ")", null);
     }
 
     /** Retour : le jeu ferme d'abord ce qui est ouvert ; il répond « quit » au second appui. */

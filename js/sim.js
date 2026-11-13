@@ -71,7 +71,7 @@ function hash2(x        , y        ){ return ((x * 73856093) ^ (y * 19349663)) >
 
 const BUILD_DEFS                              = {
   camp:      { id:"camp",      name:"Campement",      icon:"⛺", w:2,h:1, cost:{}, fam:0, instant:true, desc:"Abri provisoire des survivants. Démonté quand toutes les familles ont une maison." },
-  oxpost:    { id:"oxpost",    name:"Poteau du bœuf", icon:"🐂", w:1,h:1, cost:{timber:1}, fam:0, instant:true, desc:"Le bœuf y est attaché : il aide à porter les charges lourdes." },
+  oxpost:    { id:"oxpost",    name:"Poteau du bœuf", icon:"🐂", w:1,h:1, cost:{timber:1}, fam:0, instant:true, desc:"Les bœufs y attendent entre deux travaux. Un bœuf est polyvalent : il traîne les troncs jusqu'aux chantiers ou tire la charrue. Touchez-le pour choisir sa tâche ; il se déplace gratuitement." },
   burgage:   { id:"burgage",   name:"Bourgage",       icon:"🏠", w:1,h:1, cost:{timber:1}, fam:0, instant:true, buildRate:2, desc:"Loge une famille. Évolue si ses besoins sont satisfaits." },
   woodcutter:{ id:"woodcutter",name:"Camp de bûcherons",icon:"🪓", w:1,h:1, cost:{}, fam:2, skill:"wood", radius:6, instant:false, desc:"Gratuit : une cabane de branches. Abat les arbres à proximité : bois d'œuvre et bois de chauffe." },
   forager:   { id:"forager",   name:"Cabane de cueilleuses", icon:"🍒", w:1,h:1, cost:{timber:2}, fam:2, skill:"gather", radius:6, instant:false, desc:"Cueille des baies (mars → novembre)." },
@@ -175,7 +175,16 @@ const MAT_RES = ["timber","stone"];
 const PORTER_LOAD = 1;    // un porteur : une pierre (un tronc est trop lourd pour un homme)
 const OX_LOAD = 3;        // le bœuf, mené par un journalier, traîne trois troncs (ou un traîneau de pierres)
 const OX_SPEED = 0.14;    // le bœuf et celui qui le mène avancent plus lentement qu'un homme seul (0,25)
-const DRAG_SPEED = 0.08;  // un homme qui traîne un tronc à la main, faute de bœuf
+const DRAG_SPEED = 0.08;
+// un bœuf est polyvalent : il tire la charrue ou traîne les troncs, selon ce qu'on lui demande
+const OX_JOBS = {
+  all:  { id:"all",  name:"Polyvalent", desc:"Charroi des chantiers et labour, selon le besoin du moment." },
+  haul: { id:"haul", name:"Charroi",    desc:"Seulement les troncs et les pierres des chantiers." },
+  plow: { id:"plow", name:"Labour",     desc:"Seulement la charrue, avec les fermiers." },
+  rest: { id:"rest", name:"Repos",      desc:"Reste au poteau (un bœuf faible s'y remet plus vite)." },
+};
+const OX_JOB_ORDER = ["all","haul","plow","rest"];
+const OX_PLOW_MUL = 2;    // un fermier avec un bœuf à la charrue laboure deux fois plus vite  // un homme qui traîne un tronc à la main, faute de bœuf
 // lieux où l'on prend les matériaux : null = bois et pierre, sinon la seule ressource qu'on y trouve
 const DEPOT_DEFS = { storehouse:null, camp:null, oxpost:null, woodcutter:"timber", quarry:"stone" };
 const DIRS4 = [[0,-1],[1,0],[0,1],[-1,0]]; // N, E, S, O
@@ -1193,6 +1202,32 @@ class GameState {
     if(d.instant || d.id==="field"){ b.done = true; b.progress = 1; }
     else this.initMat(b, d.cost);
     this.enclosedCheck();   // étape 8 : prévenir tout de suite si la pose enferme un bâtiment
+    this.uiVersion++;
+    return null;
+  }
+
+  // le poteau du bœuf se déplace où l'on veut (gratuit) ; les bœufs qui y attendaient y vont
+  canMoveOxPost(tx, ty){
+    const b = this.buildings.find(x=>x.def==="oxpost");
+    if(!b) return "Il n'y a pas de poteau";
+    if(b.x===tx && b.y===ty) return null;
+    const i0 = b.y*W+b.x, old = this.occupied[i0], t0 = this.stock.timber;
+    this.occupied[i0] = -1; this.stock.timber = Math.max(t0, 99);   // déplacer ne coûte rien
+    const err = this.canPlace("oxpost", tx, ty);
+    this.occupied[i0] = old; this.stock.timber = t0;
+    return err;
+  }
+  moveOxPost(tx, ty){
+    const err = this.canMoveOxPost(tx, ty);
+    if(err) return err;
+    const b = this.buildings.find(x=>x.def==="oxpost");
+    if(b.x===tx && b.y===ty) return null;
+    this.occupied[b.y*W+b.x] = -1;
+    const waiting = this.oxen.filter(o=>!this.oxAway(o));
+    b.x = tx; b.y = ty;
+    this.occupied[ty*W+tx] = b.id;
+    for(const o of waiting) o.home = true;   // ils y vont à pied
+    this.enclosedCheck();
     this.uiVersion++;
     return null;
   }
@@ -2454,7 +2489,7 @@ class GameState {
   }
 
   /* ================= étape 5 : bœufs de trait ================= */
-  makeOx(age){ return { id:this.nextA++, a:age, h:100 }; }
+  makeOx(age){ return { id:this.nextA++, a:age, h:100, job:"all" }; }
   syncOx(){ this.stock.ox = this.oxen.length; }
   buyOx(){
     if(this.treasury < 20){ this.toast("Il faut 20 deniers pour acheter un bœuf.","bad"); return false; }
@@ -2473,11 +2508,55 @@ class GameState {
     this.uiVersion++;
     return true;
   }
-  // bœufs en état de tirer la charrue (adultes, pas affaiblis)
+  // bœufs en état de travailler (adultes, pas affaiblis)
   workingOxen(){ return this.oxen.filter(o=>o.h>=50 && o.a>=24).length; }
   oxSpeed(){ return 1 + Math.min(3, this.stock.ox) * 0.6; }
-  // un attelage accélère le labour : ×1,5 avec un bœuf, ×2 avec deux
-  plowMul(){ return 1 + 0.5*Math.min(2, this.oxen.filter(o=>o.h>=50 && o.a>=24 && !(o.lead>0)).length); }
+  // ce qu'on demande à chaque bœuf (polyvalent par défaut)
+  oxJob(o){ return OX_JOBS[o && o.job] ? o.job : "all"; }
+  oxDoes(o, use){ const j = this.oxJob(o); return j==="all" || j===use; }
+  setOxJob(id, job){
+    const o = this.oxen.find(x=>x.id===id);
+    if(!o || !OX_JOBS[job]) return "Bœuf introuvable";
+    o.job = job;
+    // un bœuf qu'on met au repos ou qu'on retire de la charrue est dételé ; celui qui le mène finit son voyage seul
+    if(o.plow>0 && !this.oxDoes(o, "plow")) this.unyoke(o);
+    this.uiVersion++;
+    return null;
+  }
+  // ce que fait un bœuf en ce moment (pour l'interface)
+  oxActivity(o){
+    if(o.lead>0){
+      const v = this.villager(o.lead), t = v && v.task;
+      if(t && t.phase==="ox") return (v ? v.name : "Un journalier")+" vient le chercher";
+      if(t && t.phase==="back") return "Ramené au poteau par "+(v ? v.name : "un journalier");
+      return "Au charroi avec "+(v ? v.name : "un journalier")+(t && t.res ? " ("+(t.res==="stone" ? "pierres" : "troncs")+")" : "");
+    }
+    if(o.plow>0){ const v = this.villager(o.plow); return "À la charrue avec "+(v ? v.name : "un fermier"); }
+    if(o.home) return "Rentre au poteau";
+    if(!this.oxCanHaul(o)) return o.a<24 ? "Trop jeune pour travailler" : "Trop faible pour travailler (il lui faut du foin)";
+    if(this.oxJob(o)==="rest") return "Au repos";
+    return this.oxAway(o) ? "Attend où on l'a laissé" : "Au poteau, prêt";
+  }
+  // un fermier qui laboure attelle un bœuf libre (le plus proche) ; ×2 tant qu'il l'a
+  yokeOx(v){
+    let o = this.oxen.find(x=>x.plow===v.id);
+    if(o) return o;
+    let bd = Infinity;
+    for(const x of this.oxen){
+      if(x.lead>0 || x.plow>0 || !this.oxCanHaul(x) || !this.oxDoes(x, "plow")) continue;
+      this.oxPlace(x);
+      const d = Math.hypot(x.x-v.x, x.y-v.y);
+      if(d<bd){ bd = d; o = x; }
+    }
+    if(o){ o.plow = v.id; delete o.home; }
+    return o || null;
+  }
+  unyoke(o){ o.plow = 0; o.home = true; }   // dételé : il rentre seul à son poteau, il connaît le chemin
+  // multiplicateur de labour : pour un fermier, selon qu'il a un bœuf attelé ; sans fermier, ce qu'un bœuf libre apporterait
+  plowMul(v){
+    if(v) return this.oxen.some(o=>o.plow===v.id) ? OX_PLOW_MUL : 1;
+    return this.oxen.some(o=>this.oxCanHaul(o) && this.oxDoes(o, "plow") && !(o.lead>0) && !(o.plow>0)) ? OX_PLOW_MUL : 1;
+  }
 
   /* ================= étape 5 : les champs ================= */
   // culture proposée pour un nouveau champ : la prochaine qu'on pourra semer
@@ -2754,7 +2833,8 @@ class GameState {
         stop(3);
       }
     } else if(t.type==="plow"){
-      f.plow = Math.min(1, f.plow + this.fieldRate(fd, 0.008)*sk*this.plowMul());
+      this.yokeOx(v);
+      f.plow = Math.min(1, f.plow + this.fieldRate(fd, 0.008)*sk*this.plowMul(v));
       if(f.plow>=1) stop(5);
     } else if(t.type==="sow"){
       if(f.plow<1){ stop(5); return; }
@@ -3099,7 +3179,7 @@ class GameState {
     for(const o of this.oxen.slice()){
       o.a++;
       if(winter){ const got = this.takeFodder(1); o.h = Math.max(0, Math.min(100, o.h + (got>=0.999 ? 10 : -30*(1-got)))); }
-      else o.h = Math.min(100, o.h + 15);
+      else o.h = Math.min(100, o.h + (this.oxJob(o)==="rest" ? 25 : 15));
       this.stock.manure = Math.min(this.capFor("manure"), (this.stock.manure||0) + (winter ? 1 : 0.5));
       let why = null;
       if(o.h<=0) why = "de faim";
@@ -3945,12 +4025,12 @@ class GameState {
     return this.buildings.find(b=>b.def==="oxpost") || this.buildings.find(b=>b.done && b.def==="farm") || this.buildings.find(b=>b.def==="camp") || null;
   }
   oxCanHaul(o){ return o.a>=24 && o.h>=50; }
-  // le labour passe avant : pas de charroi pendant qu'un fermier laboure
+  // un fermier laboure-t-il en ce moment ? (les bœufs attelés à la charrue ne sont plus libres pour le charroi)
   plowing(){ return this.villagers.some(v=>v.task && v.task.type==="plow" && v.state!=="idle"); }
   oxenHauling(){ return this.oxen.filter(o=>o.lead>0).length; }
   // un bœuf mené, ou laissé ailleurs qu'à son poteau (on le dessine là où il est)
   oxAway(o){
-    if(o.lead>0) return true;
+    if(o.lead>0 || o.plow>0 || o.home) return true;
     const home = this.oxHome();
     if(!home || typeof o.x!=="number") return false;
     return Math.hypot(o.x-(home.x+home.w/2), o.y-(home.y+home.h)) > 2;
@@ -3960,7 +4040,7 @@ class GameState {
   freeOx(x, y){
     let best = null, bd = Infinity;
     for(const o of this.oxen){
-      if(o.lead>0 || !this.oxCanHaul(o)) continue;
+      if(o.lead>0 || o.plow>0 || !this.oxCanHaul(o) || !this.oxDoes(o, "haul")) continue;
       this.oxPlace(o);
       const d = Math.hypot(o.x-x, o.y-y);
       if(d<bd){ bd = d; best = o; }
@@ -3978,6 +4058,26 @@ class GameState {
   oxStep(){
     for(const o of this.oxen){
       this.oxPlace(o);
+      // à la charrue : il suit son fermier ; dételé quand le labour s'arrête, il rentre seul au poteau
+      if(o.plow>0){
+        const pv = this.villager(o.plow), pt = pv && pv.task;
+        if(!pt || pt.type!=="plow" || !this.oxCanHaul(o)) this.unyoke(o);
+        else {
+          const dx = pv.x-o.x, dy = pv.y-o.y, d = Math.hypot(dx, dy);
+          if(d>0.8){ const s = Math.min(0.3, d-0.8); o.x += dx/d*s; o.y += dy/d*s; }
+          continue;
+        }
+      }
+      if(o.home && !(o.lead>0)){
+        const hb = this.oxHome();
+        if(!hb){ delete o.home; continue; }
+        const tx = hb.x+hb.w/2, ty = hb.y+hb.h+0.5, dx = tx-o.x, dy = ty-o.y, d = Math.hypot(dx, dy);
+        if(d<0.6){ delete o.home; delete o.x; delete o.y; this.oxPlace(o); }
+        else { const s = Math.min(OX_SPEED, d); o.x += dx/d*s; o.y += dy/d*s; }
+        continue;
+      }
+      // au repos : celui qu'on a laissé en chemin rentre au poteau
+      if(this.oxJob(o)==="rest" && !(o.lead>0) && this.oxAway(o)){ o.home = true; continue; }
       if(!(o.lead>0)) continue;
       const v = this.villagers.find(x=>x.id===o.lead), t = v && v.task;
       if(!t || t.type!=="haul" || t.ox!==o.id){ o.lead = 0; continue; }
@@ -3988,7 +4088,6 @@ class GameState {
   }
   // travail d'un ouvrier sur les chantiers : aller chercher ce qui manque, sinon bâtir avec ce qui est arrivé
   siteJob(f, sites){
-    const plow = this.plowing();
     for(const s of this.sitesByOrder(sites, f.x, f.y)){
       // étape 8 : un chantier enfermé (aucune case libre reliée autour) est passé, et signalé une fois
       if(!this.spotFor(s, f.x, f.y)){
@@ -4002,7 +4101,7 @@ class GameState {
         if(avail<=0) continue;   // plus rien au stock : le chantier attend
         const dep = this.nearestDepot(r, f.x, f.y, s);
         if(!dep){ s.mat.got[r] = Math.min(s.mat.need[r], (s.mat.got[r]||0) + Math.min(left, avail)); this.stock[r] -= Math.min(left, avail); continue; }   // aucun dépôt : un marchand livre (rien ne reste bloqué)
-        const ox = plow ? null : this.freeOx(f.x, f.y);
+        const ox = this.freeOx(f.x, f.y);
         // les troncs sont trop lourds pour un homme : il faut le bœuf ; la pierre se porte une à une, ou en traîneau
         if(ox && (r==="timber" || left>=2)){
           const n = Math.min(OX_LOAD, left, avail);
@@ -4022,7 +4121,7 @@ class GameState {
     let ok = false;
     if(job.phase==="ox"){
       const o = this.oxen.find(x=>x.id===job.ox);
-      if(o){ o.lead = f.id; ok = this.sendTo(f, Math.floor(o.x), Math.floor(o.y), job); if(!ok) o.lead = 0; }
+      if(o){ delete o.home; o.lead = f.id; ok = this.sendTo(f, Math.floor(o.x), Math.floor(o.y), job); if(!ok) o.lead = 0; }
     } else {
       const dep = this.buildings.find(x=>x.id===job.dep);
       ok = !!dep && this.sendToBuilding(f, dep, job);
@@ -5543,7 +5642,7 @@ class GameState {
       victory:this.victory,
       pendingEvent:this.pendingEvent,
       winterWarned:this.winterWarned,
-      oxen:this.oxen.map(o=>({ id:o.id, a:o.a, h:o.h, x:o.x, y:o.y, lead:o.lead||0 })),
+      oxen:this.oxen.map(o=>({ id:o.id, a:o.a, h:o.h, x:o.x, y:o.y, lead:o.lead||0, job:this.oxJob(o), plow:o.plow||0, home:o.home ? 1 : 0 })),
       nextA:this.nextA,
       wx:this.wx,
       keepCalves:this.keepCalves,
@@ -5724,9 +5823,12 @@ class GameState {
       const ox = { id:num(o.id) ? o.id : 0, a:Math.max(0, Math.round(o.a)), h:num(o.h) ? Math.max(0, Math.min(100, o.h)) : 100 };
       if(num(o.x) && num(o.y)){ ox.x = Math.max(0, Math.min(W, o.x)); ox.y = Math.max(0, Math.min(H, o.y)); }   // étape 5 bis : où il a été laissé, qui le mène
       if(num(o.lead) && o.lead>0) ox.lead = o.lead;
+      ox.job = OX_JOBS[o.job] ? o.job : "all";
+      if(num(o.plow) && o.plow>0) ox.plow = o.plow;
+      if(o.home) ox.home = true;
       return ox;
     });
-    else { g.oxen = []; for(let k=0; k<Math.max(0, Math.min(20, Math.floor(num(g.stock.ox) ? g.stock.ox : 0))); k++) g.oxen.push({ id:0, a:60, h:100 }); }
+    else { g.oxen = []; for(let k=0; k<Math.max(0, Math.min(20, Math.floor(num(g.stock.ox) ? g.stock.ox : 0))); k++) g.oxen.push({ id:0, a:60, h:100, job:"all" }); }
     let na = Math.max(0, num(data.nextA) ? data.nextA : 0);
     for(const o of g.oxen) na = Math.max(na, o.id+1);
     for(const b of g.buildings) if(b.herd) for(const a of b.herd.an) na = Math.max(na, a.id+1);
@@ -5784,7 +5886,7 @@ class GameState {
 }
 
 if(typeof module!=="undefined" && module.exports){
-  module.exports = { T_FORD, REGION_NAMES, START_REGION_NAME, REGION_COLS, REGION_ROWS, rleEncode, rleDecode, HOUSE_CAP, FOOD_DEFS, FOOD_GROUPS, FOOD_GROUP_ORDER, STORE_SPOIL, GRUEL, GRANARY_CAP, GRANARY_MUL, VARIETY_APPROVAL, RECIPES, SMOKE_KEEP, HOME_BAKE, MAT_RES, PORTER_LOAD, OX_LOAD, OX_SPEED, DRAG_SPEED, DEPOT_DEFS, TS, WORK_DIV, TICKS_PER_DAY, DAYS_PER_MONTH, FIELD_MIN, FIELD_MAX, PLOT_MIN, CROP_CAL, GROW_RATE, SHEAF_RES, LIVESTOCK, LIVESTOCK_ORDER, GRASS, PASTURE_MIN, PASTURE_MAX, monthsTxt, isWinterMonth, MONTHS_ABBR, SKILL_DEFS, SKILL_ORDER, SKILL_LEVELS, skillLevel, FOOD_NEED, AGE_TEEN, AGE_ADULT, AGE_ELDER, AGE_RETIRE, STAGE_NAMES, JOB_TITLES, NAMES_M, NAMES_F, SURNAMES, BUILD_STAGES, buildStage, DIRS4, PLOT_FRONT, polyArea, pointInPoly, GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
+  module.exports = { OX_JOBS, OX_JOB_ORDER, OX_PLOW_MUL, T_FORD, REGION_NAMES, START_REGION_NAME, REGION_COLS, REGION_ROWS, rleEncode, rleDecode, HOUSE_CAP, FOOD_DEFS, FOOD_GROUPS, FOOD_GROUP_ORDER, STORE_SPOIL, GRUEL, GRANARY_CAP, GRANARY_MUL, VARIETY_APPROVAL, RECIPES, SMOKE_KEEP, HOME_BAKE, MAT_RES, PORTER_LOAD, OX_LOAD, OX_SPEED, DRAG_SPEED, DEPOT_DEFS, TS, WORK_DIV, TICKS_PER_DAY, DAYS_PER_MONTH, FIELD_MIN, FIELD_MAX, PLOT_MIN, CROP_CAL, GROW_RATE, SHEAF_RES, LIVESTOCK, LIVESTOCK_ORDER, GRASS, PASTURE_MIN, PASTURE_MAX, monthsTxt, isWinterMonth, MONTHS_ABBR, SKILL_DEFS, SKILL_ORDER, SKILL_LEVELS, skillLevel, FOOD_NEED, AGE_TEEN, AGE_ADULT, AGE_ELDER, AGE_RETIRE, STAGE_NAMES, JOB_TITLES, NAMES_M, NAMES_F, SURNAMES, BUILD_STAGES, buildStage, DIRS4, PLOT_FRONT, polyArea, pointInPoly, GameState, BUILD_DEFS, BUILD_ORDER, FOOD_TYPES, EXT_DEFS, EXT_ORDER, CROP_DEFS, CROP_ORDER, FIELD_SIZES, RES_ICONS, W, H,
     T_GRASS, T_FOREST, T_BERRY, T_STONE, T_WATER, MONTHS, SEASONS, seasonOf, REGION_COST, POLICY_DEFS, POLICY_ORDER,
     FACTION_DEMANDS, FACTION_STRIKE, FACTION_ULTIMATUM, FACTION_REVOLT, SECRET_DEFS, SECRET_ORDER,
     PLAID_MONTHS, CASE_DEFS, CASE_ORDER, PETITION_DEFS, FREEDOM_PRICE, FINE, LORD_DEBT,

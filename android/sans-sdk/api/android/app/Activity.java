@@ -1,5 +1,9 @@
 package android.app;
 public class Activity extends android.content.Context {
+    public static final int RESULT_OK = -1;
+    public void startActivityForResult(android.content.Intent intent, int requestCode) {}
+    protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {}
+    public android.content.ContentResolver getContentResolver() { return null; }
     protected void onCreate(android.os.Bundle b) {}
     protected void onPause() {}
     protected void onDestroy() {}
