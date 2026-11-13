@@ -1,6 +1,5 @@
 package fr.seigneurie.jeu;
 
-import android.app.Activity;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -20,10 +19,11 @@ import java.io.IOException;
  * sauvegarde automatique d'Android (voir res/xml).
  */
 public class SaveBridge {
-    private final Activity act;
+    private final MainActivity act;
     private final File dir;
+    private String pendingImport = null;   // texte du fichier choisi pour l'import, en attendant que le jeu le prenne
 
-    SaveBridge(Activity a) {
+    SaveBridge(MainActivity a) {
         act = a;
         dir = new File(a.getFilesDir(), "saves");
         if (!dir.exists()) dir.mkdirs();
@@ -72,6 +72,50 @@ public class SaveBridge {
         File f = fileFor(key);
         f.delete();
         new File(dir, f.getName() + ".bak").delete();
+    }
+
+    /** Les clés des parties enregistrées (noms des fichiers de files/saves/), en tableau JSON. */
+    @JavascriptInterface
+    public synchronized String list() {
+        StringBuilder sb = new StringBuilder("[");
+        String[] names = dir.list();
+        boolean first = true;
+        if (names != null) for (String n : names) {
+            if (!n.endsWith(".json")) continue;
+            String k = n.substring(0, n.length() - 5);
+            if (!first) sb.append(',');
+            first = false;
+            sb.append('"').append(k.replace("\\", "").replace("\"", "")).append('"');
+        }
+        return sb.append(']').toString();
+    }
+
+    /** Exporter une partie : Android demande où enregistrer le fichier (Téléchargements, Drive…). */
+    @JavascriptInterface
+    public void exportFile(final String name, final String content) {
+        act.runOnUiThread(new Runnable() {
+            @Override
+            public void run() { act.askExport(name, content); }
+        });
+    }
+
+    /** Importer une partie : Android ouvre le sélecteur de fichiers ; le jeu est prévenu quand c'est lu. */
+    @JavascriptInterface
+    public void importFile() {
+        act.runOnUiThread(new Runnable() {
+            @Override
+            public void run() { act.askImport(); }
+        });
+    }
+
+    synchronized void setImport(String text) { pendingImport = text; }
+
+    /** Le texte du dernier fichier choisi pour l'import (une seule fois). */
+    @JavascriptInterface
+    public synchronized String takeImport() {
+        String t = pendingImport;
+        pendingImport = null;
+        return t;
     }
 
     private static String read(File f) {

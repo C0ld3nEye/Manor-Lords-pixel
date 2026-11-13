@@ -5,13 +5,16 @@
    - dock du bas par catégories (comme Manor Lords) qui ouvre un tiroir de construction ;
    - panneaux en « feuille du bas » (bâtiment sélectionné, réserves, seigneurie, menu).
    ===================================================================== */
-var SAVE_SLOTS = ["seigneurie-save-v2-1","seigneurie-save-v2-2","seigneurie-save-v2-3"];
-var SAVE_KEY = SAVE_SLOTS[0];
-var activeSlot = 0;
-/* étape 8 : le stockage des parties. Dans un navigateur : le stockage local (dont on demande qu'il soit gardé).
-   Dans l'application Android : en plus, un fichier par emplacement dans la mémoire de l'application (pont
-   « SeigneurieAndroid ») ; il survit à un vidage du navigateur intégré et suit la sauvegarde automatique d'Android.
-   C'est lui qu'on lit d'abord. */
+/* ===== les sauvegardes, sur l'appareil =====
+   Autant de parties qu'on veut, chacune sous une clé « seigneurie-save-v2-N » (les trois anciens emplacements sont
+   les clés 1 à 3 : rien n'est perdu). Un index garde, pour chacune, son nom, le moment de la dernière sauvegarde et
+   un résumé (mode, date, familles), pour afficher la liste sans tout relire.
+   Dans un navigateur : le stockage local (dont on demande qu'il soit gardé). Dans l'application Android : en plus,
+   un fichier par partie dans la mémoire de l'application (pont « SeigneurieAndroid »), qui survit à un vidage de la
+   vue web et suit la sauvegarde automatique d'Android. C'est lui qu'on lit d'abord. */
+var SAVE_PREFIX = "seigneurie-save-v2-";
+var INDEX_KEY = "seigneurie-saves-index";
+var activeKey = null;     // la partie en cours
 var NATIVE = (typeof window!=="undefined" && window.SeigneurieAndroid) || null;
 // moment d'une sauvegarde, lu sans tout décoder (pour garder la plus récente des deux copies)
 function saveMoment(str){
@@ -26,61 +29,128 @@ function storeGet(k){
   if(w!=null && w!==v && saveMoment(w) > saveMoment(v)) return w;   // le fichier a au plus 30 s de retard
   return v;
 }
-function storeSet(k, v){
+function storeSet(k, v, nativeOnly){
   var ok = false;
-  try{ window.localStorage.setItem(k, v); ok = true; }catch(e){}
+  if(!nativeOnly || !NATIVE){ try{ window.localStorage.setItem(k, v); ok = true; }catch(e){} }
   if(NATIVE){ try{ if(NATIVE.save(k, String(v))) ok = true; }catch(e){} }
   return ok;
 }
 function storeDel(k){ try{ window.localStorage.removeItem(k); }catch(e){} if(NATIVE){ try{ NATIVE.remove(k); }catch(e){} } }
 try{ if(!NATIVE && navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){}
+
+/* l'index des parties */
+var saveIndex = { list:[], next:4 };
+function readIndex(){
+  var idx = null;
+  try{ idx = JSON.parse(storeGet(INDEX_KEY) || "null"); }catch(e){ idx = null; }
+  if(!idx || !Array.isArray(idx.list)) idx = { list:[], next:4 };
+  idx.list = idx.list.filter(function(e){ return e && typeof e.key==="string" && e.key.indexOf(SAVE_PREFIX)===0; });
+  // les parties présentes sur l'appareil mais absentes de l'index (anciens emplacements, index perdu)
+  var keys = {};
+  try{ for(var i=0;i<window.localStorage.length;i++){ var lk = window.localStorage.key(i); if(lk && lk.indexOf(SAVE_PREFIX)===0) keys[lk] = 1; } }catch(e){}
+  if(NATIVE && typeof NATIVE.list==="function"){ try{ JSON.parse(NATIVE.list() || "[]").forEach(function(k){ if(String(k).indexOf(SAVE_PREFIX)===0) keys[k] = 1; }); }catch(e){} }
+  else if(NATIVE){ for(var s=1;s<=3;s++) keys[SAVE_PREFIX+s] = 1; }   // (une ancienne appli ne sait pas lister)
+  Object.keys(keys).forEach(function(k){
+    if(idx.list.some(function(e){ return e.key===k; })) return;
+    var raw = storeGet(k);
+    if(!raw) return;
+    var info = summarize(raw);
+    if(info) idx.list.push({ key:k, name:"Seigneurie "+k.slice(SAVE_PREFIX.length), t:0, info:info });
+  });
+  idx.list.forEach(function(e){ var n = Number(e.key.slice(SAVE_PREFIX.length)); if(n>=idx.next) idx.next = n+1; });
+  saveIndex = idx;
+  return idx;
+}
+function writeIndex(){ storeSet(INDEX_KEY, JSON.stringify(saveIndex)); }
+function sortedSaves(){ return saveIndex.list.slice().sort(function(a, b){ return (b.t||0) - (a.t||0); }); }
+function entryOf(k){ return saveIndex.list.filter(function(e){ return e.key===k; })[0] || null; }
+/* résumé lu directement dans la sauvegarde (recharger une partie régénère toute la grande carte : trop lent ici) */
+function summarize(raw){
+  try{
+    var d = typeof raw==="string" ? JSON.parse(raw) : raw;
+    if(!d || !(d.v>=8) || d.mapW!==W || d.mapH!==H || !d.time) return null;
+    return infoFrom(d.modeId, d.diffId, d.time, Array.isArray(d.families) ? d.families.length : 0, !!d.victory, !!d.defeat);
+  }catch(e){ return null; }
+}
+function infoFrom(modeId, diffId, time, pop, victory, defeat){
+  var lv = 0;
+  for(var li=0; li<SETTLEMENT_LEVELS.length; li++) if(pop >= SETTLEMENT_LEVELS[li].minPop) lv = li;
+  return { mode:(MODE_BY_ID[modeId] || MODE_BY_ID.prosperity).name, diff:(DIFF_BY_ID[diffId] || DIFF_BY_ID.normal).name,
+    month:time.month, year:time.year, pop:pop, level:SETTLEMENT_LEVELS[lv].name, victory:victory, defeat:defeat };
+}
+function infoOf(g){ return infoFrom(g.modeId, g.diffId, g.time, g.families.length, !!g.victory, !!g.defeat); }
+function newSaveKey(){ var k = SAVE_PREFIX + saveIndex.next; saveIndex.next++; return k; }
+
 // la sauvegarde automatique passe toutes les 5 s ; le fichier de l'application n'est réécrit qu'au plus toutes les
-// 30 s (batterie), mais toujours aussitôt qu'on quitte ou qu'on change de partie (force)
-var _nativeT = 0;
+// 30 s (batterie), mais toujours aussitôt qu'on quitte, qu'on sauvegarde à la main ou qu'on change de partie (force)
+var _nativeT = 0, _lastSaveAt = 0;
 function persist(g, force){
-  if(!g) return;
+  if(!g || !activeKey) return false;
+  var ok = false;
   try{
     var str = JSON.stringify(g.serialize());
-    try{ window.localStorage.setItem(SAVE_SLOTS[activeSlot], str); }catch(e){}
-    if(NATIVE && (force || Date.now() - _nativeT > 30000)){ _nativeT = Date.now(); try{ NATIVE.save(SAVE_SLOTS[activeSlot], str); }catch(e){} }
-  }catch(e){}
+    try{ window.localStorage.setItem(activeKey, str); ok = true; }catch(e){}
+    if(NATIVE && (force || Date.now() - _nativeT > 30000)){ _nativeT = Date.now(); try{ if(NATIVE.save(activeKey, str)) ok = true; }catch(e){} }
+    else if(NATIVE) ok = true;
+    var e2 = entryOf(activeKey);
+    if(!e2){ e2 = { key:activeKey, name:"Seigneurie", t:0 }; saveIndex.list.push(e2); }
+    e2.t = Date.now(); e2.info = infoOf(g);
+    if(force || Date.now() - _lastSaveAt > 30000) writeIndex();
+    else try{ window.localStorage.setItem(INDEX_KEY, JSON.stringify(saveIndex)); }catch(e){}
+    if(ok) _lastSaveAt = Date.now();
+  }catch(e){ ok = false; }
+  return ok;
 }
-function loadSlot(i){ try{ var r=storeGet(SAVE_SLOTS[i]); return r?GameState.load(JSON.parse(r)):null; }catch(e){ return null; } }
-var _slotCache = {};
-function slotInfo(i){
-  if(_slotCache[i] && Date.now()-_slotCache[i].t < 1500) return _slotCache[i].info;
-  var raw = null;
-  raw = storeGet(SAVE_SLOTS[i]);
-  if(!raw) return null;
-  if(_slotCache[i] && _slotCache[i].raw===raw.length && Date.now()-_slotCache[i].t < 4000) return _slotCache[i].info;
-  /* résumé lu directement dans la sauvegarde : recharger une partie régénère toute la grande carte (trop lent ici) */
-  var info = null;
-  try{
-    var d = JSON.parse(raw);
-    if(d && d.v>=8 && d.mapW===W && d.mapH===H && d.time){
-      var pop = Array.isArray(d.families) ? d.families.length : 0, lv = 0;
-      for(var li=0; li<SETTLEMENT_LEVELS.length; li++) if(pop >= SETTLEMENT_LEVELS[li].minPop) lv = li;
-      info = { mode:(MODE_BY_ID[d.modeId] || MODE_BY_ID.prosperity).name, diff:(DIFF_BY_ID[d.diffId] || DIFF_BY_ID.normal).name,
-        month:d.time.month, year:d.time.year, pop:Array.isArray(d.families) ? d.families.length : 0,
-        level:SETTLEMENT_LEVELS[lv].name, victory:!!d.victory, defeat:!!d.defeat };
-    }
-  }catch(e){ info = null; }
-  _slotCache[i] = { raw:raw.length, info:info, t:Date.now() };
-  return info;
+function loadKey(k){ try{ var r = storeGet(k); return r ? GameState.load(JSON.parse(r)) : null; }catch(e){ return null; } }
+function deleteSave(k){
+  storeDel(k);
+  saveIndex.list = saveIndex.list.filter(function(e){ return e.key!==k; });
+  writeIndex();
 }
-function encodeSave(g){ try{ return btoa(unescape(encodeURIComponent(JSON.stringify(g.serialize())))); }catch(e){ return ""; } }
-function decodeSave(code){ try{ return GameState.load(JSON.parse(decodeURIComponent(escape(atob(code.trim()))))); }catch(e){ return null; } }
+// une copie de la partie en cours, qu'on retrouvera telle quelle (la partie continue sous son nom)
+function snapshot(g){
+  var cur = entryOf(activeKey), k = newSaveKey();
+  var name = (cur ? cur.name : "Seigneurie")+" — "+MONTHS[g.time.month].toLowerCase()+" "+g.time.year;
+  if(!storeSet(k, JSON.stringify(g.serialize()), true)) return null;
+  saveIndex.list.push({ key:k, name:name, t:Date.now()-1, info:infoOf(g), copy:true });
+  writeIndex();
+  return name;
+}
+function defaultName(){
+  var used = {}; saveIndex.list.forEach(function(e){ used[e.name] = 1; });
+  for(var n=1;;n++) if(!used["Seigneurie "+n]) return "Seigneurie "+n;
+}
+/* un fichier de sauvegarde (export) : la partie et son nom */
+function exportText(g){ var e = entryOf(activeKey); return JSON.stringify({ seigneurie:1, name:e ? e.name : "Seigneurie", save:g.serialize() }); }
+function importText(txt){
+  var d = null;
+  try{ d = JSON.parse(txt); }catch(e){
+    try{ d = { save:JSON.parse(decodeURIComponent(escape(atob(String(txt).trim())))) }; }catch(e2){ d = null; }   // un ancien code de sauvegarde
+  }
+  if(!d) return "Ce fichier n'est pas une sauvegarde de Seigneurie.";
+  var data = d.seigneurie && d.save ? d.save : d.save || d;
+  var g = null;
+  try{ g = GameState.load(data); }catch(e){ g = null; }
+  if(!g) return "Ce fichier n'est pas une sauvegarde de Seigneurie.";
+  var k = newSaveKey(), name = (typeof d.name==="string" && d.name.trim() ? d.name.trim().slice(0, 40) : defaultName())+" (importée)";
+  if(!storeSet(k, JSON.stringify(g.serialize()))) return "Plus de place pour enregistrer la partie.";
+  saveIndex.list.push({ key:k, name:name, t:Date.now(), info:infoOf(g) });
+  writeIndex();
+  openGame(g, k);
+  flash("Partie importée : "+name);
+  return null;
+}
 
-/* ----- partie (restaurée depuis l'appareil si possible) ----- */
+/* ----- partie : on ouvre sur l'écran d'accueil ----- */
 var game = null;
-var uiMenu = false; // écran d'accueil (sauvegardes / nouvelle partie)
+var uiMenu = true;   // écran d'accueil (continuer, nouvelle partie, charger, options, guide)
+readIndex();
 try{
-  var _last = storeGet("seigneurie-last-slot");
-  if(_last!==null){ activeSlot = Math.max(0, Math.min(2, Number(_last)||0)); }
-  game = loadSlot(activeSlot);
-}catch(e){}
-if(game){ SAVE_KEY = SAVE_SLOTS[activeSlot]; }
-else { uiMenu = true; game = null; }
+  activeKey = storeGet("seigneurie-last-key");
+  if(!activeKey){ var _ls = storeGet("seigneurie-last-slot"); if(_ls!==null) activeKey = SAVE_PREFIX + (Math.max(0, Math.min(2, Number(_ls)||0)) + 1); }
+  if(activeKey && !entryOf(activeKey)) activeKey = null;
+}catch(e){ activeKey = null; }
+if(!activeKey && saveIndex.list.length) activeKey = sortedSaves()[0].key;
 
 var cam = { x:0, y:0, zoom:snapZoom(1.5) };
 function centerCam(){
@@ -95,10 +165,11 @@ var ui = {
   zoneMode:false, zoneKind:"house", zonePts:[], zoneClosed:false, zoneN:null, extPlace:null,
   flash:null, objOpen:false, layersOpen:false, tip:null, tipT:0, hoverTip:null,
   demolishArm:0, delArm:null, taxDrag:false, lastSpeed:1, endSeen:false,
-  newMode:"prosperity", newDiff:"normal", newSlot:activeSlot,
+  newMode:"prosperity", newDiff:"normal", home:"main", loading:null,
   selV:null, vJob:false, pFilter:"all",   /* étape 4 : fiche d'un villageois, choix du métier, filtre des habitants */
   layers:{ forest:false, stone:false, berry:false, soil:false }
 };
+try{ ui.stockHow = window.localStorage.getItem("seigneurie-stockhow")==="1"; ui.noVibe = window.localStorage.getItem("seigneurie-novibe")==="1"; }catch(e){}
 
 /* ----- catégories de construction (dock du bas) ----- */
 var CATS = [
@@ -106,7 +177,7 @@ var CATS = [
     hint:"Tracez une zone le long d'une route : maisons, cours et clôtures se placent seules." },
   { id:"res",   name:"Récolte",    icon:"axe",    items:["woodcutter","forager","hunter","quarry"],
     hint:"Bois, baies, gibier et pierre : posez-les près de la ressource." },
-  { id:"farm",  name:"Terres",     icon:"grain",  items:["farm"], actions:["fieldzone","pasture","buyox"],
+  { id:"farm",  name:"Terres",     icon:"grain",  items:["farm"], actions:["fieldzone","pasture","oxpost","buyox"],
     hint:"Tracez champs et pâturages à la forme que vous voulez ; une ferme travaille les champs." },
   { id:"store", name:"Vivres",     icon:"bread",  items:["windmill","bakery","dairy","smokehouse","granary","storehouse"],
     hint:"Moulin, boulangerie, laiterie, fumoir : transformer et conserver. La grange abrite les denrées, l'entrepôt agrandit les réserves." },
@@ -116,7 +187,7 @@ var CATS = [
     hint:"Tours et remparts contre les pillards, milice et mercenaires." },
   { id:"road",  name:"Routes",     icon:"road",   tool:true }
 ];
-var UNIQUE = { manor:1, church:1, windmill:1, market:1, trade:1 };
+var UNIQUE = { manor:1, church:1, windmill:1, market:1, trade:1, oxpost:1 };
 
 /* ----- ressources : nom et icône ----- */
 var RES = {
@@ -149,9 +220,9 @@ function rich(text){
 function flash(msg){
   ui.flash = msg;
   if(ui._ft) clearTimeout(ui._ft);
-  ui._ft = setTimeout(function(){ ui.flash = null; renderUI(); }, 2200);
+  ui._ft = setTimeout(function(){ ui.flash = null; renderUI(); }, msg && msg.length>60 ? 3500 : 2200);
 }
-function buzz(ms){ try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} }
+function buzz(ms){ if(ui.noVibe) return; try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} }
 function costHtml(cost, g){
   var ks = Object.keys(cost||{});
   if(!ks.length) return "<span class='cost'>Gratuit</span>";
@@ -400,12 +471,13 @@ canvas.addEventListener("pointerup", function(e){
     /* pose en deux temps : 1er toucher = emplacement en bleu, 2e toucher au même endroit = validation */
     var def = ui.buildSel, pp = ui.pendingPlace;
     if(!pp || pp.tx!==w.tx || pp.ty!==w.ty){
-      var perr = game.canPlace(def, w.tx, w.ty);
+      var perr = ui.movePost ? game.canMoveOxPost(w.tx, w.ty) : game.canPlace(def, w.tx, w.ty);
       if(perr){ ui.pendingPlace = null; flash(perr); }
       else { ui.pendingPlace = { tx:w.tx, ty:w.ty }; buzz(5); }
       renderUI(); return;
     }
     ui.pendingPlace = null;
+    if(ui.movePost){ movePostAt(w.tx, w.ty); renderUI(); return; }
     var err = game.place(def, w.tx, w.ty);
     if(err) flash(err);
     else {
@@ -422,6 +494,7 @@ canvas.addEventListener("pointerup", function(e){
     /* un villageois sous le doigt ? sa fiche ; sinon le bâtiment */
     var tv = villagerAt(game, w.wx, w.wy);
     if(tv){ selectVillager(tv); renderUI(); return; }
+    if(oxAt(game, w.wx, w.wy)){ ui.sheet = "oxen"; ui.selId = null; ui.selV = null; renderUI(); return; }
     var b = game.buildingAt(w.tx, w.ty);
     ui.selId = b ? b.id : null; ui.selV = null; ui.demolishArm = 0;
     if(b) revealAboveSheet(b);
@@ -448,7 +521,8 @@ window.addEventListener("pointerdown", function(){ AudioFX.init(); });
 window.addEventListener("keydown", function(e){
   AudioFX.init();
   if(e.key==="Escape"){
-    if(ui.modal){ ui.modal = null; }
+    if(uiMenu && ui.home && ui.home!=="main"){ ui.home = "main"; }
+    else if(ui.modal){ ui.modal = null; }
     else if(uiMenu && game){ uiMenu = false; }
     else cancelAll();
     renderUI(); return;
@@ -501,10 +575,82 @@ function villagerAt(g, wx, wy){
   }
   return best;
 }
+/* ouvrir une partie (nouvelle, chargée ou importée) */
+function openGame(g, key){
+  if(game && game!==g && activeKey && activeKey!==key) persist(game, true);
+  game = g; activeKey = key;
+  storeSet("seigneurie-last-key", key);
+  cancelAll(); uiMenu = false; ui.modal = null; ui.endSeen = false; ui.home = "main"; ui.loading = null;
+  _animT = 0; centerCam();
+}
+function loadAndOpen(key){
+  if(!key || ui.loading) return;
+  ui.loading = key; renderUI();
+  setTimeout(function(){
+    var g2 = loadKey(key);
+    ui.loading = null;
+    if(g2) openGame(g2, key);
+    else flash("Cette partie est illisible ou abîmée.");
+    renderUI();
+  }, 40);
+}
+/* retour de l'application Android : fichier exporté, ou fichier choisi pour l'import */
+window.seigneurieFileDone = function(kind, ok){
+  if(kind==="export") flash(ok ? "Fichier de sauvegarde enregistré." : "Export annulé.");
+  if(kind==="import"){
+    var txt = null;
+    if(ok && NATIVE && typeof NATIVE.takeImport==="function"){ try{ txt = NATIVE.takeImport(); }catch(e){ txt = null; } }
+    if(txt){ var er = importText(txt); if(er) flash(er); }
+    else if(ok) flash("Fichier illisible.");
+  }
+  renderUI();
+  return "ok";
+};
+function movePostAt(tx, ty){
+  var me = game.moveOxPost(tx, ty);
+  if(me){ flash(me); return; }
+  AudioFX.build(); buzz(8);
+  var post = game.buildings.filter(function(b){ return b.def==="oxpost"; })[0];
+  clearTools(); ui.buildSel = null;
+  if(post){ ui.selId = post.id; revealAboveSheet(post); }
+  flash("Poteau déplacé : les bœufs qui attendaient y vont.");
+}
+/* un bœuf sous le doigt (au poteau ou en chemin) */
+function oxAt(g, wx, wy){
+  var best = null, bd = 0.7;
+  for(var i=0;i<g.oxen.length;i++){
+    var o = g.oxen[i];
+    if(!g.oxAway(o) || !isFinite(o.x)) continue;
+    var d = Math.abs(wx - o.x) + Math.abs(wy - (o.y - 0.4));
+    if(d<bd){ bd = d; best = o; }
+  }
+  return best;
+}
 function selectVillager(v){
   ui.selV = v.id; ui.selId = null; ui.sheet = null; ui.cat = null; ui.vJob = false; ui.demolishArm = 0;
   revealAboveSheet({ x:v.x-0.5, y:v.y-1, w:1, h:1 });
 }
+
+/* ----- appui long sur une carte du tiroir de construction : la fiche du bâtiment ----- */
+var cardPress = null, _suppressClick = 0;
+elSheet.addEventListener("pointerdown", function(e){
+  var card = e.target && e.target.closest ? e.target.closest(".card[data-act]") : null;
+  if(!card || !game) return;
+  var act = card.getAttribute("data-act"), id = act==="build" ? card.getAttribute("data-arg") : act;
+  if(!BUILD_INFO[id] && !BUILD_DEFS[id]) return;
+  if(cardPress) clearTimeout(cardPress.t);
+  cardPress = { x:e.clientX, y:e.clientY, t:setTimeout(function(){
+    cardPress = null; _suppressClick = Date.now() + 700;
+    ui.infoId = id; ui.modal = "binfo"; buzz(15); renderUI();
+  }, 450) };
+});
+function cancelCardPress(e){ if(cardPress && (!e || e.type!=="pointermove" || Math.abs(e.clientX-cardPress.x)+Math.abs(e.clientY-cardPress.y)>10)){ clearTimeout(cardPress.t); cardPress = null; } }
+elSheet.addEventListener("pointermove", cancelCardPress);
+["pointerup","pointercancel","pointerleave"].forEach(function(ev){ elSheet.addEventListener(ev, function(){ cancelCardPress(); }); });
+elSheet.addEventListener("scroll", function(){ cancelCardPress(); }, true);
+/* le relâchement de l'appui long ne compte pas comme un toucher ; le toucher suivant, si */
+window.addEventListener("pointerup", function(){ if(_suppressClick) setTimeout(function(){ _suppressClick = 0; }, 0); }, true);
+elSheet.addEventListener("contextmenu", function(e){ if(e.target && e.target.closest && e.target.closest(".card")) e.preventDefault(); });
 
 /* ----- clics de l'interface (délégation) ----- */
 document.addEventListener("pointerdown", function(e){ if(e.target && e.target.id==="taxSlider") ui.taxDrag = true; });
@@ -518,6 +664,7 @@ elModal.addEventListener("click", function(e){
 document.addEventListener("click", function(e){
   var el = e.target && e.target.closest ? e.target.closest("[data-act]") : null;
   if(!el) return;
+  if(Date.now() < _suppressClick && elSheet.contains(el)){ _suppressClick = 0; return; }   // le relâchement d'un appui long n'est pas un toucher
   var act = el.getAttribute("data-act");
   var arg = el.getAttribute("data-arg");
   AudioFX.init();
@@ -541,6 +688,7 @@ document.addEventListener("click", function(e){
       ui.cat = null; ui.buildSel = null; ui.roadMode = false; ui.selId = null; ui.sheet = null;
       break;
     case "placeok":
+      if(ui.movePost && ui.pendingPlace){ var mpp = ui.pendingPlace; ui.pendingPlace = null; movePostAt(mpp.tx, mpp.ty); break; }
       if(ui.buildSel && ui.pendingPlace){
         var pp2 = ui.pendingPlace, perr2 = g.place(ui.buildSel, pp2.tx, pp2.ty); ui.pendingPlace = null;
         if(perr2) flash(perr2);
@@ -581,6 +729,7 @@ document.addEventListener("click", function(e){
     case "vlook": { var vl = ui.selV!=null ? g.villager(ui.selV) : null; if(vl){ cam.x = vl.x; cam.y = vl.y; cam.zoom = Math.max(cam.zoom, snapZoom(2)); revealAboveSheet({ x:vl.x-0.5, y:vl.y-1, w:1, h:1 }); } break; }
     case "bsel": { var bb = g.buildings.filter(function(x){ return x.id===Number(arg); })[0]; if(bb){ ui.selId = bb.id; ui.selV = null; ui.sheet = null; ui.demolishArm = 0; revealAboveSheet(bb); } break; }
     case "pfilter": ui.pFilter = arg; break;
+    case "stockhow": ui.stockHow = !ui.stockHow; try{ window.localStorage.setItem("seigneurie-stockhow", ui.stockHow ? "1" : ""); }catch(e4){} break;
     case "appr": if(ui.selId!=null){ var ae = g.takeApprentice(ui.selId); if(ae) flash(ae); } break;
     case "apprstop": if(ui.selId!=null) g.dropApprentice(ui.selId); break;
     case "obj": ui.objOpen = !ui.objOpen; break;
@@ -632,6 +781,8 @@ document.addEventListener("click", function(e){
     case "buyox": g.buyOx(); break;
     /* --- étape 5 : bœufs et troupeaux --- */
     case "retireox": g.retireOx(); break;
+    case "oxjob": { var oj = String(arg).split(":"), oe2 = g.setOxJob(Number(oj[0]), oj[1]); if(oe2) flash(oe2); break; }
+    case "movepost": clearTools(); ui.movePost = true; ui.buildSel = "oxpost"; ui.cat = null; ui.selId = null; ui.sheet = null; ui.roadMode = false; break;
     case "buyanimal": if(ui.selId!=null){ var ba = String(arg).split(":"), be = g.buyAnimal(ui.selId, ba[0], ba[1]==="1"); if(be) flash(be); } break;
     case "sellanimal": if(ui.selId!=null){ var se = g.sellAnimal(ui.selId); if(se) flash(se); } break;
     case "slaughter": if(ui.selId!=null){ var sle = g.slaughter(ui.selId); if(sle) flash(sle); } break;
@@ -653,65 +804,88 @@ document.addEventListener("click", function(e){
     case "modal": ui.modal = arg; ui.sheet = null; break;
     case "modalclose": ui.modal = null; break;
     case "noop": return;
-    case "mute": AudioFX.muted = !AudioFX.muted; break;
+    case "mute": AudioFX.muted = !AudioFX.muted; try{ window.localStorage.setItem("seigneurie-mute", AudioFX.muted ? "1" : ""); }catch(e7){} break;
+    case "vibe": ui.noVibe = !ui.noVibe; try{ window.localStorage.setItem("seigneurie-novibe", ui.noVibe ? "1" : ""); }catch(e7){} if(!ui.noVibe) buzz(20); break;
     case "text": cycleTextSize(); break;
     case "endcontinue": ui.endSeen = true; break;
-    case "mainmenu": {
-      uiMenu = true; ui.sheet = null; ui.newSlot = activeSlot;
-      for(var fs=0; fs<3; fs++) if(!slotInfo(fs)){ ui.newSlot = fs; break; }   /* un emplacement libre par défaut */
+    /* --- écran d'accueil et sauvegardes --- */
+    case "mainmenu":
+      if(game) persist(game, true);
+      uiMenu = true; ui.home = "main"; ui.sheet = null; ui.modal = null; ui.delArm = null; readIndex();
       break;
-    }
+    case "home": ui.home = arg || "main"; ui.delArm = null; if(arg==="load") readIndex(); break;
     case "menuclose": if(game) uiMenu = false; break;
+    case "continue":
+      if(game && (!arg || arg===activeKey)){ uiMenu = false; break; }
+      loadAndOpen(arg || activeKey);
+      break;
     case "nmode": ui.newMode = arg; break;
     case "ndiff": ui.newDiff = arg; break;
-    case "nslot": ui.newSlot = Number(arg); break;
-    case "startgame":
-      game = new GameState(Math.floor(Math.random()*2000000000), ui.newMode, ui.newDiff);
-      activeSlot = Math.max(0, Math.min(2, ui.newSlot));
-      SAVE_KEY = SAVE_SLOTS[activeSlot];
-      storeSet("seigneurie-last-slot", String(activeSlot));
-      persist(game, true);
-      cancelAll(); uiMenu = false; ui.endSeen = false; ui.objOpen = true; ui.lastSpeed = 1;
-      centerCam();
-      break;
-    case "loadslot": {
-      var g2 = loadSlot(Number(arg));
-      if(g2){
-        if(game && game!==g2) persist(game, true);
-        game = g2; activeSlot = Number(arg); SAVE_KEY = SAVE_SLOTS[activeSlot];
-        storeSet("seigneurie-last-slot", String(activeSlot));
-        cancelAll(); uiMenu = false; ui.endSeen = false; centerCam();
-      }
+    case "startgame": {
+      if(game) persist(game, true);
+      var ng = new GameState(Math.floor(Math.random()*2000000000), ui.newMode, ui.newDiff);
+      var nk = newSaveKey();
+      saveIndex.list.push({ key:nk, name:defaultName(), t:Date.now(), info:infoOf(ng) });
+      openGame(ng, nk);
+      ui.objOpen = true; ui.lastSpeed = 1;
+      if(!persist(game, true)) flash("Attention : la partie n'a pas pu être enregistrée sur l'appareil (plus de place ?).");
       break;
     }
-    case "delslot": {
-      var si = Number(arg);
-      if(ui.delArm && ui.delArm.slot===si && Date.now() < ui.delArm.t){
-        storeDel(SAVE_SLOTS[si]);
-        delete _slotCache[si];
-        if(si===activeSlot && game){ game = null; }
+    case "loadsave": loadAndOpen(arg); break;
+    case "delsave": {
+      if(ui.delArm && ui.delArm.key===arg && Date.now() < ui.delArm.t){
+        deleteSave(arg);
+        if(arg===activeKey){ game = null; activeKey = saveIndex.list.length ? sortedSaves()[0].key : null; }
         ui.delArm = null;
-      } else { ui.delArm = { slot:si, t:Date.now()+3000 }; setTimeout(renderUI, 3050); }
+        if(!saveIndex.list.length) ui.home = "main";
+      } else { ui.delArm = { key:arg, t:Date.now()+3000 }; setTimeout(renderUI, 3050); }
       break;
     }
-    case "saveCode": {
-      var code = encodeSave(g);
-      /* dans l'application Android : le partage (Drive, mail, notes…) et le presse-papiers */
-      if(NATIVE){ try{ NATIVE.copy(code); NATIVE.share(code, "Seigneurie — sauvegarde ("+MONTHS[g.time.month]+" "+g.time.year+")"); flash("Code copié ; choisissez où le garder."); }catch(e3){ flash("Partage impossible."); } break; }
-      if(navigator.clipboard && navigator.clipboard.writeText){
-        navigator.clipboard.writeText(code).then(function(){ flash("Code de sauvegarde copié !"); }, function(){ window.prompt("Votre code de sauvegarde — copiez-le :", code); });
-      } else window.prompt("Votre code de sauvegarde — copiez-le :", code);
+    case "rensave": {
+      var re = entryOf(arg);
+      if(!re) break;
+      var nn = window.prompt("Nom de la partie :", re.name);
+      if(nn && nn.trim()){ re.name = nn.trim().slice(0, 40); writeIndex(); }
       break;
     }
-    case "loadCode": {
-      var str = null;
-      if(NATIVE){ try{ var clip = NATIVE.paste(); if(clip && decodeSave(clip)) str = clip; }catch(e3){} }   // un code déjà copié
-      if(!str) str = window.prompt("Collez un code de sauvegarde :");
-      if(str){
-        var ng = decodeSave(str);
-        if(ng){ game = ng; persist(game, true); cancelAll(); uiMenu = false; centerCam(); flash("Partie chargée !"); }
-        else flash("Code invalide.");
+    case "savenow":
+      if(persist(g, true)) flash("Partie enregistrée sur l'appareil.");
+      else flash("Échec de l'enregistrement (plus de place sur l'appareil ?).");
+      break;
+    case "savecopy": {
+      persist(g, true);
+      var cn = snapshot(g);
+      flash(cn ? "Copie gardée : « "+cn+" ». Retrouvez-la dans Charger une partie." : "Échec : plus de place sur l'appareil ?");
+      break;
+    }
+    case "exportfile": {
+      if(!g) break;
+      persist(g, true);
+      var ee = entryOf(activeKey), fname = ((ee ? ee.name : "seigneurie").replace(/[^\wÀ-ÿ -]+/g, "").trim() || "seigneurie").replace(/\s+/g, "-")+"-"+MONTHS[g.time.month].toLowerCase()+"-"+g.time.year+".seigneurie.json";
+      var txt = exportText(g);
+      if(NATIVE && typeof NATIVE.exportFile==="function"){ try{ NATIVE.exportFile(fname, txt); }catch(e5){ flash("Export impossible."); } }
+      else if(NATIVE){ try{ NATIVE.share(txt, "Seigneurie — sauvegarde"); }catch(e5){ flash("Export impossible."); } }
+      else {
+        try{
+          var blob = new Blob([txt], { type:"application/json" }), url = URL.createObjectURL(blob), aEl = document.createElement("a");
+          aEl.href = url; aEl.download = fname; document.body.appendChild(aEl); aEl.click(); aEl.remove();
+          setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+          flash("Fichier de sauvegarde téléchargé.");
+        }catch(e5){ flash("Export impossible."); }
       }
+      break;
+    }
+    case "importfile": {
+      if(NATIVE && typeof NATIVE.importFile==="function"){ try{ NATIVE.importFile(); }catch(e6){ flash("Import impossible."); } break; }
+      var inp = document.createElement("input");
+      inp.type = "file"; inp.accept = ".json,application/json,text/plain";
+      inp.onchange = function(){
+        var file = inp.files && inp.files[0]; if(!file) return;
+        var rd = new FileReader();
+        rd.onload = function(){ var er = importText(String(rd.result||"")); if(er) flash(er); renderUI(); };
+        rd.readAsText(file);
+      };
+      inp.click();
       break;
     }
   }
@@ -828,7 +1002,8 @@ function renderHud(g){
   if(!g){ setHTML(elHudL, ""); setHTML(elHudR, ""); setHTML(elHint, ""); return; }
   /* étape 8 : les objectifs-guides — le dernier atteint, les prochains, et un conseil pour le premier */
   var done = g.goalsDone(), total = GOALS.length;
-  var l = "<button class='frame pill' data-act='obj'>"+ic("scroll","s")+"<b>Objectifs</b> <span class='"+(done===total?"good":"dim")+"'>"+done+"/"+total+"</span></button>";
+  var l = g.speed===0 ? "<button class='frame pill paused' data-act='pause'>"+ic("pause","s")+"<b>En pause</b> <span class='dim'>toucher pour reprendre</span></button>" : "";
+  l += "<button class='frame pill' data-act='obj'>"+ic("scroll","s")+"<b>Objectifs</b> <span class='"+(done===total?"good":"dim")+"'>"+done+"/"+total+"</span></button>";
   /* étape 7d : affaires et pétitions qui attendent le seigneur */
   var nj = g.cases.length + g.petitions.length;
   if(nj) l += " <button class='frame pill' data-act='sheet' data-arg='justice'>"+ic("crown","s")+"<b>Audiences</b> <span class='gold'>"+nj+"</span></button>";
@@ -914,6 +1089,12 @@ function renderHud(g){
   } else if(ui.roadMode){
     h += "<div class='frame place'>"+ic("road","l")+"<div class='t'><b>Routes</b><span>Touchez une case pour tracer ou effacer. Les villageois y marchent plus vite.</span></div>"
        + "<button class='b gold' data-act='cancel'>Terminer</button></div>";
+  } else if(ui.movePost){
+    h += "<div class='frame place'>"+ic("ox","l")+"<div class='t'><b>Déplacer le poteau du bœuf</b><span>"+(ui.pendingPlace
+         ? "Touchez à nouveau l'emplacement bleu pour valider, ou ailleurs pour le changer."
+         : "Touchez la carte là où les bœufs doivent attendre : près des chantiers ou des champs.")+"</span></div>";
+    if(ui.pendingPlace) h += "<button class='b gold' data-act='placeok'>Valider</button>";
+    h += "<button class='b sq' data-act='cancel' aria-label='Annuler'>"+ic("close")+"</button></div>";
   } else if(ui.buildSel){
     var d = BUILD_DEFS[ui.buildSel];
     h += "<div class='frame place'><div class='t'><b>"+esc(d.name)+" "+costHtml(d.cost, g)+"</b><span>"+(ui.pendingPlace
@@ -948,6 +1129,7 @@ function renderSheet(g){
     else if(ui.sheet==="plots") h = sheetPlots(g);
     else if(ui.sheet==="chronicle") h = sheetChronicle(g);
     else if(ui.sheet==="menu") h = sheetMenu(g);
+    else if(ui.sheet==="oxen") h = sheetOxen(g);
   }
   var key = (ui.cat||"")+"|"+ui.selId+"|"+ui.selV+"|"+(ui.sheet||"");
   var reset = elSheet._key !== key;
@@ -964,6 +1146,7 @@ function sheetBuild(g, catId){
   var cat = CATS.filter(function(c){ return c.id===catId; })[0];
   if(!cat) return "";
   var h = head(ic(cat.icon,"l"), cat.name, cat.hint);
+  h += "<div class='dim' style='font-size:10px;margin:-2px 0 4px'>Appui long sur une carte : sa fiche détaillée.</div>";
   h += "<div class='cards'>";
   for(var i=0;i<cat.items.length;i++){
     var id = cat.items[i], d = BUILD_DEFS[id];
@@ -979,12 +1162,69 @@ function sheetBuild(g, catId){
     if(acts[a]==="zone") h += actionCard("zone", ic("house","l"), "Tracer une zone", costHtml(BUILD_DEFS.burgage.cost, g)+"<span class='dim'> / maison</span>", "Parcelles le long d'une route");
     if(acts[a]==="fieldzone") h += actionCard("fieldzone", ICONS.th("field"), "Tracer un champ", "<span class='cost'>gratuit</span>", "Forme libre, "+FIELD_MIN+" à "+FIELD_MAX+" cases");
     if(acts[a]==="pasture") h += actionCard("pasture", ic("sheep","l"), "Tracer un pâturage", "<span class='cost'>clôture "+ic("timber","s")+"</span>", "Moutons, vaches ou porcs");
+    if(acts[a]==="oxpost"){
+      var post = g.buildings.filter(function(b){ return b.def==="oxpost"; })[0];
+      h += post ? actionCard("movepost", ICONS.th("oxpost"), "Déplacer le poteau", "<span class='cost'>gratuit</span>", g.oxen.length+" bœuf"+(g.oxen.length>1?"s":"")+" · toucher pour gérer")
+                : actionCard("build' data-arg='oxpost", ICONS.th("oxpost"), "Poteau du bœuf", costHtml(BUILD_DEFS.oxpost.cost, g), "Là où les bœufs attendent");
+    }
     if(acts[a]==="buyox") h += actionCard("buyox", ic("ox","l"), "Acheter un bœuf", "<span class='cost"+(g.treasury<20?" no":"")+"'>20"+ic("coin","s")+"</span>", "Labours plus rapides");
     if(acts[a]==="militia") h += actionCard("militia", ic("sword","l"), "Lever la milice", "<span class='cost'>"+g.units.length+" / "+g.militiaCount()+"</span>", "1 soldat pour 2 familles");
     if(acts[a]==="merc") h += actionCard("merc", ic("shield","l"), "Mercenaire", "<span class='cost"+(g.treasury<25?" no":"")+"'>25"+ic("coin","s")+"</span>", "Loué pour 6 mois");
   }
   h += "</div>";
   return h;
+}
+/* appui long sur une carte du tiroir : la fiche du bâtiment (à quoi il sert, ce qu'il produit, ce qu'il lui faut) */
+var BUILD_INFO = {
+  woodcutter:{ makes:["timber","firewood"], fx:["Abat les arbres dans un rayon de 6 cases : bois d'œuvre pour bâtir, bois de chauffe pour l'hiver.","Gratuit : posez-le au bord d'une forêt.","Le camp sert aussi de dépôt de bois pour les chantiers voisins."] },
+  forager:   { makes:["berries"], fx:["Cueille les baies des buissons dans un rayon de 6 cases, de mars à novembre.","Rien l'hiver : faites des réserves ou d'autres vivres."] },
+  hunter:    { makes:["meat"], fx:["Chasse le gibier des forêts dans un rayon de 10 cases, toute l'année.","La viande fraîche se gâte vite : un fumoir la conserve."] },
+  quarry:    { makes:["stone"], fx:["À poser sur un gisement de pierre ; il s'épuise avec le temps.","La carrière sert de dépôt de pierre pour les chantiers."] },
+  farm:      { makes:["sh_grain","grain","barley","oats","flax","pulses","hay"], fx:["Ses fermiers travaillent tous les champs : fumure, labour, semailles, moisson, fauche.","Ils battent les gerbes en grain l'hiver.","Un bœuf attelé double la vitesse du labour.","Les champs se tracent gratuitement depuis ce même tiroir."] },
+  windmill:  { makes:["flour"], fx:["1 grain donne 1 farine.","Sans boulangerie, chaque foyer cuit sa farine (1 farine → 1 pain).","Artisans bourgeois deux fois plus efficaces qu'un serf."] },
+  bakery:    { makes:["bread"], fx:["1 farine donne 1,5 pain, avec ¼ de bois de chauffe par fournée.","Le pain rassit vite : on cuit à mesure des besoins.","Ajoute le pain (une sorte d'aliment) aux repas."] },
+  dairy:     { makes:["cheese"], fx:["3 laits donnent 2 fromages.","Il faut des vaches au pâturage (lait après le vêlage).","Le fromage se garde tout l'hiver et se vend bien."] },
+  smokehouse:{ makes:["smoked"], fx:["1 viande donne 1 viande fumée, avec ½ bois de chauffe.","La viande fumée se garde des mois.","Laisse "+(typeof SMOKE_KEEP!=="undefined" ? SMOKE_KEEP : 4)+" viandes fraîches pour la table."] },
+  granary:   { fx:["Met "+GRANARY_CAP+" denrées à l'abri : elles s'y gâtent trois fois moins vite.","Les artisans y viennent chercher grain, farine, lait et viande."] },
+  storehouse:{ fx:["+150 de capacité de stockage pour chaque ressource.","Sert de dépôt de bois et de pierre : posez-le près des chantiers."] },
+  market:    { fx:["Distribue les vivres : sans marché, chaque famille ne mange qu'une sorte d'aliment.","Indispensable pour que les maisons montent de niveau."] },
+  trade:     { makes:["coin"], fx:["Vend chaque mois les vrais surplus (il garde de quoi manger et se vêtir).","Les prix varient et baissent pour ce qu'on vend en masse.","Fait monter la richesse régionale, qui sert à réclamer des régions."] },
+  church:    { fx:["+5 d'approbation, de l'influence chaque mois.","Requise pour les maisons de niveau 3 et pour la dîme.","S'améliore ensuite (autel, clocher)."] },
+  tower:     { fx:["+4 d'approbation.","Réduit de moitié le pillage des raids."] },
+  wall:      { fx:["Case infranchissable : les brigands ne passent pas.","Coûte 2 pierres par case."] },
+  manor:     { fx:["Siège de l'administration : taille, péages, corvée, décrets, changeur.","Ouvre le conseil (intendant, bailli, chapelain, maître d'armes) et le coutumier.","+1 d'influence par mois."] },
+  oxpost:    { fx:["Les bœufs y attendent entre deux travaux.","Les journaliers viennent y chercher un bœuf pour traîner trois troncs.","Se déplace gratuitement, à tout moment."] },
+  zone:      { title:"Zone de maisons", pic:function(){ return ic("house","l"); }, fx:["Tracez un contour le long d'une route : il est découpé en parcelles, une maison et sa cour chacune.","Une maison loge 6 personnes (8 au niveau 2, 10 au niveau 3).","La cour accueille un potager, une basse-cour, un verger, un rucher, un tailleur ou une brasserie."], cost:function(){ return BUILD_DEFS.burgage.cost; } },
+  fieldzone: { title:"Champ", pic:function(){ return ICONS.th("field"); }, fx:["Gratuit, à la forme que vous voulez ("+FIELD_MIN+" à "+FIELD_MAX+" cases).","Le rendement dépend de la fertilité (calque), de la météo et de la rotation.","Il faut une ferme et ses fermiers pour le travailler."] },
+  pasture:   { title:"Pâturage", pic:function(){ return ic("sheep","l"); }, fx:["Enclos tracé librement ; la clôture coûte du bois selon sa longueur.","Moutons (laine), vaches (lait, fumier, futurs bœufs) ou porcs (glandée).","Un gardien soigne les bêtes ; l'hiver, il faut du foin."] },
+  buyox:     { title:"Bœuf de trait", pic:function(){ return ic("ox","l"); }, fx:["20 deniers. Polyvalent : il traîne trois troncs jusqu'aux chantiers et double la vitesse du labour.","Choisissez sa tâche dans le panneau du poteau : polyvalent, charroi, labour ou repos.","Mange 1 foin par mois l'hiver."] },
+  movepost:  { alias:"oxpost" },
+  militia:   { title:"Milice", pic:function(){ return ic("sword","l"); }, fx:["Un soldat pour deux familles, levé parmi les adultes.","Détruit les camps de brigands."] },
+  merc:      { title:"Mercenaire", pic:function(){ return ic("shield","l"); }, fx:["25 deniers, loué pour 6 mois.","Complète la milice sans prendre d'ouvriers."] }
+};
+function modalBuildInfo(g){
+  var id = ui.infoId, inf = BUILD_INFO[id] || {};
+  if(inf.alias){ id = inf.alias; inf = BUILD_INFO[id] || {}; }
+  var d = BUILD_DEFS[id];
+  var title = inf.title || (d ? d.name : id), pic = inf.pic ? inf.pic() : (d ? ICONS.th(id) : "");
+  var h = "<h2>"+pic+esc(title)+"</h2>";
+  if(d && d.desc) h += "<p>"+esc(d.desc)+"</p>";
+  var cost = inf.cost ? inf.cost() : d ? d.cost : null;
+  var facts = [];
+  if(cost && Object.keys(cost).length) facts.push("<b>Coût</b> "+costHtml(cost, g));
+  else if(d) facts.push("<b>Coût</b> gratuit");
+  if(d && !inf.title){
+    if(d.fam>0) facts.push("<b>Ouvriers</b> "+d.fam+(d.skill && SKILL_DEFS[d.skill] ? " · savoir-faire : "+esc(SKILL_DEFS[d.skill].name.toLowerCase()) : ""));
+    else facts.push("<b>Ouvriers</b> aucun");
+    if(!d.uiSize && !d.zone) facts.push("<b>Taille</b> "+d.w+" × "+d.h+" case"+(d.w*d.h>1?"s":""));
+    if(d.radius) facts.push("<b>Rayon</b> "+d.radius+" cases");
+    facts.push("<b>Chantier</b> "+(d.instant ? "posé aussitôt" : "bâti par les journaliers, matériaux livrés"));
+  }
+  if(facts.length) h += "<div class='facts'>"+facts.map(function(f){ return "<div>"+f+"</div>"; }).join("")+"</div>";
+  if(inf.makes) h += "<h3>Produit</h3><div class='chips' style='margin:4px 0'>"+inf.makes.map(function(k){ return "<span class='chip'>"+ic(k,"s")+(RES[k] ? esc(RES[k].n) : k==="coin" ? "Deniers" : esc(k))+"</span>"; }).join("")+"</div>";
+  if(inf.fx) h += "<h3>Effets</h3><ul class='fx'>"+inf.fx.map(function(x){ return "<li>"+esc(x)+"</li>"; }).join("")+"</ul>";
+  if(d && g){ var n = g.buildings.filter(function(b){ return b.def===id; }).length; if(n) h += "<p class='dim' style='font-size:12px'>Vous en avez "+n+".</p>"; }
+  return h + closeBtn();
 }
 function actionCard(act, pic, name, cost, sub){
   return "<button class='card' data-act='"+act+"'><span class='pic' style='align-items:center'>"+pic+"</span><span class='nm'>"+name+"</span><span>"+cost+"</span><span class='ws'>"+sub+"</span></button>";
@@ -1061,6 +1301,10 @@ function sheetSelection(g){
   }
   if(sel.def==="field" && sel.f) h += sheetField(g, sel);
   if(sel.def==="farm" && sel.done) h += sheetFarm(g);
+  if(sel.def==="oxpost"){
+    h += "<button class='b wide gold' data-act='movepost'>"+ic("ox","s")+"Déplacer le poteau (gratuit)</button>";
+    h += oxenHtml(g);
+  }
   if(RECIPES[sel.def] && sel.done) h += sheetWorkshop(g, sel);
   if(sel.def==="granary" && sel.done) h += sheetGranary(g);
   if(sel.def==="pasture" && sel.herd) h += sheetPasture(g, sel);
@@ -1180,11 +1424,7 @@ function sheetField(g, sel){
 }
 function sheetFarm(g){
   var h = "";
-  var wo = g.workingOxen();
-  h += "<div class='sec'>Bœufs de trait · labour "+mulTxt(g.plowMul())+"</div>";
-  h += "<div class='kv'><span class='k'>"+ic("ox","s")+g.oxen.length+" bœuf"+(g.oxen.length>1?"s":"")+(g.oxen.length ? " · "+g.oxen.map(function(o){ return Math.floor(o.a/12)+" ans"+(o.h<50 ? " (faible)" : ""); }).join(", ") : "")+"</span>"
-     + "<button class='b sm' data-act='buyox'>+1 · 20"+ic("coin","s")+"</button></div>";
-  if(g.oxen.length) h += "<div class='row'><span class='dim' style='flex:1 1 auto;font-size:11px'>"+wo+" à l'attelage. L'hiver, chaque bœuf mange 1 foin par mois.</span><button class='b sm' data-act='retireox'>Réformer le plus vieux</button></div>";
+  h += oxenHtml(g);
   h += "<div class='sec'>Grange de la ferme</div>";
   var any = false;
   ["sh_grain","sh_barley","sh_oats"].forEach(function(k){ var q = Math.floor(g.stock[k]||0); if(q>0){ any = true; h += "<div class='kv'><span class='k'>"+ic(k,"s")+RES[k].n+"</span><span class='v'>"+q+"</span></div>"; } });
@@ -1199,6 +1439,33 @@ function sheetFarm(g){
     h += "<button class='vrow' data-act='bsel' data-arg='"+b.id+"'><span class='ppw'>"+cropIc(cd.id,"")+"</span><span class='t'>"+esc(cd.name)+" · "+g.fieldN(b)+" cases"
        + "<span class='s'>"+esc(st.charAt(0).toUpperCase()+st.slice(1))+"</span></span>"+(fc.qty ? "<span class='mood dim'>≈"+fc.qty+"</span>" : "")+"</button>";
   });
+  return h;
+}
+/* les bœufs de trait, un par un : ce qu'il fait, ce qu'on lui demande */
+function oxenHtml(g){
+  var h = "<div class='sec'>Bœufs de trait · "+g.oxen.length+"</div>";
+  if(!g.oxen.length) h += "<div class='dim' style='font-size:12px'>Aucun bœuf. Un bœuf traîne trois troncs jusqu'aux chantiers et double la vitesse du labour.</div>";
+  g.oxen.forEach(function(o, i){
+    var job = g.oxJob(o);
+    h += "<div class='oxrow'><div class='kv' style='border:0;padding:2px 0'><span class='k'>"+ic("ox","s")+"<b>Bœuf "+(i+1)+"</b> <span class='dim'>"+Math.floor(o.a/12)+" ans · "
+       + "<span class='"+(o.h<50 ? "bad" : o.h<80 ? "gold" : "good")+"'>santé "+Math.round(o.h)+"</span></span></span></div>"
+       + "<div class='dim' style='font-size:11px;margin:-2px 0 3px'>"+esc(g.oxActivity(o))+"</div><div class='seg4'>";
+    OX_JOB_ORDER.forEach(function(j){
+      h += "<button class='b sm"+(job===j ? " on" : "")+"' data-act='oxjob' data-arg='"+o.id+":"+j+"'>"+esc(OX_JOBS[j].name)+"</button>";
+    });
+    h += "</div></div>";
+  });
+  h += "<div class='dim' style='font-size:11px;margin-top:4px'>"+esc(OX_JOBS.all.desc)+" Un bœuf attelé à la charrue ne traîne pas de troncs en même temps : avec deux bœufs, l'un peut labourer pendant que l'autre charrie. L'hiver, chaque bœuf mange 1 foin par mois.</div>";
+  h += "<div class='row'><button class='b sm' data-act='buyox'>Acheter un bœuf · 20"+ic("coin","s")+"</button>"
+     + (g.oxen.length ? "<button class='b sm' data-act='retireox'>Réformer le plus vieux</button>" : "")+"</div>";
+  return h;
+}
+function sheetOxen(g){
+  var post = g.buildings.filter(function(b){ return b.def==="oxpost"; })[0];
+  var h = head(ic("ox","l"), "Bœufs de trait", post ? "" : "Pas de poteau : ils attendent à la ferme ou au campement");
+  h += oxenHtml(g);
+  h += post ? "<button class='b wide' data-act='bsel' data-arg='"+post.id+"'>Voir le poteau</button>"
+            : "<button class='b wide' data-act='build' data-arg='oxpost'>Poser un poteau "+costHtml(BUILD_DEFS.oxpost.cost, g)+"</button>";
   return h;
 }
 function herdCounts(g, h){
@@ -1538,17 +1805,63 @@ function sheetGranary(g){
   FOOD_TYPES.concat(["grain","flour"]).forEach(function(k){ if((sp[k]||0)>=0.5){ if(!any) h += "<div class='sec'>Gâté le mois dernier</div>"; any = true; h += "<div class='kv'><span class='k'>"+ic(k,"s")+RES[k].n+"</span><span class='v bad'>−"+Math.round(sp[k])+"</span></div>"; } });
   return h;
 }
+/* d'où vient chaque ressource : les sources (bâtiments, cours, troupeaux) et combien sont à l'œuvre */
+var RES_HOW = {
+  timber:  [["b","woodcutter","abat les arbres alentour"]],
+  firewood:[["b","woodcutter","avec le bois d'œuvre"]],
+  stone:   [["b","quarry","sur un gisement de pierre"]],
+  berries: [["b","forager","de mars à novembre"]],
+  meat:    [["b","hunter","toute l'année"],["h","pig","porcs (glandée, abattage)"],["h","cattle","bêtes abattues en novembre"],["t","","bœuf réformé"]],
+  smoked:  [["b","smokehouse","1 viande → 1 viande fumée"]],
+  bread:   [["b","bakery","1 farine → 1,5 pain"],["t","","sans boulangerie, chaque foyer cuit sa farine (1 → 1)"]],
+  flour:   [["b","windmill","1 grain → 1 farine"]],
+  grain:   [["f","wheat","battage des gerbes de blé ou de seigle, à la ferme"],["t","","marchand de grain en disette"]],
+  barley:  [["f","barley","battage des gerbes d'orge"]],
+  oats:    [["f","oats","battage des gerbes d'avoine"]],
+  pulses:  [["f","peas","champ de pois et fèves"],["t","","marchand de grain en disette"]],
+  flax:    [["f","flax","champ de lin"]],
+  hay:     [["f","hay","pré de fauche (juin-juillet)"],["h","any","herbe en trop fauchée au pâturage"],["t","","paille du battage"]],
+  sh_grain:[["f","wheat","moisson du blé d'hiver et du seigle"]], sh_barley:[["f","barley","moisson de l'orge"]], sh_oats:[["f","oats","moisson de l'avoine"]],
+  veg:     [["e","garden","potager d'une arrière-cour"]],
+  eggs:    [["e","chicken","basse-cour d'une arrière-cour"]],
+  apples:  [["e","orchard","verger, d'août à octobre"]],
+  honey:   [["e","beehive","rucher, d'avril à septembre"]],
+  milk:    [["h","cattle","vaches après le vêlage"]],
+  cheese:  [["b","dairy","3 laits → 2 fromages"]],
+  wool:    [["h","sheep","tonte en mai"]],
+  clothes: [["e","tailor","tailleur d'une cour, avec laine ou lin"]],
+  ale:     [["e","brewer","brasserie d'une cour (niveau 2), avec de l'orge"]],
+  manure:  [["h","any","les troupeaux"],["t","","les bœufs de trait"]],
+  ox:      [["t","","achat (20 deniers) ou jeune taureau dressé"]]
+};
+function howHtml(g, k){
+  var src = RES_HOW[k];
+  if(!src) return "";
+  var parts = src.map(function(x){
+    var name = "", n = null;
+    if(x[0]==="b"){ name = BUILD_DEFS[x[1]].name; n = g.buildings.filter(function(b){ return b.def===x[1] && b.done; }).length; }
+    else if(x[0]==="e"){ name = EXT_DEFS[x[1]].name; n = g.buildings.filter(function(b){ return b.exts && b.exts.indexOf(x[1])>=0; }).length; }
+    else if(x[0]==="h"){ name = x[1]==="any" ? "Pâturages" : LIVESTOCK[x[1]].name; n = g.pastures().filter(function(b){ return b.herd && b.herd.an.length && (x[1]==="any" || b.herd.sp===x[1]); }).length; }
+    else if(x[0]==="f"){ name = "Champs"; n = g.fields().filter(function(b){ var c = b.f && g.liveCrop(b.f).id; return c===x[1] || (x[1]==="wheat" && c==="rye"); }).length; }
+    var cnt = n===null ? "" : " <span class='"+(n>0 ? "good" : "bad")+"'>("+n+")</span>";
+    return (name ? "<b>"+esc(name)+"</b>"+cnt+" : " : "")+esc(x[2]);
+  });
+  return "<div class='how'>← "+parts.join(" · ")+"</div>";
+}
 function sheetStock(g){
   var cap = g.capFor("timber");
   var food = g.foodStock(), kinds = foodGroupsIn(g);
   var h = head(ic("crate","l"), "Réserves", "Capacité : "+cap+" par ressource · "+g.storehouseCount()+" entrepôt(s)");
-  function line(k){ var v = Math.floor(g.stock[k]||0); return "<div class='kv'><span class='k'>"+ic(k)+RES[k].n+"</span>"+bar(v/cap, v>=cap?"gold":"")+"<span class='v' style='min-width:36px;text-align:right'>"+v+"</span></div>"; }
+  var how = !!ui.stockHow;
+  h += "<button class='b wide"+(how ? " on" : "")+"' data-act='stockhow' style='margin:0 0 4px'>"+ic("help","s")+(how ? "Masquer d'où vient chaque ressource" : "D'où vient chaque ressource ?")+"</button>";
+  if(how) h += "<div class='dim' style='font-size:11px'>Sous chaque ligne : ce qui la produit, et entre parenthèses combien en ont sur votre domaine (<span class='bad'>0</span> = rien n'en produit).</div>";
+  function line(k){ var v = Math.floor(g.stock[k]||0); return "<div class='kv'><span class='k'>"+ic(k)+RES[k].n+"</span>"+bar(v/cap, v>=cap?"gold":"")+"<span class='v' style='min-width:36px;text-align:right'>"+v+"</span></div>"+(how ? howHtml(g, k) : ""); }
   /* étape 6 : denrée par denrée, ce qui se gâtera ce mois-ci */
   function fline(k){
     var v = Math.floor(g.stock[k]||0), rt = g.spoilRate(k);
     return "<div class='kv'><span class='k'>"+ic(k)+RES[k].n+"</span>"+bar(v/cap, v>=cap?"gold":"")
          + "<span class='v' style='min-width:36px;text-align:right'>"+v+"</span>"
-         + "<span class='dim' style='min-width:44px;text-align:right;font-size:10px'>"+(rt>0.0005 ? "−"+spoilTxt(rt) : "se garde")+"</span></div>";
+         + "<span class='dim' style='min-width:44px;text-align:right;font-size:10px'>"+(rt>0.0005 ? "−"+spoilTxt(rt) : "se garde")+"</span></div>"+(how ? howHtml(g, k) : "");
   }
   h += "<div class='sec'>Matériaux</div>"+line("timber")+line("stone");
   var rt = g.reserved("timber"), rs = g.reserved("stone");
@@ -1572,7 +1885,7 @@ function sheetStock(g){
   var wn = g.winterNeed();
   h += "<div class='sec'>Fourrage et fumier</div>"+line("hay")+line("oats")+line("manure");
   if(wn>0) h += "<div class='dim' style='font-size:11px'>L'hiver, le bétail mange ~"+(Math.round(wn*10)/10).toString().replace(".", ",")+" foin par mois (l'avoine compte 1,5). Réserve : "+Math.floor(g.fodderStock())+".</div>";
-  h += "<div class='sec'>Bétail</div><div class='kv'><span class='k'>"+ic("ox")+"Bœufs de trait</span><span class='v'>"+(g.stock.ox||0)+"</span><button class='b' data-act='buyox'>+1 · 20"+ic("coin","s")+"</button></div>";
+  h += "<div class='sec'>Bétail</div><div class='kv'><span class='k'>"+ic("ox")+"Bœufs de trait</span><span class='v'>"+(g.stock.ox||0)+"</span><button class='b sm' data-act='sheet' data-arg='oxen'>Gérer</button></div>"+(how ? howHtml(g, "ox") : "");
   LIVESTOCK_ORDER.forEach(function(sp){
     var n = 0, np = 0; g.pastures().forEach(function(b){ if(b.herd.sp===sp){ n += b.herd.an.length; np++; } });
     if(np) h += "<div class='kv'><span class='k'>"+ic(sp==="cattle" ? "cow" : sp)+LIVESTOCK[sp].name+"</span><span class='v'>"+n+" · "+np+" pâturage"+(np>1?"s":"")+"</span></div>";
@@ -1869,17 +2182,31 @@ function sheetRealm(g){
 
 /* menu (☰) */
 function sheetMenu(g){
-  var h = head(ic("menu","l"), "Menu", "Slot "+(activeSlot+1)+" · sauvegarde automatique");
+  var e = entryOf(activeKey), ago = _lastSaveAt ? Math.round((Date.now()-_lastSaveAt)/1000) : null;
+  var h = head(ic("menu","l"), "Menu", esc(e ? e.name : "Seigneurie")+" · enregistrée "+(ago===null ? "automatiquement" : ago<5 ? "à l'instant" : "il y a "+(ago<60 ? ago+" s" : Math.round(ago/60)+" min")));
   h += "<div class='menu-list'>";
+  h += "<button class='b wide gold' data-act='savenow'>"+ic("crate")+"Sauvegarder maintenant</button>";
+  h += "<button class='b wide' data-act='savecopy'>"+ic("scroll")+"Garder une copie de la partie (point de retour)</button>";
   h += "<button class='b wide' data-act='modal' data-arg='regions'>"+ic("flag")+"Régions du domaine</button>";
   h += "<button class='b wide' data-act='modal' data-arg='log'>"+ic("scroll")+"Journal des événements</button>";
-  h += "<button class='b wide' data-act='modal' data-arg='help'>"+ic("help")+"Comment jouer</button>";
-  h += "<button class='b wide' data-act='mute'>"+ic(AudioFX.muted?"mute":"sound")+"Son : "+(AudioFX.muted?"coupé":"activé")+"</button>";
-  h += "<button class='b wide' data-act='text'><b class='mono' style='width:18px'>Aa</b>Taille du texte : "+TXT_NAMES[_txtSize]+"</button>";
-  h += "<button class='b wide' data-act='saveCode'>"+ic("scroll")+(NATIVE ? "Exporter la partie (partager un code)" : "Copier un code de sauvegarde")+"</button>";
-  h += "<button class='b wide' data-act='loadCode'>"+ic("scroll")+(NATIVE ? "Importer une partie (code copié)" : "Charger un code de sauvegarde")+"</button>";
-  h += "<button class='b wide gold' data-act='mainmenu'>"+ic("house")+"Menu principal (parties, nouvelle partie)</button>";
+  h += "<button class='b wide' data-act='modal' data-arg='help'>"+ic("help")+"Guide</button>";
+  h += "<button class='b wide' data-act='modal' data-arg='options'>"+ic("sound")+"Options</button>";
+  h += "<button class='b wide' data-act='mainmenu'>"+ic("house")+"Écran d'accueil (charger, nouvelle partie)</button>";
   h += "</div>";
+  h += "<div class='dim' style='font-size:11px;margin-top:6px'>La partie s'enregistre toute seule sur l'appareil toutes les 5 secondes et dès qu'on quitte"+(NATIVE ? " (fichiers de l'application, gardés jusqu'à la désinstallation)" : "")+".</div>";
+  return h;
+}
+
+/* options : son, texte, transfert de parties (fichiers) */
+function optionsHtml(inGame){
+  var h = "";
+  h += "<button class='opt' data-act='mute'><b>"+ic(AudioFX.muted?"mute":"sound","s")+" Son : "+(AudioFX.muted?"coupé":"activé")+"</b><span>Bruitages de construction, cloches, alertes.</span></button>";
+  h += "<button class='opt' data-act='text'><b>Taille du texte : "+TXT_NAMES[_txtSize]+"</b><span>Toucher pour changer (normal, grand, très grand).</span></button>";
+  h += "<button class='opt' data-act='vibe'><b>Vibrations : "+(ui.noVibe ? "coupées" : "activées")+"</b><span>Petit retour au toucher en posant ou en annulant.</span></button>";
+  h += "<h3>Transférer une partie</h3>";
+  h += "<p class='dim' style='font-size:12px;margin:2px 0 4px'>Les parties sont déjà enregistrées sur cet appareil. Un fichier sert à en garder une à part ou à la passer sur un autre téléphone.</p>";
+  if(inGame) h += "<button class='opt' data-act='exportfile'><b>"+ic("scroll","s")+" Exporter cette partie dans un fichier</b><span>"+(NATIVE ? "Choisissez où l'enregistrer (Téléchargements, Drive…)." : "Le navigateur télécharge un fichier .json.")+"</span></button>";
+  h += "<button class='opt' data-act='importfile'><b>"+ic("scroll","s")+" Importer une partie depuis un fichier</b><span>Elle s'ajoute à vos parties, sans rien remplacer.</span></button>";
   return h;
 }
 
@@ -1900,35 +2227,74 @@ function renderDock(g){
 /* ---------- fenêtres ---------- */
 function renderModal(g){
   var h = "", big = false;
-  if(uiMenu || !g){ h = modalMenu(g); big = true; }
+  if(uiMenu || !g){ h = (ui.flash ? "<div class='flash' style='margin:0 0 8px'>"+esc(ui.flash)+"</div>" : "")+modalMenu(g); big = true; }
   else if((g.victory || g.defeat) && !ui.endSeen) h = modalEnd(g);
   else if(g.pendingEvent) h = modalEvent(g);
   else if(ui.modal==="help"){ h = modalHelp(); big = true; }
   else if(ui.modal==="log"){ h = modalLog(g); big = true; }
   else if(ui.modal==="regions"){ h = modalRegions(g); big = true; }
+  else if(ui.modal==="binfo") h = modalBuildInfo(g);
+  else if(ui.modal==="options") h = "<h2>"+ic("sound","l")+"Options</h2>"+optionsHtml(true)+closeBtn();
   elModal.classList.toggle("hide", !h);
   elCard.classList.toggle("big", big);
-  var key = uiMenu ? "menu" : (ui.modal||"") + (g && g.pendingEvent ? "ev" : "");
+  elModal.classList.toggle("home", !!(uiMenu || !g));
+  var key = uiMenu ? "menu"+(ui.home||"") : (ui.modal||"") + (g && g.pendingEvent ? "ev" : "");
   setHTML(elCard, h);
   if(elCard._key!==key){ elCard._key = key; elCard.scrollTop = 0; }
 }
 function closeBtn(){ return "<button class='b wide' data-act='modalclose'>Fermer</button>"; }
 
+function saveRow(e){
+  var info = e.info || {}, armed = ui.delArm && ui.delArm.key===e.key && Date.now()<ui.delArm.t, cur = e.key===activeKey && !!game;
+  return "<div class='slot'><button class='opt"+(cur ? " on" : "")+"' data-act='loadsave' data-arg='"+esc(e.key)+"'><b>"+esc(e.name)+(cur ? " <span class='dim'>(en cours)</span>" : "")+"</b>"
+    + "<span>"+(info.level ? esc(info.level)+" de "+info.pop+" familles · "+MONTHS[info.month]+" "+info.year+" · "+esc(info.mode)+" · "+esc(info.diff) : "")
+    + (info.victory ? " · victoire" : "")+(info.defeat ? " · défaite" : "")+(e.t ? "<br>Enregistrée "+whenTxt(e.t) : "")+"</span></button>"
+    + "<button class='b' data-act='rensave' data-arg='"+esc(e.key)+"' aria-label='Renommer'>✎</button>"
+    + "<button class='b red' data-act='delsave' data-arg='"+esc(e.key)+"' aria-label='Supprimer'>"+(armed ? "Effacer ?" : ic("close"))+"</button></div>";
+}
+function whenTxt(t){
+  var d = new Date(t), now = new Date(), hm = String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
+  if(d.toDateString()===now.toDateString()) return "aujourd'hui à "+hm;
+  var y = new Date(now.getTime()-86400000);
+  if(d.toDateString()===y.toDateString()) return "hier à "+hm;
+  return "le "+d.getDate()+" "+["janv.","févr.","mars","avr.","mai","juin","juil.","août","sept.","oct.","nov.","déc."][d.getMonth()]+(d.getFullYear()!==now.getFullYear() ? " "+d.getFullYear() : "")+" à "+hm;
+}
+function backBtn(){ return "<button class='b wide' data-act='home' data-arg='main'>Retour</button>"; }
 function modalMenu(g){
-  var h = "<h2>"+ICONS.th("manor")+"Seigneurie</h2>";
-  h += "<p class='dim'>Fondez un village médiéval, nourrissez et logez vos familles, et faites-le prospérer au fil des saisons.</p>";
-  var any = false, s = "";
-  for(var i=0;i<3;i++){
-    var info = slotInfo(i);
-    if(!info) continue;
-    any = true;
-    var armed = ui.delArm && ui.delArm.slot===i && Date.now()<ui.delArm.t;
-    s += "<div class='slot'><button class='opt' data-act='loadslot' data-arg='"+i+"'><b>Slot "+(i+1)+" · "+esc(info.level)+" de "+info.pop+" familles"
-       + (info.victory?" · victoire":"")+(info.defeat?" · défaite":"")+"</b><span>"+esc(info.mode)+" · "+esc(info.diff)+" · "+MONTHS[info.month]+" "+info.year+"</span></button>"
-       + "<button class='b red' data-act='delslot' data-arg='"+i+"'>"+(armed?"Effacer ?":ic("close"))+"</button></div>";
+  var saves = sortedSaves(), scr = ui.home || "main";
+  if(ui.loading){
+    var le = entryOf(ui.loading);
+    return "<div class='home-title'>"+ICONS.th("manor")+"<div><b>SEIGNEURIE</b></div></div><p style='text-align:center'>Chargement de « "+esc(le ? le.name : "la partie")+" »…</p>";
   }
-  if(any) h += "<h3>Reprendre une partie</h3>"+s;
-  h += "<h3>Nouvelle partie</h3>";
+  var h = "";
+  if(scr==="main"){
+    h += "<div class='home-title'>"+ICONS.th("manor")+"<div><b>SEIGNEURIE</b><span>Un village médiéval à faire prospérer</span></div></div>";
+    var last = (game && entryOf(activeKey)) || entryOf(activeKey) || saves[0];
+    if(last){
+      var li = last.info || {};
+      h += "<button class='hbtn gold' data-act='continue' data-arg='"+esc(last.key)+"'><b>Continuer</b><span>"+esc(last.name)+(li.level ? " · "+esc(li.level)+" de "+li.pop+" familles · "+MONTHS[li.month]+" "+li.year : "")+"</span></button>";
+    }
+    h += "<button class='hbtn' data-act='home' data-arg='new'><b>Nouvelle partie</b><span>Choisir le mode et la difficulté</span></button>";
+    if(saves.length) h += "<button class='hbtn' data-act='home' data-arg='load'><b>Charger une partie</b><span>"+saves.length+" partie"+(saves.length>1?"s":"")+" sur cet appareil</span></button>";
+    h += "<button class='hbtn' data-act='home' data-arg='options'><b>Options</b><span>Son, texte, transfert de parties</span></button>";
+    h += "<button class='hbtn' data-act='home' data-arg='guide'><b>Guide</b><span>Comment jouer</span></button>";
+    return h;
+  }
+  if(scr==="load"){
+    h += "<h2>"+ic("crate","l")+"Charger une partie</h2>";
+    if(!saves.length) h += "<p class='dim'>Aucune partie sur cet appareil.</p>";
+    saves.forEach(function(e){ h += saveRow(e); });
+    h += "<p class='dim' style='font-size:12px'>✎ renommer · ✕ supprimer (toucher deux fois). Les copies gardées depuis le menu ☰ apparaissent ici.</p>";
+    return h + backBtn();
+  }
+  if(scr==="options"){
+    h += "<h2>"+ic("sound","l")+"Options</h2>"+optionsHtml(!!game);
+    return h + backBtn();
+  }
+  if(scr==="guide") return helpHtml() + backBtn();
+  /* nouvelle partie */
+  h += "<h2>"+ICONS.th("manor")+"Nouvelle partie</h2>";
+  h += "<h3>Mode</h3>";
   for(var m=0;m<MODES.length;m++){
     var md = MODES[m];
     h += "<button class='opt"+(ui.newMode===md.id?" on":"")+"' data-act='nmode' data-arg='"+md.id+"'><b>"+esc(md.name)+"</b><span>"+esc(md.desc)+"</span></button>";
@@ -1939,16 +2305,10 @@ function modalMenu(g){
     h += "<button class='opt"+(ui.newDiff===dd.id?" on":"")+"' data-act='ndiff' data-arg='"+dd.id+"'><b>"+esc(dd.name)+"</b></button>";
   }
   var dsel = DIFFICULTIES.filter(function(x){ return x.id===ui.newDiff; })[0];
-  h += "</div>"+(dsel && dsel.desc ? "<p class='dim' style='font-size:12px;margin:6px 0 0'>"+esc(dsel.desc)+"</p>" : "")+"<h3>Emplacement</h3><div class='seg'>";
-  for(var k=0;k<3;k++){
-    var used = !!slotInfo(k);
-    h += "<button class='opt"+(ui.newSlot===k?" on":"")+"' data-act='nslot' data-arg='"+k+"'><b>Slot "+(k+1)+"</b><span>"+(used?"occupé":"libre")+"</span></button>";
-  }
-  h += "</div>";
-  if(slotInfo(ui.newSlot)) h += "<p class='bad' style='font-size:12px'>Attention : la partie du slot "+(ui.newSlot+1)+" sera remplacée.</p>";
+  h += "</div>"+(dsel && dsel.desc ? "<p class='dim' style='font-size:12px;margin:6px 0 0'>"+esc(dsel.desc)+"</p>" : "");
+  h += "<p class='dim' style='font-size:12px'>La partie s'enregistre sous le nom « "+esc(defaultName())+" » (renommable), à côté de vos autres parties : rien n'est remplacé.</p>";
   h += "<button class='b gold wide' data-act='startgame'>Commencer</button>";
-  if(g) h += "<button class='b wide' data-act='menuclose'>Retour à la partie</button>";
-  return h;
+  return h + backBtn();
 }
 function modalEnd(g){
   var win = g.victory;
@@ -2007,8 +2367,9 @@ function modalRegions(g){
   if(rest>0) h += "<p class='dim' style='font-size:12px'>Plus loin, "+rest+" autres régions : vous pourrez les réclamer de proche en proche.</p>";
   return h + closeBtn();
 }
-function modalHelp(){
-  var h = "<h2>"+ic("help","l")+"Comment jouer</h2>";
+function modalHelp(){ return helpHtml() + "<button class='b gold wide' data-act='modalclose'>Compris</button>"; }
+function helpHtml(){
+  var h = "<h2>"+ic("help","l")+"Guide</h2>";
   h += "<h3>Premiers pas</h3><p>Suivez les <b>objectifs</b>, en haut à gauche : chacun dit quoi faire et où le trouver. Tracez d'abord une zone de <b>maisons</b> le long de la route, puis ouvrez <b>Récolte</b> et posez un <b>camp de bûcherons</b> (gratuit) près d'une forêt. Un bâtiment achevé reçoit tout de suite un ouvrier ; touchez-le, puis <b>+</b> pour en ajouter : le jeu choisit l'adulte libre le plus doué. Les adultes sans poste (journaliers) construisent les chantiers.</p>";
   h += "<h3>Chantiers et matériaux</h3><p>Le bois et la pierre d'un chantier sont réservés à la pose (on ne peut plus les dépenser ailleurs), puis <b>apportés</b> : ils sortent du stock quand ils arrivent au pied du chantier. Les journaliers les prennent au dépôt le plus commode (campement, poteau du bœuf, <b>entrepôt</b>, camp de bûcherons pour le bois, carrière pour la pierre). Un tronc est trop lourd pour un homme : un journalier va chercher le <b>bœuf</b> et le mène, avec trois troncs derrière lui, quand il ne laboure pas ; sans bœuf en état, on traîne un tronc à la main, lentement. La pierre se porte une à une. On ne bâtit qu'avec ce qui est arrivé : posez vos entrepôts près des chantiers, et touchez un chantier pour le <b>livrer en priorité</b>. Abandonner un chantier rend les matériaux non employés.</p>";
   h += "<h3>Les villageois</h3><p>Chaque habitant a un âge, une santé, une humeur et un savoir-faire par métier, qui progresse en travaillant (de novice à maître). Touchez un villageois sur la carte, ou le compteur d'habitants en haut, pour ouvrir sa fiche : vous y voyez pourquoi il est content ou non, et vous pouvez changer son métier. Les adolescents de 12 à 15 ans peuvent entrer en <b>apprentissage</b> : auprès d'un bon maître, ils apprennent vite. Les couples se marient, ont des enfants, vieillissent ; à 65 ans, on prend sa retraite. Si un maître meurt sans avoir formé personne, son savoir-faire disparaît.</p>";
@@ -2024,10 +2385,13 @@ function modalHelp(){
      + "<h3>Difficulté</h3><p><b>Paisible</b> : récoltes généreuses, hivers doux, impôt du roi léger. <b>Normal</b> : il faut préparer l'hiver et varier les repas. <b>Difficile</b> : récoltes maigres, denrées qui se gâtent vite, hivers rudes, maladies, impôts et ennemis plus durs. Quand les vivres manquent, les colons cessent de venir : le village ne grandit pas plus vite qu'il ne peut se nourrir.</p>";
   h += "<h3>Le fisc</h3><p>Dans le panneau du <b>manoir</b> : la <b>taille</b> (curseur) court chaque mois selon les maisons habitées et leur niveau, mais ne se lève qu'à <b>Pâques</b> (avril) et à la <b>Saint-Michel</b> (septembre) ; une seigneurie mécontente en cache une partie. La <b>dîme</b> (il faut une église) donne à l'Église une part des céréales et des pois récoltés, en octobre, contre de l'influence chaque mois. Les <b>péages</b> se lèvent chaque mois sur les marchands du marché et du comptoir. La <b>corvée</b> appelle, certains jours, les ouvriers des postes sur vos chantiers. Chaque redevance a son coût en approbation. Le <b>conseil</b> (facultatif) : intendant, bailli, chapelain, maître d'armes, chacun avec sa mission ; un intendant cupide détourne des deniers, faites vérifier ses comptes. Chaque famille se souvient de ce que vous lui faites (maison rasée, mort de faim, corvée, aumône, fête…) : touchez un villageois pour voir l'opinion de sa famille. Votre <b>réputation</b> (généreux, avare, craint) se fait au fil de vos choix. <b>Les trois ordres</b> : les familles arrivent <b>serves</b> (tâches de base, chantiers, corvée) ; quand leur maison atteint le niveau 2, elles entrent dans la <b>bourgeoisie</b> : leurs artisans (moulin, boulangerie, laiterie, fumoir, comptoir) travaillent deux fois mieux qu'un serf, qui n'y est qu'un simple manœuvre ; une famille d'une maison de niveau 3 peut être <b>anoblie</b> (influence) : elle ne travaille plus, sert à la cour, au clergé ou comme lettrée, ne paie pas la taille et mène grand train. <b>Justice et audiences</b> : des affaires (bornage, vol, braconnage, dette, rixe) et des pétitions (prêt, exemption, affranchissement, dispense de corvée, mariage au dehors) arrivent au fil des mois ; le bouton « Audiences » apparaît sur la carte. Jugez avant les plaids de la saison ; sans bailli, les preuves sont incertaines et l'on peut condamner un innocent. Une faveur accordée rend la famille redevable. <b>Intrigues</b> : les familles fâchées forment une faction autour d'un meneur et réclament quelque chose (baisse de la taille, moins de corvée…) ; laissée grandir, elle fait grève, pose un ultimatum, puis se soulève. Un bailli ou un chapelain au conseil vous sert d'informateur : il démasque le meneur et apprend les secrets des villageois, dont vous pouvez faire un levier. La <b>chronique</b> garde les grands moments de votre règne. Le <b>coutumier</b> (panneau du manoir) rassemble les lois : chasse, bois mort, port d'armes, couvre-feu, mainmorte, charte du bourg, taille des nobles. Touchez le <b>trésor</b>, en haut, pour le <b>livre de comptes</b> : recettes et dépenses poste par poste, prévision jusqu'au printemps, calendrier fiscal, et le <b>changeur</b> qui prête à 2 % par mois (trois échéances manquées : il saisit des biens).</p>";
   h += "<h3>Commandes</h3><p>Glisser pour déplacer · pincer ou molette pour zoomer · toucher un bâtiment pour l'ouvrir · <b>appui long</b> pour annuler · toucher la minimap pour s'y rendre. Le bandeau des réserves et la date ouvrent le détail. Au clavier : Espace = pause, 1/2/3/4 = vitesse (×1, ×4, ×16, ×60), ZQSD = caméra, Échap = annuler.</p>";
-  h += "<h3>Sauvegarde</h3><p>Automatique sur cet appareil (3 emplacements). Le menu permet de copier un code pour continuer sur un autre appareil.</p>";
-  return h + "<button class='b gold wide' data-act='modalclose'>Compris</button>";
+  h += "<h3>Sauvegarde</h3><p>Chaque partie s'enregistre toute seule sur l'appareil, toutes les 5 secondes et dès qu'on quitte. Menu ☰ : <b>Sauvegarder maintenant</b>, ou <b>Garder une copie</b> pour revenir plus tard à ce moment précis. L'écran d'accueil liste toutes vos parties (charger, renommer, supprimer). Pour changer d'appareil : Options → <b>Exporter dans un fichier</b>, puis <b>Importer</b> sur l'autre.</p>";
+  h += "<h3>Les bœufs</h3><p>Un bœuf est polyvalent : il tire la charrue d'un fermier (labour deux fois plus rapide) ou traîne trois troncs jusqu'aux chantiers, mené par un journalier. Touchez le poteau (ou un bœuf) pour choisir sa tâche : polyvalent, charroi, labour ou repos. Avec deux bœufs, l'un laboure pendant que l'autre charrie. Le poteau se déplace gratuitement.</p>";
+  h += "<h3>Astuces</h3><p><b>Appui long</b> sur une carte du tiroir de construction : sa fiche (effets, production, ouvriers). Dans les <b>Réserves</b>, « D'où vient chaque ressource ? » montre ce qui produit chaque chose. En <b>pause</b>, tout se fige sur la carte.</p>";
+  return h;
 }
 
+try{ AudioFX.muted = window.localStorage.getItem("seigneurie-mute")==="1"; }catch(e){}
 renderUI();
 
 /* ----- boucle principale ----- */
@@ -2037,7 +2401,7 @@ var _lastT = performance.now(), _acc = 0, _uiAcc = 0, _saveAcc = 0;
 var _lastInput = 0, _lastDraw = 0;
 ["pointerdown","pointermove","wheel","keydown"].forEach(function(ev){ window.addEventListener(ev, function(){ _lastInput = performance.now(); }, { passive:true }); });
 /* étape 3 : outils de zone et de pose dans la cour */
-function clearTools(){ ui.pendingPlace = null; ui.zoneMode = false; ui.zoneKind = "house"; ui.zonePts = []; ui.zoneClosed = false; ui.zoneN = null; ui.extPlace = null; zoneDrag = { i:-1 }; }
+function clearTools(){ ui.movePost = false; ui.pendingPlace = null; ui.zoneMode = false; ui.zoneKind = "house"; ui.zonePts = []; ui.zoneClosed = false; ui.zoneN = null; ui.extPlace = null; zoneDrag = { i:-1 }; }
 var zoneDrag = { i:-1 }, lastPtrType = "mouse";
 function nearZonePt(x, y){
   var r = Math.max(0.35, 34/(16*cam.zoom)), best = -1;
@@ -2061,9 +2425,15 @@ function zoneOverlay(g){
   return _zoneOv;
 }
 
+/* l'horloge des animations (fumées, feux, eau, pas des villageois, bêtes, météo) n'avance que si le temps du jeu
+   s'écoule : en pause, derrière un événement ou au menu, plus rien ne bouge sur la carte */
+var _animT = 0;
+function gameRunning(){ return !!(game && game.speed>0 && !game.pendingEvent && !uiMenu); }
 function loop(now){
   var dt = Math.min(200, now-_lastT); _lastT = now;
-  if(game && game.speed>0 && !game.pendingEvent && !uiMenu){
+  var running = gameRunning();
+  if(running) _animT += dt;
+  if(running){
     _acc += dt*game.speed;
     var n = Math.floor(_acc/100);
     if(n>60){ n = 60; _acc = 0; } else _acc -= n*100;
@@ -2087,8 +2457,9 @@ function loop(now){
   if(game) soundForToasts(game);
   _uiAcc += dt;
   if(_uiAcc>300){ _uiAcc = 0; renderUI(); }
-  var every = (uiMenu || ui.modal) ? 250 : (now - _lastInput < 600 || camGoal || pvx || pvy) ? 0 : 32;
-  if(game && now - _lastDraw >= every){ _lastDraw = now; RENDER.setOverlay(zoneOverlay(game)); RENDER.setSelVillager(ui.selV); drawGame(ctx, game, cam, canvas, hover, ui.buildSel, ui.selId, (ui.zoneMode && ui.zoneKind==="field") ? Object.assign({}, ui.layers, { soil:true }) : ui.layers, now); }
+  /* en pause, l'image ne change que si l'on touche l'écran (ou pour le clignotement de la sélection) */
+  var every = (uiMenu || ui.modal) ? 250 : (now - _lastInput < 600 || camGoal || pvx || pvy) ? 0 : running ? 32 : 120;
+  if(game && now - _lastDraw >= every){ _lastDraw = now; RENDER.setOverlay(zoneOverlay(game)); RENDER.setSelVillager(ui.selV); drawGame(ctx, game, cam, canvas, hover, ui.buildSel, ui.selId, (ui.zoneMode && ui.zoneKind==="field") ? Object.assign({}, ui.layers, { soil:true }) : ui.layers, _animT, now); }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
@@ -2098,8 +2469,10 @@ requestAnimationFrame(loop);
 var _backT = 0;
 window.seigneurieSave = function(){ persist(game, true); return "ok"; };
 window.seigneurieBack = function(){
+  if(uiMenu && ui.loading) return "ok";
+  if(uiMenu && ui.home && ui.home!=="main"){ ui.home = "main"; ui.delArm = null; renderUI(); return "ok"; }
   if(ui.modal){ ui.modal = null; renderUI(); return "ok"; }
-  if(game && game.pendingEvent) return "ok";
+  if(game && game.pendingEvent && !uiMenu) return "ok";
   if(uiMenu && game){ uiMenu = false; renderUI(); return "ok"; }
   if(cancelAll()){ renderUI(); return "ok"; }
   persist(game, true);

@@ -736,7 +736,7 @@ var THUMB = {
   burgage:"burgage2_1", woodcutter:"woodcutter", forager:"forager", hunter:"hunter", quarry:"quarry",
   farm:"farm", windmill:"windmill", granary:"granary", storehouse:"storehouse", market:"market_1",
   trade:"trade", church:"church_11", tower:"tower", wall:"wall_10", manor:"manor", pasture:"shelter_sheep",
-  bakery:"bakery", dairy:"dairy", smokehouse:"smokehouse"
+  bakery:"bakery", dairy:"dairy", smokehouse:"smokehouse", oxpost:"ox_0"
 };
 function thumbCanvas(def){
   var F = SPR.frames;
